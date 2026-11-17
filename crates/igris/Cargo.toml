@@ -1,0 +1,19 @@
+[package]
+name = "igris"
+description = "Agent orchestration: a chat assistant hands coding work to agents in Herdr, a decision model picks, the shell verifies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["agents", "orchestration", "herdr", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "igris"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "=4.6.7", features = ["derive"] }
