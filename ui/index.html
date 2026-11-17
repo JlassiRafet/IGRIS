@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IGRIS · Agent Orchestration</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0" y1="0" x2="0" y2="1"%3E%3Cstop offset="0" stop-color="#6ff3b4"/%3E%3Cstop offset=".55" stop-color="#22e88a"/%3E%3Cstop offset="1" stop-color="#139a5c"/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x="2" y="2" width="28" height="28" rx="9" fill="url%28#g%29"/%3E%3Crect x="2.5" y="2.5" width="27" height="13" rx="8.5" fill="#fff" opacity=".22"/%3E%3Cpath d="M11 10.5h10M16 10.5v11M11 21.5h10" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/%3E%3C/svg%3E">
+<meta name="description" content="IGRIS runs a loop of AI tools: Hermes takes your request, Jev or Laya decide, agents build and review in Herdr, and the shell checks the result.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* IGRIS glass prototype: one frosted window over a blurred landscape; glossy tool icons are the one loud element */
+:root{--sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;--mono:'Geist Mono',ui-monospace,Menlo,monospace;
+--her:#22e88a;--jev:#ff5fa2;--cla:#ff6a2b;--cdx:#35d0ff;--hrd:#b48cff;--sh:#c3ccd0;--split:#ffa51f;
+--st-idle:#8a969b;--st-work:#f5b82e;--st-block:#ff4d4f;--st-done:#4f8cff;--r-win:26px;--r-panel:18px;--r-card:14px;
+color-scheme:light;--ink:#182024;--mut:#45525a;--dim:#55626a;--you:#182024;--tmix:60%;--tk:#0b1012;
+--sky1:#c6d7e1;--sky2:#e9f0f3;--hill1:#a3b9ad;--hill2:#72917f;--hill3:#4c6a58;--lake:#b3c8d2;--mist:#ffffff;
+--win:rgba(255,255,255,.4);--win-rim:rgba(255,255,255,.8);--panel:rgba(255,255,255,.52);--panel-rim:rgba(255,255,255,.9);--sep:rgba(20,35,40,.12);
+--track:rgba(20,35,40,.1);--wire:rgba(20,35,40,.3);--wire2:rgba(20,35,40,.45);--btn:rgba(255,255,255,.6);--shadow:0 40px 90px -30px rgba(25,45,50,.5);--line:var(--sep)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--ink:#eef2f3;--mut:#c2cbce;--dim:#a9b3b7;--you:#ffffff;--tmix:78%;--tk:#fff;
+--sky1:#11181a;--sky2:#253136;--hill1:#2c3b37;--hill2:#202d29;--hill3:#141c1a;--lake:#223034;--mist:#5a6b70;
+--win:rgba(26,30,32,.55);--win-rim:rgba(255,255,255,.15);--panel:rgba(255,255,255,.06);--panel-rim:rgba(255,255,255,.13);--sep:rgba(255,255,255,.1);
+--track:rgba(255,255,255,.1);--wire:rgba(255,255,255,.24);--wire2:rgba(255,255,255,.38);--btn:rgba(255,255,255,.09);--shadow:0 40px 90px -30px rgba(0,0,0,.75)}}
+:root[data-theme="dark"]{color-scheme:dark;--ink:#eef2f3;--mut:#c2cbce;--dim:#a9b3b7;--you:#ffffff;--tmix:78%;--tk:#fff;
+--sky1:#11181a;--sky2:#253136;--hill1:#2c3b37;--hill2:#202d29;--hill3:#141c1a;--lake:#223034;--mist:#5a6b70;
+--win:rgba(26,30,32,.55);--win-rim:rgba(255,255,255,.15);--panel:rgba(255,255,255,.06);--panel-rim:rgba(255,255,255,.13);--sep:rgba(255,255,255,.1);
+--track:rgba(255,255,255,.1);--wire:rgba(255,255,255,.24);--wire2:rgba(255,255,255,.38);--btn:rgba(255,255,255,.09);--shadow:0 40px 90px -30px rgba(0,0,0,.75)}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;min-height:100vh;color:var(--ink);font:16px/1.55 var(--sans);background:linear-gradient(180deg,var(--sky1),var(--sky2) 55%,var(--lake));overflow-x:clip}
+.scene{position:fixed;inset:-6%;z-index:-1;filter:blur(28px) saturate(115%);pointer-events:none}
+.scene svg{width:100%;height:100%;display:block}
+main{max-width:1220px;margin:0 auto;padding:clamp(24px,5vw,64px) 16px 64px}
+::selection{background:color-mix(in oklab,var(--cdx) 32%,transparent)}
+html{scrollbar-color:color-mix(in oklab,var(--ink) 28%,transparent) transparent;caret-color:var(--her)}
+.intro{margin:0 0 clamp(24px,4vw,40px)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 clamp(28px,5vw,48px)}
+.brand{font-weight:600;font-size:17px;letter-spacing:-.01em}
+.top nav{display:flex;gap:8px}
+.top a{color:var(--ink);text-decoration:none;font-size:14px;font-weight:500;padding:10px 16px;border-radius:999px;border:1px solid var(--panel-rim);background-color:var(--btn);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+.top a:hover{background-color:color-mix(in oklab,var(--btn) 65%,#fff 35%)}
+.layout{display:grid;gap:24px;align-items:start}
+@media (min-width:1100px){.layout{grid-template-columns:minmax(0,720px) minmax(360px,1fr)}.left{position:sticky;top:24px}}
+.right{display:flex;flex-direction:column;gap:16px}
+.card{border:1px solid var(--win-rim);background:var(--win);-webkit-backdrop-filter:blur(30px) saturate(160%);backdrop-filter:blur(30px) saturate(160%);border-radius:22px;box-shadow:var(--shadow);padding:16px 18px 18px}
+.card h2{margin:0 0 10px;font-size:15px;font-weight:600;letter-spacing:-.01em;width:max-content}
+.stat{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin:12px 0 0;font-size:13px}
+.stat div{display:flex;flex-direction:column}.stat dt{color:var(--dim);font-size:12px}.stat dd{margin:0;font-weight:500;font-variant-numeric:tabular-nums}
+.head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.head h2{margin:0}
+.cmd{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--panel-rim)}
+.now{display:flex;align-items:center;gap:16px}.now .cap{flex:1}
+.dock{display:flex;flex:none;align-items:center;gap:6px;padding:6px;width:max-content;border-radius:999px;background:var(--btn);border:1px solid var(--panel-rim);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 10px 24px -12px rgba(0,0,0,.45)}
+.dock .sep{width:1px;height:22px;background:var(--sep);margin:0 4px}
+.ib{width:44px;height:44px;padding:0;border-radius:50%;display:grid;place-items:center;border:0;background-color:color-mix(in oklab,var(--ink) 8%,transparent);box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+.ib svg{width:18px;height:18px}
+.ib.txt{width:auto;padding:0 15px;border-radius:999px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.ib.primary{background-color:#fff;color:#14191b;box-shadow:inset 0 -1.5px 0 rgba(0,0,0,.12),0 6px 14px -6px rgba(0,0,0,.45)}
+.ib.primary:hover{background-color:#f1f4f5}
+h1{font-size:clamp(32px,6vw,48px);line-height:1.04;margin:0 0 14px;font-weight:600;letter-spacing:-.035em;text-wrap:balance}
+.lede{margin:0 0 30px;color:var(--mut);font-size:16px;max-width:62ch}
+.wrap{position:relative;width:100%}
+.stage{position:absolute;left:0;top:0;width:720px;height:724px;transform-origin:0 0;border-radius:var(--r-win);background:var(--win);-webkit-backdrop-filter:blur(30px) saturate(160%);backdrop-filter:blur(30px) saturate(160%);border:1px solid var(--win-rim);box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.4);overflow:hidden;font:12px/16px var(--sans);color:var(--ink)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.stage,.tip,.card{background:color-mix(in oklab,var(--sky2) 94%,transparent)}}
+.a{position:absolute}
+.b{position:absolute;border:1px solid var(--panel-rim);background:var(--panel);border-radius:var(--r-card);box-shadow:inset 0 1px 0 rgba(255,255,255,.3);transition:box-shadow .35s,border-color .35s}
+#bHer,[data-k="herdr"].b{border-radius:var(--r-panel)}
+.b.on{border-color:color-mix(in oklab,var(--c) 75%,transparent);box-shadow:0 0 0 3px color-mix(in oklab,var(--c) 24%,transparent),0 12px 32px -12px color-mix(in oklab,var(--c) 80%,transparent),inset 0 1px 0 rgba(255,255,255,.3)}
+.hot{cursor:help}.hot:hover{outline:2px solid color-mix(in oklab,var(--ink) 20%,transparent);outline-offset:3px}
+.t{color:color-mix(in oklab,var(--c) var(--tmix),var(--tk));font-weight:600}.d{color:var(--dim)}.s{font-size:11px}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mono{font-family:var(--mono)}
+.ic{width:20px;height:20px;padding:3px;vertical-align:-5px;margin-right:8px;border-radius:7px;overflow:visible;
+background:linear-gradient(160deg,color-mix(in oklab,var(--c,#8a969b) 50%,#fff) 0%,var(--c,#8a969b) 52%,color-mix(in oklab,var(--c,#8a969b) 78%,#000) 100%);
+box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 -1.5px 0 rgba(0,0,0,.18),0 4px 10px -3px color-mix(in oklab,var(--c,#8a969b) 65%,transparent)}
+#bYou .ic{--c:#71808a}
+.sw{display:inline-block;width:9px;height:9px;border-radius:50%;background:currentColor;margin-right:7px;vertical-align:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
+.mk{position:absolute;left:8px;right:8px;padding:2px 8px;color:var(--dim);border-radius:9px;transition:background .3s}
+.cb{display:inline-block;width:11px;height:11px;border:1.5px solid currentColor;border-radius:50%;margin-right:8px;vertical-align:-1px;position:relative}
+.mk.on{color:var(--ink);font-weight:600;background:color-mix(in oklab,var(--her) 16%,transparent)}
+.mk.on .cb{color:color-mix(in oklab,var(--her) var(--tmix),var(--tk))}
+.mk.on .cb:after{content:"";position:absolute;inset:1.5px;border-radius:50%;background:currentColor}
+.mk.done{opacity:.6}.mk.done .cb{background:currentColor}
+.row{display:grid;grid-template-columns:94px 92px 90px 40px 48px;align-items:center;height:22px}
+.bar{height:8px;background:var(--track);border-radius:99px;position:relative;margin-right:10px;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;width:0;border-radius:99px;transition:width .6s cubic-bezier(.2,.8,.2,1),background .3s}
+.pane{padding:8px 9px;font-size:11px}
+.pbar{display:flex;align-items:center;gap:6px;margin-top:10px}.pbar .bar{flex:1;margin:0}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--st-idle);margin-right:6px;transition:background .3s}
+#log{font:11.5px/24px var(--mono);font-variant-numeric:tabular-nums;min-height:120px}
+#log>div{display:grid;grid-template-columns:62px 82px minmax(0,1fr) auto;gap:0 8px;height:24px;align-items:center}
+.cur{display:inline-block;width:2px;height:14px;border-radius:1px;background:var(--ink);vertical-align:-2px;margin-left:2px}
+@media (prefers-reduced-motion:no-preference){.cur{animation:bl 1s steps(1) infinite}.hex{animation:pl 1.6s ease-out infinite}}
+@keyframes bl{50%{opacity:0}}
+.paused .hex{animation:none;opacity:.5}
+@keyframes pl{0%{box-shadow:0 0 0 0 color-mix(in oklab,var(--her) 55%,transparent)}100%{box-shadow:0 0 0 9px transparent}}
+.cap{font-size:15px;line-height:1.45;min-height:66px;align-items:center;display:flex;gap:12px;align-items:baseline;margin:0}
+.hex{flex:none;width:10px;height:10px;border-radius:50%;background:var(--her);transform:translateY(-1px)}
+button,select{font:inherit;font-size:14px;font-weight:500;min-height:44px;border-radius:999px;border:1px solid var(--panel-rim);background-color:var(--btn);color:var(--ink);
+-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 6px 16px -8px rgba(0,0,0,.35)}
+button{padding:0 18px;cursor:pointer;transition:transform .15s,background-color .2s}
+button:hover,select:hover{background-color:color-mix(in oklab,var(--btn) 65%,#fff 35%)}
+button:active{transform:scale(.97)}
+:focus-visible{outline:2px solid color-mix(in oklab,var(--cdx) 85%,var(--tk));outline-offset:2px}
+.tip{position:fixed;z-index:50;width:min(300px,92%);padding:12px 14px;border-radius:16px;background:color-mix(in oklab,var(--sky2) 88%,transparent);-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);border:1px solid var(--win-rim);color:var(--ink);font-size:13px;line-height:1.5;pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s;box-shadow:var(--shadow)}
+.tip.show{opacity:1;transform:none}.tip b{color:color-mix(in oklab,var(--tc) var(--tmix),var(--tk));display:block;margin-bottom:4px;font-size:14px;font-weight:600}
+.setup{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.setup h2{grid-column:1/-1;margin:0}
+.setup label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mut)}
+select{padding:0 36px 0 16px;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%237b878c' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 15px center;background-size:10px}
+.hint{grid-column:1/-1;margin:0;font-size:13px;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="scene" aria-hidden="true"><svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+<ellipse cx="1180" cy="170" rx="280" ry="90" style="fill:var(--mist);opacity:.6"/><ellipse cx="360" cy="230" rx="340" ry="70" style="fill:var(--mist);opacity:.45"/>
+<path d="M0 560 180 420l150 80 190-170 180 140 180-90 180 100 200-140 190 110 150-50v600H0Z" style="fill:var(--hill1)"/>
+<path d="M0 640 220 520l200 90 220-110 220 100 220-80 220 100 300-80v460H0Z" style="fill:var(--hill2)"/>
+<path d="M0 700c300-60 520-10 800-40s500-20 800 20v320H0Z" style="fill:var(--hill3)"/>
+<rect x="0" y="730" width="1600" height="270" style="fill:var(--lake)"/><ellipse cx="800" cy="745" rx="900" ry="32" style="fill:var(--mist);opacity:.35"/>
+</svg></div>
+<main>
+<div class="top"><span class="brand">IGRIS</span><nav aria-label="Site"><a href="docs/">Docs</a><a href="https://github.com/JlassiRafet/IGRIS">GitHub</a></nav></div>
+<header class="intro"><h1>Agent Orchestration</h1>
+<p class="lede">You send a request from any chat app. Hermes, your assistant, asks the decision layer (Laya or Jev) to pick the right agent, model and risk level. A builder agent writes the code and a reviewer agent checks it, each in its own Herdr pane, and either one can ask the decision layer mid-task. The shell runs the tests, and Hermes reports back to you. Pick your own tools in Your setup, and hover or tap any part to see what it does.</p></header>
+<div class="layout">
+<div class="left">
+
+<div class="wrap" id="wrap">
+<div class="stage" id="stage">
+<svg class="a" width="0" height="0"><defs>
+<symbol id="i-you" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.6" r="2.6"/><path d="M3 13.6c.8-2.6 2.7-3.8 5-3.8s4.2 1.2 5 3.8"/></g></symbol>
+<symbol id="i-her" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2V9a2 2 0 0 1-2 2H7.6l-3.1 2.4V11a2 2 0 0 1-2-2z"/></g></symbol>
+<symbol id="i-jev" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 14V9M8 9 4.2 5M8 9l3.8-4"/><circle cx="3.6" cy="3.6" r="1.4"/><circle cx="12.4" cy="3.6" r="1.4"/></g></symbol>
+<symbol id="i-cla" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></g></symbol>
+<symbol id="i-cdx" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4"/><path d="m10.1 10.1 3.4 3.4"/></g></symbol>
+<symbol id="i-hrd" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="2.2"/><path d="M7 2.6v10.8M7 8h7"/></g></symbol>
+<symbol id="i-sh" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 5 3 3-3 3M8.5 11.5H13"/></g></symbol>
+<symbol id="i-ok" viewBox="0 0 16 16"><g fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.4 3 3 6-6.8"/></g></symbol>
+</defs></svg>
+
+<div class="a" style="left:0;top:0;width:720px;height:30px;border-bottom:1px solid var(--sep)">
+ <span class="a d s" style="left:0;width:720px;top:7px;text-align:center;font-weight:500">~/app · herdr</span>
+</div>
+<div class="a" style="left:0;width:720px;top:38px;text-align:center;font-weight:600;font-size:13px"><span style="color:color-mix(in oklab,var(--cla) var(--tmix),var(--tk))" data-n="B"></span> builds, <span style="color:color-mix(in oklab,var(--cdx) var(--tmix),var(--tk))" data-n="R"></span> reviews, <span style="color:color-mix(in oklab,var(--jev) var(--tmix),var(--tk))" data-n="D"></span> decides</div>
+<div class="a" style="left:24px;top:62px;width:672px;border-top:1px solid var(--line)"></div>
+<div class="a s" style="left:24px;top:72px;width:580px;display:flex;justify-content:space-between">
+ <span><span class="sw" style="color:color-mix(in oklab,var(--her) var(--tmix),var(--tk))"></span>hermes</span><span><span class="sw" style="color:color-mix(in oklab,var(--jev) var(--tmix),var(--tk))"></span><span data-n="d"></span></span><span><span class="sw" style="color:color-mix(in oklab,var(--cla) var(--tmix),var(--tk))"></span><span data-n="b"></span></span><span><span class="sw" style="color:color-mix(in oklab,var(--cdx) var(--tmix),var(--tk))"></span><span data-n="r"></span></span><span><span class="sw" style="color:color-mix(in oklab,var(--hrd) var(--tmix),var(--tk))"></span>herdr</span>
+</div>
+
+<svg class="a" id="wires" width="720" height="930" style="left:0;top:0;pointer-events:none" fill="none">
+<style>.w1{stroke:var(--wire)}.w2{stroke:var(--wire2)}</style>
+ <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 9 5 1 9z" style="fill:var(--wire2)"/></marker></defs>
+ <g class="w1" stroke-width="1.6" stroke-dasharray="0.1 6" stroke-linecap="round">
+  <path d="M330 170H194" marker-end="url(#ah)"/><path d="M190 281H258" marker-end="url(#ah)"/>
+  <path d="M190 380H377"/><path d="M190 556H202" marker-end="url(#ah)"/><path d="M190 676H326" marker-end="url(#ah)"/>
+  <path d="M379 557V565H643M511 565V557M643 565V557"/>
+ </g>
+ <g class="w2" stroke-width="1.2" stroke-linecap="round">
+  <path d="M472 340V350M472 370V380M379 380H643"/>
+  <path d="M379 380V428M511 380V428M643 380V428" marker-end="url(#ah)"/>
+  <path d="M379 572V612M511 572V612M643 572V612M379 612H643"/><path d="M480 612V644" marker-end="url(#ah)"/>
+ </g>
+ <g id="paths" stroke="none">
+  <path id="pYou" d="M330 170H192"/><path id="pYouB" d="M192 170H330"/><path id="pJev" d="M190 281H260"/>
+  <path id="pD1" d="M472 340V380H379V430"/><path id="pAsk" d="M379 430V380H472V342"/>
+  <path id="pCX" d="M379 556V565H511V556"/><path id="pXC" d="M511 556V565H379V556"/>
+  <path id="pVer" d="M190 556H206"/>
+  <path id="pM1" d="M379 572V612H480V646"/><path id="pM2" d="M511 572V612H480V646"/><path id="pM3" d="M643 572V612H480V646"/>
+  <path id="pRep" d="M190 676H328"/>
+ </g>
+ <g id="dots"></g>
+</svg>
+
+<div class="b hot" id="bHer" data-k="hermes" style="--c:var(--her);left:20px;top:108px;width:170px;height:596px">
+ <div class="a" style="left:15px;top:62px;bottom:40px;border-left:1px solid var(--sep)"></div>
+ <div class="a t" style="left:0;right:0;top:8px;text-align:center"><span class="lg" data-logo="her"><svg class="ic"><use href="#i-her"/></svg></span>HERMES</div>
+ <div class="a d s" style="left:0;right:0;top:26px;text-align:center">assistant · always on</div>
+ <div class="mk" id="m0" style="top:54px"><i class="cb"></i>new request</div>
+ <div class="a d s" style="left:26px;top:78px">reads your message,</div>
+ <div class="a d s" style="left:26px;top:94px">splits it into tasks</div>
+ <div class="a d s" style="left:26px;top:118px">task:</div>
+ <div class="a s ell" id="hTask" style="left:26px;right:8px;top:134px;font-weight:700">» waiting</div>
+ <div class="mk" id="m1" style="top:165px"><i class="cb"></i>ask <span data-n="d"></span></div>
+ <div class="a d s" style="left:26px;top:190px">model  any cheap llm</div>
+ <div class="a d s" style="left:26px;top:206px">tasks done  <span id="hDone" style="color:var(--txt)">0</span></div>
+ <div class="a d s" style="left:26px;top:230px">cost today</div>
+ <div class="a s" id="hCost" style="left:26px;top:246px;color:var(--txt)">$0.00</div>
+ <div class="mk" id="m2" style="top:264px"><i class="cb"></i>dispatch</div>
+ <div class="a d s" style="left:26px;top:288px">never writes code</div>
+ <div class="a d s" style="left:26px;top:304px">itself. it hands</div>
+ <div class="a d s" style="left:26px;top:320px">work to herdr panes</div>
+ <div class="a d s" style="left:26px;top:390px">trusts the shell,</div>
+ <div class="a d s" style="left:26px;top:406px">not an agent's</div>
+ <div class="a d s" style="left:26px;top:422px">word for it</div>
+ <div class="mk" id="m3" style="top:440px"><i class="cb"></i>verify in shell</div>
+ <div class="a d s" style="left:26px;top:464px">done = tests pass</div>
+ <div class="a d s" style="left:26px;top:480px">+ review approved</div>
+ <div class="a d s" style="left:26px;top:520px">merge + deploy</div>
+ <div class="a d s" style="left:26px;top:536px">stay with you</div>
+ <div class="mk" id="m4" style="top:560px"><i class="cb"></i>report to you</div>
+</div>
+
+<div class="b hot" id="bYou" data-k="you" style="--c:var(--you);left:330px;top:140px;width:270px;height:60px;padding:8px 12px">
+ <div class="t"><svg class="ic"><use href="#i-you"/></svg>YOU · <span data-n="ch"></span></div>
+ <div class="ell" id="youMsg" style="margin-top:4px">» …</div>
+</div>
+
+<div class="b hot" id="bJev" data-k="jev" style="--c:var(--jev);left:262px;top:222px;width:420px;height:118px;padding:6px 10px">
+ <div style="display:flex;justify-content:space-between"><span class="t"><span class="lg" data-logo="jev"><svg class="ic"><use href="#i-jev"/></svg></span><span data-n="DU"></span> · decision layer · <span data-n="dh"></span></span><span><span class="d">decisions</span> <b id="jN" style="color:color-mix(in oklab,var(--jev) var(--tmix),var(--tk))">1,204</b></span></div>
+ <div class="row"><span>which agent</span><span class="ell" id="v0">—</span><span class="bar"><i id="b0"></i></span><span id="p0" class="d">—</span><span id="g0"></span></div>
+ <div class="row"><span>model tier</span><span class="ell" id="v1">—</span><span class="bar"><i id="b1"></i></span><span id="p1" class="d">—</span><span id="g1"></span></div>
+ <div class="row"><span id="l2">risk</span><span class="ell" id="v2">—</span><span class="bar"><i id="b2"></i></span><span id="p2" class="d">—</span><span id="g2"></span></div>
+ <div class="s" style="margin-top:2px"><span style="color:color-mix(in oklab,var(--jev) var(--tmix),var(--tk))">sharp → hermes acts</span> <span class="d">·</span> <span style="color:color-mix(in oklab,var(--split) var(--tmix),var(--tk))">split → stronger model or you</span></div>
+</div>
+<div class="a" style="left:262px;width:420px;top:353px;text-align:center">dispatch into herdr panes · <span style="color:color-mix(in oklab,var(--her) var(--tmix),var(--tk))">hermes</span></div>
+
+<div class="b hot" data-k="herdr" style="--c:var(--hrd);left:206px;top:396px;width:502px;height:176px"></div>
+<div class="a hot s" data-k="herdr" style="left:207px;top:397px;width:104px;height:174px;border-right:1px solid var(--line)">
+ <div class="a" style="--c:var(--hrd);left:8px;top:6px;color:color-mix(in oklab,var(--hrd) var(--tmix),var(--tk));font-weight:600"><span class="lg" data-logo="hrd"><svg class="ic"><use href="#i-hrd"/></svg></span>herdr</div>
+ <div class="a d" style="left:8px;top:30px">workspaces</div>
+ <div class="a" style="left:8px;top:46px"><span class="dot" id="sApp"></span>~/app</div>
+ <div class="a d" style="left:8px;top:62px"><span class="dot"></span>~/pos</div>
+ <div class="a d" style="left:8px;top:100px">agents</div>
+ <div class="a" style="left:8px;top:120px"><span class="dot" id="sd0"></span><span data-n="b"></span></div>
+ <div class="a" style="left:8px;top:136px"><span class="dot" id="sd1"></span><span data-n="r"></span></div>
+ <div class="a" style="left:8px;top:152px"><span class="dot" id="sd2"></span>shell</div>
+</div>
+<div class="b hot pane" id="pn0" data-k="claude" style="--c:var(--cla);left:320px;top:432px;width:118px;height:124px">
+ <div class="t ell"><span class="lg" data-logo="cla"><svg class="ic"><use href="#i-cla"/></svg></span><span data-n="bl"></span></div><div class="d ell">builds · <span id="tierLbl">—</span></div>
+ <div class="pbar"><span class="bar"><i id="pb0" style="background:var(--cla)"></i></span><span id="pp0">0%</span></div>
+ <div class="ell" id="pa0" style="margin-top:8px">waiting</div>
+ <div style="margin-top:8px"><span class="dot" id="pd0"></span><span id="ps0" class="d">idle</span></div>
+</div>
+<div class="b hot pane" id="pn1" data-k="codex" style="--c:var(--cdx);left:452px;top:432px;width:118px;height:124px">
+ <div class="t"><span class="lg" data-logo="cdx"><svg class="ic"><use href="#i-cdx"/></svg></span><span data-n="rl"></span></div><div class="d ell">reviews diff</div>
+ <div class="pbar"><span class="bar"><i id="pb1" style="background:var(--cdx)"></i></span><span id="pp1">0%</span></div>
+ <div class="ell" id="pa1" style="margin-top:8px">waiting</div>
+ <div style="margin-top:8px"><span class="dot" id="pd1"></span><span id="ps1" class="d">idle</span></div>
+</div>
+<div class="b hot pane" id="pn2" data-k="shell" style="--c:var(--sh);left:584px;top:432px;width:118px;height:124px">
+ <div class="t"><svg class="ic"><use href="#i-sh"/></svg>shell</div><div class="d ell">tests · git</div>
+ <div class="pbar"><span class="bar"><i id="pb2" style="background:var(--sh)"></i></span><span id="pp2">0%</span></div>
+ <div class="ell" id="pa2" style="margin-top:8px">waiting</div>
+ <div style="margin-top:8px"><span class="dot" id="pd2"></span><span id="ps2" class="d">idle</span></div>
+</div>
+<div class="a s d" style="left:492px;top:624px">verify + report</div>
+
+<div class="b hot" id="bRep" data-k="report" style="--c:var(--her);left:330px;top:648px;width:300px;height:56px;padding:7px 12px;text-align:center">
+ <div class="t"><svg class="ic"><use href="#i-ok"/></svg>HERMES → YOU · report</div>
+ <div class="ell" id="repMsg" style="margin-top:3px">nothing to approve</div>
+</div>
+
+</div>
+</div>
+
+</div>
+<aside class="right">
+<section class="card now">
+ <p class="cap"><span class="hex" aria-hidden="true"></span><span id="cap">Starting the team…</span></p>
+ <div class="dock" role="toolbar" aria-label="Demo controls">
+  <button class="ib primary" id="bPlay" type="button" aria-label="Pause" title="Pause"></button>
+  <button class="ib txt" id="bSpd" type="button" aria-label="Speed 1×" title="Change speed">1×</button>
+  <span class="sep" aria-hidden="true"></span>
+  <button class="ib" id="bTheme" type="button"></button>
+ </div>
+</section>
+<section class="card">
+ <h2 class="hot" data-k="log">Session log</h2>
+ <div id="log"></div>
+</section>
+<section class="card">
+ <div class="head"><h2 class="hot" data-k="status">Status</h2>
+ <div class="mono cmd"><span style="color:color-mix(in oklab,var(--her) var(--tmix),var(--tk))">~/app $</span> hermes gateway<span class="cur"></span></div></div>
+ <dl class="stat">
+  <div><dt>Hermes</dt><dd id="sH" style="color:color-mix(in oklab,var(--her) var(--tmix),var(--tk))">listening</dd></div>
+  <div><dt>Herdr</dt><dd id="sR" style="color:color-mix(in oklab,var(--hrd) var(--tmix),var(--tk))">3 panes</dd></div>
+  <div><dt data-n="R"></dt><dd id="sC" style="color:color-mix(in oklab,var(--cdx) var(--tmix),var(--tk))">idle</dd></div>
+  <div><dt data-n="D"></dt><dd id="sJ" style="color:color-mix(in oklab,var(--jev) var(--tmix),var(--tk))">1,204 decisions</dd></div>
+ </dl>
+</section>
+<section class="card setup" aria-labelledby="setupH"><h2 id="setupH">Your setup</h2>
+ <label>Chat app<select id="selCh"></select></label>
+ <label>Decision layer<select id="selDl"></select></label>
+ <label>Builder<select id="selB"></select></label>
+ <label>Reviewer<select id="selR"></select></label>
+ <p class="hint" id="hint"></p>
+</section>
+</aside>
+</div>
+</main>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+const C={you:'var(--you)',her:'var(--her)',jev:'var(--jev)',cla:'var(--cla)',cdx:'var(--cdx)',hrd:'var(--hrd)',sh:'var(--sh)'};
+const tx=c=>`color-mix(in oklab,${c} var(--tmix),var(--tk))`;
+const SPLIT='var(--split)';
+const ST={idle:['var(--st-idle)','idle'],working:['var(--st-work)','working'],blocked:['var(--st-block)','blocked'],done:['var(--st-done)','done']};
+const AG={claude:['Claude Code','claude','#ff6a2b',['haiku','sonnet','opus']],codex:['Codex','codex','#35d0ff',['small','mid','large']],
+ gemini:['Gemini CLI','gemini','#c6f432',['flash-lite','flash','pro']],opencode:['OpenCode','opencode','#f0f0f0',['small','mid','large']]};
+const DL={laya:['Laya','local','Laya: free and local, but it needs about 35 of your own labelled examples before its answers are reliable.'],
+ jev:['Jev','hosted','Jev: hosted by TypeSafe, good answers from day one, about $0.04 per million input tokens, needs an API key.']};
+const CH={telegram:'Telegram',discord:'Discord',slack:'Slack',whatsapp:'WhatsApp',signal:'Signal',email:'Email',matrix:'Matrix',teams:'Microsoft Teams',sms:'SMS',cli:'Terminal'};
+const DEF={ch:'telegram',dl:'laya',b:'claude',r:'codex'},MAP={ch:CH,dl:DL,b:AG,r:AG};
+let cfg={...DEF};try{Object.assign(cfg,JSON.parse(localStorage.getItem('aop-cfg')||'{}'))}catch(e){}
+for(const k in DEF)if(!Object.hasOwn(MAP[k],cfg[k]))cfg[k]=DEF[k];
+const N={};
+function applyCfg(){
+ const b=AG[cfg.b],r=AG[cfg.r],d=DL[cfg.dl];
+ Object.assign(N,{B:b[0],b:b[1],bl:b[0].toLowerCase(),BU:b[0].toUpperCase(),R:r[0],r:r[1],rl:r[0].toLowerCase(),RU:r[0].toUpperCase(),
+  D:d[0],d:d[0].toLowerCase(),DU:d[0].toUpperCase(),dh:d[1],DX:d[2],CH:CH[cfg.ch],ch:CH[cfg.ch].toLowerCase()});
+ document.documentElement.style.setProperty('--cla',b[2]);document.documentElement.style.setProperty('--cdx',r[2]);
+ document.querySelectorAll('[data-n]').forEach(e=>e.textContent=N[e.dataset.n]);
+ $('hint').textContent=d[2]+(cfg.b===cfg.r?' One agent can fill both roles, but a different reviewer catches more.':' Bring your own subscription or key; any of the 24 agents Herdr runs fits a role.');
+ try{localStorage.setItem('aop-cfg',JSON.stringify(cfg))}catch(e){}}
+[['selCh','ch',CH,v=>v],['selDl','dl',DL,v=>v[0]+' ('+v[1]+')'],['selB','b',AG,v=>v[0]],['selR','r',AG,v=>v[0]]].forEach(([id,k,M,lab])=>{
+ const el=$(id);el.innerHTML=Object.entries(M).map(([key,v])=>`<option value="${key}">${lab(v)}</option>`).join('');el.value=cfg[k];
+ el.onchange=()=>{cfg[k]=el.value;applyCfg()}});
+applyCfg();
+const INFO={
+ you:['You','Message Hermes from {CH}, any other chat app Hermes supports (Telegram, Discord, Slack, WhatsApp, Signal, Email, Matrix, Teams, SMS and more), or the terminal. You only step in to approve risky actions, merges and deploys.','var(--you)'],
+ hermes:['Hermes · assistant','Takes your request, splits it into tasks, asks {D} for quick calls, drives the agents through the Herdr CLI, checks results in the shell and reports back. Use any cheap model you like: it only plans and summarizes.','var(--her)'],
+ jev:['{D} · decision layer','Answers typed questions (which agent, which model tier, how risky, needs approval?) with a confidence score. Sharp answers run right away; split answers go to a stronger model or to you. Hermes and the agents can both ask it. It never writes code. {DX}','var(--jev)'],
+ herdr:['Herdr · workspaces','One terminal with a pane per agent, each in its own git worktree. The sidebar shows each one: yellow working, red blocked, blue done. Hermes drives it through its CLI, sessions survive closing the terminal, and it can reach other machines over SSH.','var(--hrd)'],
+ claude:['{B} · builder','Plans and writes the code in its own worktree, runs it, and fixes what {R} finds. Any agent Herdr supports can take this role.','var(--cla)'],
+ codex:['{R} · reviewer','The second opinion. Reviews the diff read-only and flags bugs before anything merges. It never edits the code itself.','var(--cdx)'],
+ shell:['Shell · judge','Runs tests, lint and git. Hermes trusts this output, not an agent saying "tests passed".','var(--sh)'],
+ report:['Report','Hermes sends you what changed, the test results and the review verdict on {CH}. Merge and deploy wait for your yes.','var(--her)'],
+ log:['Session log','Every decision and handoff, with {D}\'s confidence. This is how you audit what the team did, and it becomes training data for the decision layer.','#8c8c8c'],
+ status:['Status bar','Live state of each part and the running count of {D} decisions.','#8c8c8c']
+};
+const T=[
+ {msg:'add a login page',agent:.93,tier:[1,.88],risk:['low',.86],file:'src/auth.ts',files:3,tests:42,issue:true,cost:.012,acts:['reading src/','editing auth.ts','writing tests']},
+ {msg:'fix the failing cart test',agent:.95,tier:[0,.91],risk:['low',.92],file:'src/cart.ts',files:1,tests:57,cost:.004,acts:['reading test log','editing cart.ts','rerun one test']},
+ {msg:'run the db migration',agent:.9,tier:[1,.84],risk:['high',.94],high:true,file:'db/014.sql',files:2,tests:61,cost:.015,acts:['reading schema','writing 014.sql','dry run']},
+ {msg:'rename props in settings ui',agent:.88,tier:[0,.55],risk:['low',.9],file:'ui/settings.tsx',files:4,tests:61,cost:.006,acts:['finding usages','renaming props','fixing imports']}
+];
+let paused=false,speed=1,decisions=1204,done=0,cost=0,clk=new Date();clk.setHours(23,48,10);
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function sleep(ms){return new Promise(r=>{let left=ms/speed,last=performance.now();const f=now=>{if(!paused)left-=now-last;last=now;left<=0?r():requestAnimationFrame(f)};requestAnimationFrame(f)})}
+const NS='http://www.w3.org/2000/svg';
+function fly(id,col){
+ if(reduce)return sleep(150);
+ const p=$(id),L=p.getTotalLength(),g=$('dots'),dur=Math.max(450,L*4.2);
+ const cs=[7,5,4,3].map((s,i)=>{const c=document.createElementNS(NS,'rect');c.setAttribute('width',s);c.setAttribute('height',s);c.setAttribute('rx',s/2);c.style.fill=col;c.setAttribute('opacity',1-i*.24);g.appendChild(c);return[c,s]});
+ return new Promise(res=>{let t=0,last=performance.now();const f=now=>{if(!paused)t+=(now-last)*speed;last=now;
+  cs.forEach(([c,s],i)=>{const d=Math.max(0,Math.min(L,t/dur*L-i*8)),pt=p.getPointAtLength(d);c.setAttribute('x',Math.round(pt.x-s/2));c.setAttribute('y',Math.round(pt.y-s/2))});
+  if(t<dur)requestAnimationFrame(f);else{cs.forEach(([c])=>c.remove());res()}};requestAnimationFrame(f)})}
+const on=(id,v)=>$(id).classList.toggle('on',!!v);
+function mark(i){for(let k=0;k<5;k++){const m=$('m'+k);m.classList.toggle('on',k===i);m.classList.toggle('done',i>=0&&k<i)}}
+const cap=s=>$('cap').textContent=s;
+const tag=p=>p>=.8?'sharp':'split';
+let lines=[];
+function log(who,msg,r){
+ clk=new Date(clk.getTime()+1000+Math.random()*2000);
+ const R={B:[N.bl,C.cla],R:[N.rl,C.cdx],D:[N.d,C.jev]}[who]||[who,{you:C.you,hermes:C.her,shell:C.sh,herdr:C.hrd}[who]];
+ lines.push([clk.toTimeString().slice(0,8),R[0],msg,r||'',R[1]]);lines=lines.slice(-5);
+ $('log').innerHTML=lines.map((l,i)=>`<div style="opacity:${.45+i*.14}"><span class="d">${l[0]}</span><b style="color:${tx(l[4])}">${l[1]}</b><span class="ell">${l[2]}</span><span class="d ell" style="text-align:right">${l[3]}</span></div>`).join('')}
+function setRow(i,v,p){$('v'+i).textContent=v;const b=$('b'+i);b.style.width=Math.round(p*100)+'%';b.style.background=p>=.8?C.jev:SPLIT;
+ $('p'+i).textContent=p.toFixed(2);$('g'+i).textContent=tag(p);$('g'+i).style.color=tx(p>=.8?C.jev:SPLIT)}
+function resetJev(){for(let i=0;i<3;i++){$('v'+i).textContent='…';$('b'+i).style.width='0';$('p'+i).textContent='—';$('g'+i).textContent=''}}
+const panes=['idle','idle','idle'];
+function pane(i,st,pct,act){panes[i]=st;const[c,w]=ST[st];
+ $('pb'+i).style.width=pct+'%';$('pp'+i).textContent=pct+'%';if(act)$('pa'+i).textContent=act;
+ $('pd'+i).style.background=c;$('sd'+i).style.background=c;$('ps'+i).textContent=w;$('ps'+i).style.color=tx(c);on('pn'+i,st==='working'||st==='blocked');
+ const roll=panes.includes('blocked')?'blocked':panes.includes('done')?'done':panes.includes('working')?'working':'idle';
+ $('sApp').style.background=ST[roll][0];$('sR').textContent='3 panes · '+ST[roll][1];$('sR').style.color=tx(roll==='idle'?C.hrd:ST[roll][0]);
+ $('sC').textContent=panes[1]==='working'?'reviewing':panes[1]}
+const status=s=>$('sH').textContent=s;
+function bump(){decisions++;$('jN').textContent=decisions.toLocaleString('en');$('sJ').textContent=decisions.toLocaleString('en')+' decisions'}
+
+async function task(t){
+ const tier=AG[cfg.b][3][t.tier[0]];
+ mark(0);on('bYou',1);$('youMsg').textContent='» '+t.msg;$('hTask').textContent='» '+t.msg;status('reading');
+ cap('1. You message Hermes on '+N.CH+': "'+t.msg+'".');log('you','"'+t.msg+'"',N.ch);
+ await fly('pYou',C.you);on('bYou',0);on('bHer',1);await sleep(500);
+ mark(1);on('bJev',1);resetJev();cap('2. Hermes asks '+N.D+' three quick questions.');log('hermes','asks '+N.d+': agent · tier · risk','3 questions');
+ await fly('pJev',C.her);
+ const rows=[['which agent',[N.bl,t.agent]],['model tier',[tier,t.tier[1]]],['risk',t.risk]];
+ for(let i=0;i<3;i++){const[l,[v,p]]=rows[i];setRow(i,v,p);bump();
+  log('D',l+' → '+v,'p='+p.toFixed(2)+' '+tag(p)+(p>=.8?' → act':' → escalate'));await sleep(700)}
+ if(t.tier[1]<.8){cap('Split answer: Hermes double-checks with a stronger model before acting.');
+  log('hermes','split on tier → asks a stronger model','escalate');await sleep(900);log('hermes','stronger model: '+tier+' is enough','→ '+tier);await sleep(600)}
+ on('bJev',0);mark(2);status('dispatching');$('tierLbl').textContent=tier;
+ cap('3. Hermes opens a Herdr pane and hands the task to '+N.B+' ('+tier+').');log('hermes','herdr agent prompt builder',tier);
+ await fly('pD1',C.her);pane(0,'working',5,'starting');
+ for(let k=0;k<3;k++){await sleep(750);pane(0,'working',(k+1)*28,t.acts[k]);
+  if(t.high&&k===1){
+   cap(N.B+' reaches a risky step and asks '+N.D+': does this need your approval?');log('B','asks '+N.d+': needs approval?','mid-task');
+   on('bJev',1);resetJev();$('l2').textContent='approval?';await fly('pAsk',C.cla);setRow(2,'yes',.94);bump();log('D','needs approval → yes','p=0.94 sharp');
+   await sleep(700);await fly('pD1',C.jev);on('bJev',0);$('l2').textContent='risk';
+   pane(0,'blocked',56,'needs approval');log('herdr',N.b+' blocked · waiting for you','red');
+   cap('The pane turns red and Hermes asks you on '+N.CH+' before going on.');
+   on('bYou',1);$('youMsg').textContent='» run migration on staging? y';
+   await fly('pYouB',C.her);await sleep(1200);log('you','approved: staging only','y');on('bYou',0);pane(0,'working',60,'migrating staging')}}
+ await sleep(600);pane(0,'done',100,t.files+' files changed');log('B',t.files+' files changed · '+t.file,'');
+ cap('4. Hermes hands the diff to '+N.R+' for a read-only review.');log('hermes','herdr agent prompt reviewer','review diff');
+ await fly('pCX',C.cla);pane(1,'working',25,'reading task');await sleep(700);pane(1,'working',65,'reading diff');await sleep(700);
+ if(t.issue){pane(1,'done',100,'1 issue found');log('R','1 issue: missing input check','fix it');
+  cap(N.R+' found a bug. '+N.B+' fixes it before anything merges.');await fly('pXC',C.cdx);pane(0,'working',80,'fixing issue');
+  await sleep(900);pane(0,'done',100,'issue fixed');log('B','fixed · ready for re-review','');await fly('pCX',C.cla);pane(1,'working',50,'re-review');await sleep(700)}
+ pane(1,'done',100,'approved');log('R','review passed · 0 issues','');
+ mark(3);status('verifying');cap('5. Hermes runs the tests itself. The shell decides what "done" means.');
+ await fly('pVer',C.her);pane(2,'working',10,'npm test');log('hermes','shell: npm test','');
+ await sleep(600);pane(2,'working',55,'running '+t.tests);await sleep(800);pane(2,'done',100,t.tests+' passed');log('shell',t.tests+' passed · 0 failed','exit 0');
+ mark(4);status('reporting');cap('6. Hermes reports back on '+N.CH+'. Merge and deploy wait for your yes.');
+ await Promise.all([fly('pM1',C.cla),fly('pM2',C.cdx),fly('pM3',C.sh)]);on('bRep',1);
+ $('repMsg').textContent=t.files+' files · '+t.tests+' tests · merge? [y/n]';log('hermes','report sent · waiting for you','');
+ await fly('pRep',C.her);await sleep(1300);$('repMsg').textContent='you said yes · merged ✓';log('you','approved merge','y');
+ done++;cost+=t.cost;$('hDone').textContent=done;$('hCost').textContent='$'+cost.toFixed(3);
+ await sleep(1500);on('bRep',0);on('bHer',0);mark(-1);status('listening');$('repMsg').textContent='nothing to approve';
+ for(let i=0;i<3;i++)pane(i,'idle',0,'waiting');await sleep(600)}
+(async()=>{for(;;)for(const t of T)await task(t)})();
+
+const root=document.documentElement,mq=matchMedia('(prefers-color-scheme: dark)');
+let theme=null;try{theme=localStorage.getItem('igris-theme')}catch(e){}
+const eff=()=>theme||(mq.matches?'dark':'light');
+const IC={pause:'<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx="1.1" fill="currentColor"/><rect x="9.4" y="3" width="2.6" height="10" rx="1.1" fill="currentColor"/></svg>',
+ play:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.2v9.6a.8.8 0 0 0 1.2.7l7.6-4.8a.8.8 0 0 0 0-1.4L6.2 2.5A.8.8 0 0 0 5 3.2z" fill="currentColor"/></svg>',
+ moon:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.6 5.6 0 0 1 6.4 3a5.6 5.6 0 1 0 6.6 6.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+ sun:'<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></g></svg>'};
+const setBtn=(el,icon,label)=>{el.innerHTML=IC[icon];el.setAttribute('aria-label',label);el.title=label};
+function applyTheme(){if(theme)root.dataset.theme=theme;else delete root.dataset.theme;eff()==='dark'?setBtn($('bTheme'),'sun','Switch to light mode'):setBtn($('bTheme'),'moon','Switch to dark mode')}
+$('bTheme').onclick=()=>{theme=eff()==='dark'?'light':'dark';try{localStorage.setItem('igris-theme',theme)}catch(e){}applyTheme()};
+mq.addEventListener('change',applyTheme);applyTheme();
+const playBtn=()=>{document.body.classList.toggle('paused',paused);paused?setBtn($('bPlay'),'play','Play'):setBtn($('bPlay'),'pause','Pause')};playBtn();
+$('bPlay').onclick=()=>{paused=!paused;playBtn()};
+$('bSpd').onclick=()=>{speed=speed===1?2:speed===2?0.5:1;$('bSpd').textContent=speed+'×';$('bSpd').setAttribute('aria-label','Speed '+speed+'×')};
+
+const wrap=$('wrap'),stage=$('stage'),tip=$('tip');
+function fit(){const s=Math.min(1,wrap.clientWidth/720);stage.style.transform='scale('+s+')';wrap.style.height=724*s+'px'}
+new ResizeObserver(fit).observe(wrap);fit();
+let curEl=null;
+function show(el){const[h,b,c]=INFO[el.dataset.k].map(x=>x.replace(/\{(\w+)\}/g,(m,k)=>N[k]??m));tip.style.setProperty('--tc',c);tip.innerHTML='<b>'+h+'</b>'+b;
+ const r=el.getBoundingClientRect(),tw=tip.offsetWidth,th=tip.offsetHeight,W=innerWidth,H=innerHeight;
+ let x=Math.min(Math.max(8,r.left),W-tw-8),y=r.bottom+8;if(y+th>H-8)y=r.top-th-8;if(y<8)y=Math.max(8,Math.min(r.top+16,H-th-8));
+ tip.style.left=x+'px';tip.style.top=y+'px';tip.classList.add('show');curEl=el}
+function hide(){tip.classList.remove('show');curEl=null}
+document.addEventListener('pointerover',e=>{if(e.pointerType!=='mouse')return;const el=e.target.closest('.hot');if(el){if(el!==curEl)show(el)}else if(curEl)hide()});
+addEventListener('scroll',()=>{if(curEl)hide()},{passive:true});
+
+document.addEventListener('click',e=>{const el=e.target.closest('.hot');if(el)show(el)});
+
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('.hot'))hide()});
+}
+</script>
+</body>
+</html>
