@@ -38,7 +38,8 @@ html{scrollbar-color:color-mix(in oklab,var(--ink) 28%,transparent) transparent;
 .brand{font-weight:600;font-size:17px;letter-spacing:-.01em}
 .top nav{display:flex;gap:8px}
 .top a{color:var(--ink);text-decoration:none;font-size:14px;font-weight:500;padding:10px 16px;border-radius:999px;border:1px solid var(--panel-rim);background-color:var(--btn);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
-.top a:hover{background-color:color-mix(in oklab,var(--btn) 65%,#fff 35%)}
+.top .ib{border:1px solid var(--panel-rim);background-color:var(--btn);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+.top a:hover,.top .ib:hover{background-color:color-mix(in oklab,var(--btn) 65%,#fff 35%)}
 .layout{display:grid;gap:24px;align-items:start}
 @media (min-width:1100px){.layout{grid-template-columns:minmax(0,720px) minmax(360px,1fr)}.left{position:sticky;top:24px}}
 .right{display:flex;flex-direction:column;gap:16px}
@@ -50,7 +51,6 @@ html{scrollbar-color:color-mix(in oklab,var(--ink) 28%,transparent) transparent;
 .cmd{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--panel-rim)}
 .now{display:flex;align-items:center;gap:16px}.now .cap{flex:1}
 .dock{display:flex;flex:none;align-items:center;gap:6px;padding:6px;width:max-content;border-radius:999px;background:var(--btn);border:1px solid var(--panel-rim);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 10px 24px -12px rgba(0,0,0,.45)}
-.dock .sep{width:1px;height:22px;background:var(--sep);margin:0 4px}
 .ib{width:44px;height:44px;padding:0;border-radius:50%;display:grid;place-items:center;border:0;background-color:color-mix(in oklab,var(--ink) 8%,transparent);box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
 .ib svg{width:18px;height:18px}
 .ib.txt{width:auto;padding:0 15px;border-radius:999px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -107,7 +107,6 @@ button:active{transform:scale(.97)}
 .setup h2{grid-column:1/-1;margin:0}
 .setup label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mut)}
 select{padding:0 36px 0 16px;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%237b878c' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 15px center;background-size:10px}
-.hint{grid-column:1/-1;margin:0;font-size:13px;color:var(--mut)}
 </style>
 </head>
 <body>
@@ -119,7 +118,7 @@ select{padding:0 36px 0 16px;appearance:none;background-image:url("data:image/sv
 <rect x="0" y="730" width="1600" height="270" style="fill:var(--lake)"/><ellipse cx="800" cy="745" rx="900" ry="32" style="fill:var(--mist);opacity:.35"/>
 </svg></div>
 <main>
-<div class="top"><span class="brand">IGRIS</span><nav aria-label="Site"><a href="docs/">Docs</a><a href="https://github.com/JlassiRafet/IGRIS">GitHub</a></nav></div>
+<div class="top"><span class="brand">IGRIS</span><nav aria-label="Site"><a href="docs/">Docs</a><a href="https://github.com/JlassiRafet/IGRIS">GitHub</a><button class="ib" id="bTheme" type="button"></button></nav></div>
 <header class="intro"><h1>Agent Orchestration</h1>
 <p class="lede">You send a request from any chat app. Hermes, your assistant, asks the decision layer (Laya or Jev) to pick the right agent, model and risk level. A builder agent writes the code and a reviewer agent checks it, each in its own Herdr pane, and either one can ask the decision layer mid-task. The shell runs the tests, and Hermes reports back to you. Pick your own tools in Your setup, and hover or tap any part to see what it does.</p></header>
 <div class="layout">
@@ -260,8 +259,6 @@ select{padding:0 36px 0 16px;appearance:none;background-image:url("data:image/sv
  <div class="dock" role="toolbar" aria-label="Demo controls">
   <button class="ib primary" id="bPlay" type="button" aria-label="Pause" title="Pause"></button>
   <button class="ib txt" id="bSpd" type="button" aria-label="Speed 1×" title="Change speed">1×</button>
-  <span class="sep" aria-hidden="true"></span>
-  <button class="ib" id="bTheme" type="button"></button>
  </div>
 </section>
 <section class="card">
@@ -283,7 +280,6 @@ select{padding:0 36px 0 16px;appearance:none;background-image:url("data:image/sv
  <label>Decision layer<select id="selDl"></select></label>
  <label>Builder<select id="selB"></select></label>
  <label>Reviewer<select id="selR"></select></label>
- <p class="hint" id="hint"></p>
 </section>
 </aside>
 </div>
@@ -299,8 +295,8 @@ const SPLIT='var(--split)';
 const ST={idle:['var(--st-idle)','idle'],working:['var(--st-work)','working'],blocked:['var(--st-block)','blocked'],done:['var(--st-done)','done']};
 const AG={claude:['Claude Code','claude','#ff6a2b',['haiku','sonnet','opus']],codex:['Codex','codex','#35d0ff',['small','mid','large']],
  gemini:['Gemini CLI','gemini','#c6f432',['flash-lite','flash','pro']],opencode:['OpenCode','opencode','#f0f0f0',['small','mid','large']]};
-const DL={laya:['Laya','local','Laya: free and local, but it needs about 35 of your own labelled examples before its answers are reliable.'],
- jev:['Jev','hosted','Jev: hosted by TypeSafe, good answers from day one, about $0.04 per million input tokens, needs an API key.']};
+const DL={laya:['Laya','local'],
+ jev:['Jev','hosted']};
 const CH={telegram:'Telegram',discord:'Discord',slack:'Slack',whatsapp:'WhatsApp',signal:'Signal',email:'Email',matrix:'Matrix',teams:'Microsoft Teams',sms:'SMS',cli:'Terminal'};
 const DEF={ch:'telegram',dl:'laya',b:'claude',r:'codex'},MAP={ch:CH,dl:DL,b:AG,r:AG};
 let cfg={...DEF};try{Object.assign(cfg,JSON.parse(localStorage.getItem('aop-cfg')||'{}'))}catch(e){}
@@ -309,10 +305,9 @@ const N={};
 function applyCfg(){
  const b=AG[cfg.b],r=AG[cfg.r],d=DL[cfg.dl];
  Object.assign(N,{B:b[0],b:b[1],bl:b[0].toLowerCase(),BU:b[0].toUpperCase(),R:r[0],r:r[1],rl:r[0].toLowerCase(),RU:r[0].toUpperCase(),
-  D:d[0],d:d[0].toLowerCase(),DU:d[0].toUpperCase(),dh:d[1],DX:d[2],CH:CH[cfg.ch],ch:CH[cfg.ch].toLowerCase()});
+  D:d[0],d:d[0].toLowerCase(),DU:d[0].toUpperCase(),dh:d[1],CH:CH[cfg.ch],ch:CH[cfg.ch].toLowerCase()});
  document.documentElement.style.setProperty('--cla',b[2]);document.documentElement.style.setProperty('--cdx',r[2]);
  document.querySelectorAll('[data-n]').forEach(e=>e.textContent=N[e.dataset.n]);
- $('hint').textContent=d[2]+(cfg.b===cfg.r?' One agent can fill both roles, but a different reviewer catches more.':' Bring your own subscription or key; any of the 24 agents Herdr runs fits a role.');
  try{localStorage.setItem('aop-cfg',JSON.stringify(cfg))}catch(e){}}
 [['selCh','ch',CH,v=>v],['selDl','dl',DL,v=>v[0]+' ('+v[1]+')'],['selB','b',AG,v=>v[0]],['selR','r',AG,v=>v[0]]].forEach(([id,k,M,lab])=>{
  const el=$(id);el.innerHTML=Object.entries(M).map(([key,v])=>`<option value="${key}">${lab(v)}</option>`).join('');el.value=cfg[k];
@@ -321,7 +316,7 @@ applyCfg();
 const INFO={
  you:['You','Message Hermes from {CH}, any other chat app Hermes supports (Telegram, Discord, Slack, WhatsApp, Signal, Email, Matrix, Teams, SMS and more), or the terminal. You only step in to approve risky actions, merges and deploys.','var(--you)'],
  hermes:['Hermes · assistant','Takes your request, splits it into tasks, asks {D} for quick calls, drives the agents through the Herdr CLI, checks results in the shell and reports back. Use any cheap model you like: it only plans and summarizes.','var(--her)'],
- jev:['{D} · decision layer','Answers typed questions (which agent, which model tier, how risky, needs approval?) with a confidence score. Sharp answers run right away; split answers go to a stronger model or to you. Hermes and the agents can both ask it. It never writes code. {DX}','var(--jev)'],
+ jev:['{D} · decision layer','Answers typed questions (which agent, which model tier, how risky, needs approval?) with a confidence score. Sharp answers run right away; split answers go to a stronger model or to you. Hermes and the agents can both ask it. It never writes code.','var(--jev)'],
  herdr:['Herdr · workspaces','One terminal with a pane per agent, each in its own git worktree. The sidebar shows each one: yellow working, red blocked, blue done. Hermes drives it through its CLI, sessions survive closing the terminal, and it can reach other machines over SSH.','var(--hrd)'],
  claude:['{B} · builder','Plans and writes the code in its own worktree, runs it, and fixes what {R} finds. Any agent Herdr supports can take this role.','var(--cla)'],
  codex:['{R} · reviewer','The second opinion. Reviews the diff read-only and flags bugs before anything merges. It never edits the code itself.','var(--cdx)'],
