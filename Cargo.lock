@@ -169,6 +169,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "igris-detect"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
