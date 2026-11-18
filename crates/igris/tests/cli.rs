@@ -383,3 +383,19 @@ fn continue_on_an_unknown_task_fails_clearly() {
     assert_eq!(o.status.code(), Some(1));
     assert!(json_of(&o)["error"].as_str().unwrap().contains("no task"));
 }
+
+#[test]
+fn the_smoke_script_is_valid_sh_and_names_the_trust_step() {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/smoke.sh");
+    let text = fs::read_to_string(&script).expect("scripts/smoke.sh exists");
+    let out = Command::new("sh").arg("-n").arg(&script).output().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        text.contains("igris doctor") && text.contains("igris run"),
+        "runs the real commands"
+    );
+    assert!(
+        text.contains("trust"),
+        "tells the user about Claude Code's folder-trust prompt"
+    );
+}
