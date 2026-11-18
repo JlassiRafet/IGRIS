@@ -1,0 +1,7 @@
+echo hello; echo IGRIS_EXIT=$?
+
+igris-fx1 igris/fx1 ❯ echo hello; echo IGRIS_EXIT=$?
+hello
+IGRIS_EXIT=0
+
+igris-fx1 igris/fx1 ❯

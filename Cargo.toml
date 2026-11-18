@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/igris"]
+members = ["crates/igris", "crates/igris-core"]
 
 [workspace.package]
 version = "0.0.0"
