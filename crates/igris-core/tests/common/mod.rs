@@ -26,8 +26,9 @@ impl FakeHerdr {
     /// The path to hand to code that expects a `herdr` binary.
     pub fn bin(&self) -> PathBuf {
         let p = self.dir.join("herdr");
+        // A symlink, not a copy: writing an executable while other tests fork gives "text file busy".
         if !p.exists() {
-            fs::copy(SCRIPT, &p).expect("copy fake-herdr.sh");
+            std::os::unix::fs::symlink(SCRIPT, &p).expect("link fake-herdr.sh");
         }
         p
     }
@@ -87,5 +88,18 @@ impl FakeHerdr {
                     .collect()
             })
             .collect()
+    }
+}
+
+impl FakeHerdr {
+    /// Stdout (exit 0) with literal text instead of a fixture file.
+    pub fn on_raw(&self, key: &str, text: &str) -> &Self {
+        fs::write(self.dir.join(format!("{key}.out")), text).unwrap();
+        self
+    }
+    /// Stderr (exit 1) with literal text instead of a fixture file.
+    pub fn fail_raw(&self, key: &str, text: &str) -> &Self {
+        fs::write(self.dir.join(format!("{key}.err")), text).unwrap();
+        self
     }
 }
