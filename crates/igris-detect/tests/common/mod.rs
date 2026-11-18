@@ -19,6 +19,7 @@ pub struct FakeHost {
     pub cores: Option<u32>,
     commands: HashMap<String, String>,
     files: HashMap<String, String>,
+    bins: Vec<String>,
 }
 
 impl FakeHost {
@@ -31,6 +32,10 @@ impl FakeHost {
     }
     pub fn cmd(mut self, line: &str, out: &str) -> Self {
         self.commands.insert(line.into(), out.into());
+        self
+    }
+    pub fn bin(mut self, name: &str) -> Self {
+        self.bins.push(name.into());
         self
     }
     pub fn file(mut self, path: &str, body: &str) -> Self {
@@ -56,5 +61,11 @@ impl Host for FakeHost {
     }
     fn read(&self, path: &str) -> Option<String> {
         self.files.get(path).cloned()
+    }
+    fn which(&self, name: &str) -> Option<String> {
+        self.bins
+            .iter()
+            .any(|b| b == name)
+            .then(|| format!("/usr/bin/{name}"))
     }
 }
