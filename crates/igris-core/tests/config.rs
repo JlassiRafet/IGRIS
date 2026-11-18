@@ -170,3 +170,11 @@ fn the_shipped_example_stays_valid() {
     let c = Config::load_from(&d, Some(&example), None).unwrap();
     assert_eq!(c.checks.command, "npm test");
 }
+
+#[test]
+fn a_bad_risky_path_pattern_is_rejected_at_load() {
+    let e = parse("[policy]\nrisky_paths = [\"[\"]\n[checks]\ncommand = \"t\"\n")
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("policy.risky_paths") && e.contains("'['"), "{e}");
+}

@@ -249,6 +249,8 @@ impl Config {
                 "decision.threshold must be between 0 and 1".into(),
             ));
         }
+        crate::decide::risky_globs(&self.policy.risky_paths)
+            .map_err(|e| ConfigError::Invalid(format!("policy.risky_paths: {e}")))?;
         if self.checks.timeout_s == 0 || self.policy.build_timeout_s == 0 {
             return Err(ConfigError::Invalid(
                 "checks.timeout_s and policy.build_timeout_s must be above 0".into(),
