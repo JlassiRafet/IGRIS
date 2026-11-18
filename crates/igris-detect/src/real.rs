@@ -24,33 +24,39 @@ impl Default for RealHost {
     }
 }
 
-impl Host for RealHost {
-    fn os(&self) -> &str {
-        std::env::consts::OS
-    }
-    fn home(&self) -> Option<String> {
-        std::env::var("HOME").ok().filter(|h| h.starts_with('/'))
-    }
-    fn cpu_cores(&self) -> Option<u32> {
-        std::thread::available_parallelism()
-            .ok()
-            .and_then(|n| u32::try_from(n.get()).ok())
-    }
-    fn run(&self, cmd: &str, args: &[&str]) -> Option<String> {
+impl RealHost {
+    fn exec(&self, cmd: &str, args: &[&str], with_stderr: bool) -> Option<String> {
         let mut child = Command::new(cmd)
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(if with_stderr {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .spawn()
             .ok()?;
-        // Read on a thread so a chatty command cannot fill the pipe and stall until the timeout.
-        let mut pipe = child.stdout.take()?;
-        let reader = std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            pipe.read_to_end(&mut buf).ok()?;
-            Some(buf)
-        });
+        // Read on threads so a chatty command cannot fill a pipe and stall until the timeout.
+        let drain = |pipe: Option<Box<dyn Read + Send>>| {
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                pipe?.read_to_end(&mut buf).ok()?;
+                Some(buf)
+            })
+        };
+        let out = drain(
+            child
+                .stdout
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+        );
+        let err = drain(
+            child
+                .stderr
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+        );
         let start = Instant::now();
         let status = loop {
             match child.try_wait() {
@@ -65,10 +71,33 @@ impl Host for RealHost {
                 }
             }
         };
-        let out = reader.join().ok()??;
+        let mut text = out.join().ok()??;
+        if with_stderr {
+            text.extend(err.join().ok().flatten().unwrap_or_default());
+        }
         status
             .filter(|s| s.success())
-            .and_then(|_| String::from_utf8(out).ok())
+            .and_then(|_| String::from_utf8(text).ok())
+    }
+}
+
+impl Host for RealHost {
+    fn os(&self) -> &str {
+        std::env::consts::OS
+    }
+    fn home(&self) -> Option<String> {
+        std::env::var("HOME").ok().filter(|h| h.starts_with('/'))
+    }
+    fn cpu_cores(&self) -> Option<u32> {
+        std::thread::available_parallelism()
+            .ok()
+            .and_then(|n| u32::try_from(n.get()).ok())
+    }
+    fn run(&self, cmd: &str, args: &[&str]) -> Option<String> {
+        self.exec(cmd, args, false)
+    }
+    fn run_with_stderr(&self, cmd: &str, args: &[&str]) -> Option<String> {
+        self.exec(cmd, args, true)
     }
     fn read(&self, path: &str) -> Option<String> {
         std::fs::read_to_string(path).ok()

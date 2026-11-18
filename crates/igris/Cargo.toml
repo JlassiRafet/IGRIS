@@ -18,4 +18,5 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "=4.6.7", features = ["derive"] }
 igris-core = { version = "0.0.0", path = "../igris-core" }
+igris-detect = { version = "0.0.0", path = "../igris-detect" }
 serde_json = "=1.0.154"

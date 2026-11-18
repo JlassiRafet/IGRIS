@@ -35,6 +35,9 @@ enum Cmd {
         repo: PathBuf,
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Also report what this machine has: hardware, local models, agents and their logins.
+        #[arg(long)]
+        json: bool,
     },
     /// Run one coding task through build, review and checks.
     Run {
@@ -130,7 +133,7 @@ fn status(id: Option<&str>) -> Out {
 
 fn dispatch(cmd: Cmd) -> Out {
     match cmd {
-        Cmd::Doctor { repo, config } => doctor::run(&repo, config.as_deref()),
+        Cmd::Doctor { repo, config, json } => doctor::run(&repo, config.as_deref(), json),
         Cmd::Run {
             repo,
             task,
