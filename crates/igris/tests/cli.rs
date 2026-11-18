@@ -377,6 +377,28 @@ fn merge_fast_forwards_cleans_up_and_logs_the_outcome() {
 }
 
 #[test]
+fn merge_names_the_files_that_block_the_worktree_cleanup() {
+    let e = env();
+    e.fake.fail_raw(
+        "worktree-remove",
+        r#"{"error":{"code":"dirty_worktree_requires_force","message":"worktree contains modified or untracked files"}}"#,
+    );
+    let id = finished_task(&e);
+    let wt = e.repo.parent().unwrap().join("wt");
+    fs::write(wt.join("scratch.tmp"), "left behind by a test run").unwrap();
+    let o = e.igris(&["merge", &id]);
+    assert_eq!(o.status.code(), Some(0), "{} {}", json_of(&o), stderr(&o));
+    let v = json_of(&o);
+    assert_eq!(v["status"], "merged", "the work still lands");
+    let cleanup = v["cleanup"].as_str().unwrap();
+    assert!(cleanup.contains("scratch.tmp"), "names the file: {cleanup}");
+    assert!(
+        cleanup.contains("add them to .gitignore"),
+        "says what to do: {cleanup}"
+    );
+}
+
+#[test]
 fn continue_on_an_unknown_task_fails_clearly() {
     let e = env();
     let o = e.igris(&["continue", "t0-dead"]);

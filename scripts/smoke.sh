@@ -8,6 +8,11 @@
 # the prompt in Herdr and run `igris continue <id>`.
 #
 # Usage: scripts/smoke.sh      (needs `igris` on PATH, or IGRIS=/path/to/igris)
+# To pick other agents or models, set SMOKE_AGENTS to an [agents] table, for example:
+#   SMOKE_AGENTS='[agents]
+#   reviewer = "claude"
+#   reviewer_args = ["--permission-mode", "plan", "--model", "sonnet"]
+#   ' scripts/smoke.sh
 set -eu
 IGRIS=${IGRIS:-igris}
 dir=${TMPDIR:-/tmp}/igris-smoke
@@ -35,7 +40,8 @@ class AddTest(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 PY
-printf '[checks]\ncommand = "python3 -m unittest"\n' > igris.toml
+{ printf '%s' "${SMOKE_AGENTS:-}"; printf '[checks]\ncommand = "python3 -m unittest"\n'; } > igris.toml
+printf '__pycache__/\n' > .gitignore
 git add -A
 git -c user.name=smoke -c user.email=smoke@example.com commit -q -m "init"
 

@@ -40,7 +40,18 @@ pub fn run(home: &Path, id: &str, config: Option<&Path>) -> Result<Value, Box<dy
     // The work is merged; cleanup problems are reported, not fatal.
     let herdr = Config::load(&r.repo, config).map_or_else(|_| Herdr::local(), |c| herdr_of(&c));
     let cleanup = match herdr.remove_worktree(&r.workspace) {
-        Err(e) => format!("worktree left open: {e}"),
+        Err(e) => {
+            let left = git::run(&r.worktree, &["status", "--porcelain"]).unwrap_or_default();
+            let files: Vec<&str> = left.lines().filter_map(|l| l.get(3..)).collect();
+            if files.is_empty() {
+                format!("worktree left open: {e}")
+            } else {
+                format!(
+                    "worktree left open: these files block removal: {}. Delete them or add them to .gitignore, then run `herdr worktree remove`",
+                    files.join(", ")
+                )
+            }
+        }
         Ok(()) => match git::run(&r.repo, &["branch", "-d", &r.branch]) {
             Ok(_) => "ok".to_string(),
             Err(e) => format!("branch left: {e}"),
