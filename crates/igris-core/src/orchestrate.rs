@@ -11,7 +11,6 @@ use crate::herdr::{AgentState, Herdr, HerdrError};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -36,6 +35,7 @@ pub enum OrchError {
 pub enum Status {
     Running,
     Done,
+    Merged,
     Blocked,
     Failed,
     NeedsApproval,
@@ -157,39 +157,65 @@ fn hex4() -> String {
     format!("{:04x}", n & 0xffff)
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, OrchError> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .map_err(|e| OrchError::Git(format!("cannot run git: {e}")))?;
-    if !out.status.success() {
-        return Err(OrchError::Git(format!(
-            "git {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
 fn is_dirty(dir: &Path) -> Result<bool, OrchError> {
-    Ok(!git(dir, &["status", "--porcelain"])?.trim().is_empty())
+    crate::git::is_dirty(dir).map_err(OrchError::Git)
 }
 
 fn changed_files(dir: &Path, base: &str) -> Result<Vec<String>, OrchError> {
-    Ok(git(dir, &["diff", "--name-only", base])?
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(String::from)
-        .collect())
+    crate::git::changed_files(dir, base).map_err(OrchError::Git)
 }
 
 fn last_lines(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
+fn task_path(home: &Path, id: &str) -> PathBuf {
+    home.join("tasks").join(format!("{id}.json"))
+}
+
+/// Write the report atomically (temp file, then rename).
+pub fn save_report(home: &Path, r: &Report) -> Result<(), OrchError> {
+    let path = task_path(home, &r.id);
+    std::fs::create_dir_all(path.parent().expect("task path has a parent"))?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(r)?)?;
+    Ok(std::fs::rename(tmp, path)?)
+}
+
+/// Ids are checked so a crafted id cannot leave the tasks folder.
+pub fn load_report(home: &Path, id: &str) -> Result<Report, OrchError> {
+    let ok = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    let text = if ok {
+        std::fs::read_to_string(task_path(home, id)).ok()
+    } else {
+        None
+    };
+    let text = text.ok_or_else(|| OrchError::NoTask(id.into()))?;
+    Ok(serde_json::from_str(&text)?)
+}
+
+/// Every saved report, oldest first (ids start with the start time).
+pub fn list_reports(home: &Path) -> Result<Vec<Report>, OrchError> {
+    let dir = home.join("tasks");
+    let mut ids: Vec<String> = match std::fs::read_dir(&dir) {
+        Ok(rd) => rd
+            .filter_map(|e| {
+                e.ok()?
+                    .file_name()
+                    .to_str()?
+                    .strip_suffix(".json")
+                    .map(String::from)
+            })
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![],
+        Err(e) => return Err(e.into()),
+    };
+    ids.sort();
+    ids.iter().map(|id| load_report(home, id)).collect()
 }
 
 pub struct Orchestrator<'a> {
@@ -204,30 +230,12 @@ impl Orchestrator<'_> {
         self.home.join("decisions.jsonl")
     }
 
-    fn task_path(&self, id: &str) -> PathBuf {
-        self.home.join("tasks").join(format!("{id}.json"))
-    }
-
     fn save(&self, r: &Report) -> Result<(), OrchError> {
-        let path = self.task_path(&r.id);
-        std::fs::create_dir_all(path.parent().expect("task path has a parent"))?;
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(r)?)?;
-        Ok(std::fs::rename(tmp, path)?)
+        save_report(&self.home, r)
     }
 
     pub fn load(&self, id: &str) -> Result<Report, OrchError> {
-        let ok = !id.is_empty()
-            && id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-        let text = if ok {
-            std::fs::read_to_string(self.task_path(id)).ok()
-        } else {
-            None
-        };
-        let text = text.ok_or_else(|| OrchError::NoTask(id.into()))?;
-        Ok(serde_json::from_str(&text)?)
+        load_report(&self.home, id)
     }
 
     fn agent_name(r: &Report, who: &str) -> String {
@@ -301,7 +309,7 @@ impl Orchestrator<'_> {
     pub fn resume(&self, id: &str) -> Result<Report, OrchError> {
         let mut r = self.load(id)?;
         match r.status {
-            Status::Done => return Ok(r),
+            Status::Done | Status::Merged => return Ok(r),
             Status::NeedsApproval => {
                 return Err(OrchError::Invalid(format!(
                     "task {id} has not started: run it again with --approved"

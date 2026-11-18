@@ -5,8 +5,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-pub const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/herdr");
-pub const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fake-herdr.sh");
+pub const FIXTURES: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../igris-core/tests/fixtures/herdr"
+);
+pub const SCRIPT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../igris-core/tests/fake-herdr.sh"
+);
 
 pub struct FakeHerdr {
     pub dir: PathBuf,
