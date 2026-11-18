@@ -39,3 +39,102 @@ fn read_and_machine_basics() {
     assert!(h.home().is_some_and(|p| p.starts_with('/')));
     assert_eq!(h.os(), std::env::consts::OS);
 }
+
+fn serve_once(reply: &'static [u8]) -> u16 {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        if let Ok((mut s, _)) = l.accept() {
+            use std::io::{Read, Write};
+            let mut buf = [0u8; 512];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(reply);
+        }
+    });
+    port
+}
+
+#[test]
+fn http_get_returns_the_body_of_a_200() {
+    let port =
+        serve_once(b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true}");
+    assert_eq!(
+        RealHost::new().http_get(port, "/x").as_deref(),
+        Some("{\"ok\":true}")
+    );
+}
+
+#[test]
+fn http_get_is_none_for_other_statuses_and_closed_ports() {
+    let port = serve_once(b"HTTP/1.0 404 Not Found\r\n\r\nnope");
+    assert_eq!(RealHost::new().http_get(port, "/x"), None);
+    let closed = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    };
+    assert_eq!(RealHost::new().http_get(closed, "/x"), None);
+}
+
+#[test]
+fn http_get_gives_up_on_a_server_that_never_answers() {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    let _hold = std::thread::spawn(move || {
+        let _conn = l.accept();
+        std::thread::sleep(Duration::from_secs(5));
+    });
+    let t = Instant::now();
+    assert_eq!(RealHost::new().http_get(port, "/x"), None);
+    assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
+}
+
+#[test]
+fn http_get_refuses_an_oversized_body() {
+    let port = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            if let Ok((mut s, _)) = l.accept() {
+                let mut b = [0u8; 512];
+                let _ = s.read(&mut b);
+                let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\n");
+                let chunk = vec![b'a'; 64 * 1024];
+                for _ in 0..40 {
+                    if s.write_all(&chunk).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+        port
+    };
+    assert_eq!(
+        RealHost::new().http_get(port, "/x"),
+        None,
+        "over 1 MiB is not a model list"
+    );
+}
+
+#[test]
+fn http_get_gives_up_on_a_server_that_trickles_bytes() {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        if let Ok((mut s, _)) = l.accept() {
+            let mut b = [0u8; 512];
+            let _ = s.read(&mut b);
+            let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\n");
+            for _ in 0..60 {
+                if s.write_all(b"x").is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    });
+    let t = Instant::now();
+    assert_eq!(RealHost::new().http_get(port, "/x"), None);
+    assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+}

@@ -1,5 +1,6 @@
 use crate::Host;
-use std::io::Read;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -71,6 +72,43 @@ impl Host for RealHost {
     }
     fn read(&self, path: &str) -> Option<String> {
         std::fs::read_to_string(path).ok()
+    }
+    fn has_env(&self, name: &str) -> bool {
+        std::env::var_os(name).is_some_and(|v| !v.is_empty())
+    }
+    fn http_get(&self, port: u16, path: &str) -> Option<String> {
+        const WAIT: Duration = Duration::from_millis(300);
+        // A model list is small: anything bigger is not what we asked for.
+        const MAX: usize = 1 << 20;
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        let mut stream = TcpStream::connect_timeout(&addr, WAIT).ok()?;
+        stream.set_read_timeout(Some(WAIT)).ok()?;
+        stream.set_write_timeout(Some(WAIT)).ok()?;
+        let request =
+            format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+        stream.write_all(request.as_bytes()).ok()?;
+        // Read in chunks against one overall deadline, so a server that trickles bytes cannot stall us.
+        let deadline = Instant::now() + 3 * WAIT;
+        let mut raw = Vec::new();
+        let mut chunk = [0u8; 8192];
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => raw.extend_from_slice(&chunk[..n]),
+                Err(_) => return None,
+            }
+            if raw.len() > MAX || Instant::now() > deadline {
+                return None;
+            }
+        }
+        let text = String::from_utf8(raw).ok()?;
+        let (head, body) = text.split_once("\r\n\r\n")?;
+        head.lines()
+            .next()?
+            .split_whitespace()
+            .nth(1)
+            .filter(|code| *code == "200")?;
+        Some(body.to_string())
     }
     fn which(&self, name: &str) -> Option<String> {
         let path = std::env::var_os("PATH")?;

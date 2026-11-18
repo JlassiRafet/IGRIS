@@ -1,0 +1,5 @@
+model:
+  provider: openrouter
+  default: anthropic/claude-sonnet
+approvals:
+  mode: manual

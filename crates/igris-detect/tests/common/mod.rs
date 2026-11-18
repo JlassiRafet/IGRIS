@@ -20,6 +20,8 @@ pub struct FakeHost {
     commands: HashMap<String, String>,
     files: HashMap<String, String>,
     bins: Vec<String>,
+    envs: Vec<String>,
+    http: HashMap<(u16, String), String>,
 }
 
 impl FakeHost {
@@ -36,6 +38,14 @@ impl FakeHost {
     }
     pub fn bin(mut self, name: &str) -> Self {
         self.bins.push(name.into());
+        self
+    }
+    pub fn env(mut self, name: &str) -> Self {
+        self.envs.push(name.into());
+        self
+    }
+    pub fn http(mut self, port: u16, path: &str, body: &str) -> Self {
+        self.http.insert((port, path.into()), body.into());
         self
     }
     pub fn file(mut self, path: &str, body: &str) -> Self {
@@ -61,6 +71,12 @@ impl Host for FakeHost {
     }
     fn read(&self, path: &str) -> Option<String> {
         self.files.get(path).cloned()
+    }
+    fn has_env(&self, name: &str) -> bool {
+        self.envs.iter().any(|e| e == name)
+    }
+    fn http_get(&self, port: u16, path: &str) -> Option<String> {
+        self.http.get(&(port, path.to_string())).cloned()
     }
     fn which(&self, name: &str) -> Option<String> {
         self.bins
