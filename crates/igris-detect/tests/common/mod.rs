@@ -21,6 +21,7 @@ pub struct FakeHost {
     files: HashMap<String, String>,
     bins: Vec<String>,
     envs: Vec<String>,
+    stderr: HashMap<String, String>,
     http: HashMap<(u16, String), String>,
 }
 
@@ -38,6 +39,12 @@ impl FakeHost {
     }
     pub fn bin(mut self, name: &str) -> Self {
         self.bins.push(name.into());
+        self
+    }
+    /// A command that exits 0, prints nothing on stdout and `text` on stderr (as `codex login status` does).
+    pub fn cmd_stderr(mut self, line: &str, text: &str) -> Self {
+        self.commands.insert(line.into(), String::new());
+        self.stderr.insert(line.into(), text.into());
         self
     }
     pub fn env(mut self, name: &str) -> Self {
@@ -68,6 +75,14 @@ impl Host for FakeHost {
         self.commands
             .get(&format!("{cmd} {}", args.join(" ")))
             .cloned()
+    }
+    fn run_with_stderr(&self, cmd: &str, args: &[&str]) -> Option<String> {
+        let line = format!("{cmd} {}", args.join(" "));
+        let out = self.commands.get(&line)?;
+        Some(format!(
+            "{out}{}",
+            self.stderr.get(&line).map_or("", String::as_str)
+        ))
     }
     fn read(&self, path: &str) -> Option<String> {
         self.files.get(path).cloned()

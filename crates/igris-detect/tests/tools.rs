@@ -84,7 +84,7 @@ fn claude_logged_out_and_unreadable_are_different_answers() {
 
 #[test]
 fn codex_login_comes_from_login_status() {
-    let on = FakeHost::linux().bin("codex").cmd(
+    let on = FakeHost::linux().bin("codex").cmd_stderr(
         "codex login status",
         &fixture("agents/codex-login-status.txt"),
     );
@@ -93,7 +93,7 @@ fn codex_login_comes_from_login_status() {
         (a.login, a.method.as_deref()),
         (Login::LoggedIn, Some("ChatGPT"))
     );
-    let off = FakeHost::linux().bin("codex").cmd(
+    let off = FakeHost::linux().bin("codex").cmd_stderr(
         "codex login status",
         &fixture("agents/codex-login-status-out.handmade.txt"),
     );

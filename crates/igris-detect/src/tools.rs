@@ -68,7 +68,8 @@ fn claude_login(host: &dyn Host) -> (Login, Option<String>) {
 }
 
 fn codex_login(host: &dyn Host) -> (Login, Option<String>) {
-    let Some(out) = host.run("codex", &["login", "status"]) else {
+    // `codex login status` prints its answer on stderr.
+    let Some(out) = host.run_with_stderr("codex", &["login", "status"]) else {
         return (Login::Unknown, None);
     };
     if out.contains("Not logged in") {

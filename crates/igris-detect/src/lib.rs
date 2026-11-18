@@ -20,6 +20,8 @@ pub trait Host {
     fn cpu_cores(&self) -> Option<u32>;
     /// Stdout of `cmd args`, or `None` if it is missing, fails or times out.
     fn run(&self, cmd: &str, args: &[&str]) -> Option<String>;
+    /// Like `run`, but stderr is appended to stdout. For tools that print their status there.
+    fn run_with_stderr(&self, cmd: &str, args: &[&str]) -> Option<String>;
     fn read(&self, path: &str) -> Option<String>;
     /// Path of an executable on `PATH`.
     fn which(&self, name: &str) -> Option<String>;

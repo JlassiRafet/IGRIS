@@ -138,3 +138,22 @@ fn http_get_gives_up_on_a_server_that_trickles_bytes() {
     assert_eq!(RealHost::new().http_get(port, "/x"), None);
     assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
 }
+
+#[test]
+fn run_with_stderr_appends_what_a_tool_prints_on_stderr() {
+    let h = RealHost::new();
+    let args = ["-c", "echo out; echo status >&2"];
+    assert_eq!(
+        h.run("sh", &args).as_deref(),
+        Some("out\n"),
+        "run keeps stdout clean"
+    );
+    assert_eq!(
+        h.run_with_stderr("sh", &args).as_deref(),
+        Some("out\nstatus\n")
+    );
+    assert_eq!(
+        h.run_with_stderr("sh", &["-c", "echo no >&2; exit 1"]),
+        None
+    );
+}

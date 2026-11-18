@@ -139,7 +139,7 @@ fn checks(repo: &Path, config: Option<&Path>) -> Vec<Check> {
     out
 }
 
-pub fn run(repo: &Path, config: Option<&Path>) -> Out {
+pub fn run(repo: &Path, config: Option<&Path>, detect: bool) -> Out {
     let list = checks(repo, config);
     for c in &list {
         if c.ok {
@@ -149,9 +149,17 @@ pub fn run(repo: &Path, config: Option<&Path>) -> Out {
         }
     }
     let all = list.iter().all(|c| c.ok);
-    let v = json!({
+    let mut v = json!({
         "ok": all,
         "checks": list.iter().map(|c| json!({"id": c.id, "ok": c.ok, "detail": c.detail, "fix": c.fix})).collect::<Vec<_>>(),
     });
+    if detect {
+        // The snapshot sits beside `ok` and `checks`, and is printed even when a check fails:
+        // the setup app needs to see the machine before there is a config.
+        let snapshot = serde_json::to_value(igris_detect::detect(&igris_detect::RealHost::new()))?;
+        v.as_object_mut()
+            .expect("an object")
+            .extend(snapshot.as_object().cloned().expect("an object"));
+    }
     Ok((v, if all { 0 } else { 1 }))
 }

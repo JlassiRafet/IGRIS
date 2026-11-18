@@ -74,11 +74,15 @@ fn env() -> Env {
 
 impl Env {
     fn igris(&self, args: &[&str]) -> Output {
+        self.igris_with(args, &[])
+    }
+    fn igris_with(&self, args: &[&str], envs: &[(&str, &str)]) -> Output {
         let path = format!("{}:/usr/bin:/bin", self.bin.display());
         Command::new(env!("CARGO_BIN_EXE_igris"))
             .args(args)
             .env("IGRIS_HOME", &self.home)
             .env("PATH", path)
+            .envs(envs.iter().copied())
             .output()
             .unwrap()
     }
@@ -138,6 +142,69 @@ fn doctor_passes_when_everything_is_in_place() {
             .iter()
             .all(|c| c["ok"] == true)
     );
+}
+
+#[test]
+fn doctor_json_adds_the_detection_snapshot_and_never_prints_the_key() {
+    let e = env();
+    e.fake.on("agent-list", "agent-list.json");
+    let home = e.home.to_str().unwrap();
+    let o = e.igris_with(
+        &["doctor", "--json", "--repo", e.repo()],
+        &[("TYPESAFE_API_KEY", "jev-secret-123"), ("HOME", home)],
+    );
+    let v = json_of(&o);
+    assert_eq!(o.status.code(), Some(0), "{v} {}", stderr(&o));
+    assert_eq!(v["ok"], true);
+    assert_eq!(v["checks"].as_array().unwrap().len(), 7, "the checks stay");
+    for key in [
+        "machine",
+        "herdr",
+        "agents",
+        "hermes",
+        "decision",
+        "local_llm",
+    ] {
+        assert!(v.get(key).is_some(), "missing {key}: {v}");
+    }
+    assert!(v["machine"]["os"].is_string());
+    assert_eq!(v["agents"].as_array().unwrap().len(), 24);
+    let claude = v["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["kind"] == "claude")
+        .unwrap();
+    assert_eq!(
+        (&claude["found"], &claude["login"]),
+        (&json!(true), &json!("unknown"))
+    );
+    assert_eq!(v["local_llm"].as_array().unwrap().len(), 6);
+    assert_eq!(v["decision"]["jev"]["key"], true);
+    assert!(!String::from_utf8_lossy(&o.stdout).contains("jev-secret-123"));
+}
+
+#[test]
+fn doctor_json_still_reports_the_machine_when_there_is_no_config() {
+    let e = env();
+    fs::remove_file(e.repo.join("igris.toml")).unwrap();
+    let o = e.igris_with(
+        &["doctor", "--json", "--repo", e.repo()],
+        &[("HOME", e.home.to_str().unwrap())],
+    );
+    let v = json_of(&o);
+    assert_eq!(o.status.code(), Some(1), "the config check fails");
+    assert_eq!(v["ok"], false);
+    assert!(v["machine"]["os"].is_string(), "{v}");
+    assert_eq!(v["agents"].as_array().unwrap().len(), 24);
+}
+
+#[test]
+fn doctor_without_json_has_no_snapshot() {
+    let e = env();
+    e.fake.on("agent-list", "agent-list.json");
+    let v = json_of(&e.igris(&["doctor", "--repo", e.repo()]));
+    assert!(v.get("machine").is_none() && v.get("agents").is_none());
 }
 
 #[test]
