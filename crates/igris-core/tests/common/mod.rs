@@ -33,12 +33,19 @@ impl FakeHerdr {
         p
     }
 
+    /// A command has one behaviour: setting `ext` removes the other kind.
+    fn replace(&self, key: &str, ext: &str) {
+        let other = if ext == "out" { "err" } else { "out" };
+        let _ = fs::remove_file(self.dir.join(format!("{key}.{other}")));
+    }
+
     fn put(&self, key: &str, ext: &str, fixture: &str, queued: bool) {
         let body = fs::read(Path::new(FIXTURES).join(fixture)).expect("fixture");
         let target = if queued {
             let n = fs::read_dir(self.dir.join("queue")).unwrap().count();
             self.dir.join("queue").join(format!("{key}.{n:04}.{ext}"))
         } else {
+            self.replace(key, ext);
             self.dir.join(format!("{key}.{ext}"))
         };
         fs::write(target, body).unwrap();
@@ -94,12 +101,35 @@ impl FakeHerdr {
 impl FakeHerdr {
     /// Stdout (exit 0) with literal text instead of a fixture file.
     pub fn on_raw(&self, key: &str, text: &str) -> &Self {
+        self.replace(key, "out");
         fs::write(self.dir.join(format!("{key}.out")), text).unwrap();
         self
     }
     /// Stderr (exit 1) with literal text instead of a fixture file.
     pub fn fail_raw(&self, key: &str, text: &str) -> &Self {
+        self.replace(key, "err");
         fs::write(self.dir.join(format!("{key}.err")), text).unwrap();
+        self
+    }
+}
+
+impl FakeHerdr {
+    pub fn queue_raw_ok(&self, key: &str, text: &str) -> &Self {
+        let n = fs::read_dir(self.dir.join("queue")).unwrap().count();
+        fs::write(
+            self.dir.join("queue").join(format!("{key}.{n:04}.out")),
+            text,
+        )
+        .unwrap();
+        self
+    }
+    pub fn queue_raw_fail(&self, key: &str, text: &str) -> &Self {
+        let n = fs::read_dir(self.dir.join("queue")).unwrap().count();
+        fs::write(
+            self.dir.join("queue").join(format!("{key}.{n:04}.err")),
+            text,
+        )
+        .unwrap();
         self
     }
 }

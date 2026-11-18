@@ -24,7 +24,11 @@ done
 serve() { # $1 = file
   case "$1" in
     *.err) cat "$1" >&2; code=1 ;;
-    *) cat "$1"; code=0 ;;
+    *) # @TAG@ becomes the newest VERDICT-<hex> tag seen in any recorded call, so a fake reviewer
+       # can answer with the tag the code under test just generated.
+       tag=$(cat "$dir"/calls/* 2>/dev/null | tr '\0' '\n' | grep -o 'VERDICT-[0-9a-f]*' | tail -1)
+       if [ -n "$tag" ]; then sed "s/@TAG@/$tag/g" "$1"; else cat "$1"; fi
+       code=0 ;;
   esac
   [ "${2:-}" = once ] && rm -f "$1"
   exit "$code"
