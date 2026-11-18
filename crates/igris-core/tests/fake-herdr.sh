@@ -1,11 +1,12 @@
 #!/bin/sh
 # Fake `herdr` for tests. Records each call and replays recorded output.
-#   $IGRIS_FAKE_HERDR/calls/NNNNNN   one file per call, arguments separated by NUL
-#   $IGRIS_FAKE_HERDR/<key>.out      stdout, exit 0   (key = first two non-flag args joined by '-')
-#   $IGRIS_FAKE_HERDR/<key>.err      stderr, exit 1
-#   $IGRIS_FAKE_HERDR/queue/<key>.NNNN.(out|err)   served once, in order, before the plain file
+#   $dir/calls/NNNNNN   one file per call, arguments separated by NUL
+#   $dir/<key>.out      stdout, exit 0   (key = first two non-flag args joined by '-')
+#   $dir/<key>.err      stderr, exit 1
+#   $dir/queue/<key>.NNNN.(out|err)   served once, in order, before the plain file
 # No fixture for a command: message on stderr, exit 97, so a test never passes by accident.
-dir=${IGRIS_FAKE_HERDR:?IGRIS_FAKE_HERDR not set}
+# The script is copied into the fixture directory, so default to its own location.
+dir=${IGRIS_FAKE_HERDR:-$(cd "$(dirname "$0")" && pwd)}
 
 n=$(ls "$dir/calls" | wc -l | tr -d ' ')
 printf '%s\0' "$@" > "$dir/calls/$(printf '%06d' "$n")"
