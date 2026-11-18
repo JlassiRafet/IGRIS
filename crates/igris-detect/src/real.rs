@@ -72,4 +72,23 @@ impl Host for RealHost {
     fn read(&self, path: &str) -> Option<String> {
         std::fs::read_to_string(path).ok()
     }
+    fn which(&self, name: &str) -> Option<String> {
+        let path = std::env::var_os("PATH")?;
+        std::env::split_paths(&path)
+            .map(|d| d.join(name))
+            .find(|p| is_executable(p))
+            .map(|p| p.display().to_string())
+    }
+}
+
+#[cfg(unix)]
+fn is_executable(p: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    p.metadata()
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(p: &std::path::Path) -> bool {
+    p.is_file()
 }

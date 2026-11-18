@@ -172,6 +172,7 @@ dependencies = [
 name = "igris-detect"
 version = "0.0.0"
 dependencies = [
+ "igris-core",
  "serde",
  "serde_json",
 ]
