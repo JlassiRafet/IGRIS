@@ -196,3 +196,17 @@ fn remove_worktree_only_names_the_given_workspace() {
     herdr(&fake).remove_worktree("w2").unwrap();
     assert_eq!(fake.calls()[0], ["worktree", "remove", "--workspace", "w2"]);
 }
+
+#[test]
+fn wait_returns_the_settled_state() {
+    let fake = FakeHerdr::new();
+    fake.on("agent-wait", "agent-wait-ok.json");
+    assert_eq!(
+        herdr(&fake).wait("builder", 5000).unwrap(),
+        AgentState::Idle
+    );
+    assert_eq!(
+        fake.calls()[0],
+        ["agent", "wait", "builder", "--timeout", "5000"]
+    );
+}

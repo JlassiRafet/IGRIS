@@ -251,6 +251,19 @@ impl Herdr {
         ])?))
     }
 
+    /// Wait until the agent settles (idle, done or blocked), for example after the user has answered
+    /// a prompt in Herdr. Used to resume without sending the same prompt twice.
+    pub fn wait(&self, name: &str, timeout_ms: u64) -> Result<AgentState, HerdrError> {
+        let t = timeout_ms.to_string();
+        Ok(state_of(&self.call(&[
+            "agent",
+            "wait",
+            name,
+            "--timeout",
+            &t,
+        ])?))
+    }
+
     pub fn read(&self, name: &str, lines: u32) -> Result<String, HerdrError> {
         let n = lines.to_string();
         self.call_text(&[
