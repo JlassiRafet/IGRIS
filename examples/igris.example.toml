@@ -1,0 +1,28 @@
+# Copy to <your repo>/igris.toml (or ~/.config/igris/igris.toml) and set checks.command.
+# Every key below is optional except checks.command; the values shown are the defaults.
+
+[agents]
+builder = "claude"        # any agent kind Herdr supports: claude, codex, gemini, opencode, cursor, ...
+reviewer = "codex"        # a different agent than the builder catches more
+builder_args = []         # extra arguments for the builder, after `--`
+# reviewer_args = ["--sandbox", "read-only"]   # default depends on the reviewer: codex and claude are read-only
+
+[checks]
+command = "npm test"      # REQUIRED. Runs under `sh -c` in its own pane; exit code 0 means pass.
+timeout_s = 900
+
+[policy]
+base = "main"
+risky_paths = [".env*", "**/*.sql", "**/migrations/**", "**/auth/**"]
+risky_words = ["migration", "deploy", "secret", "auth", "delete", "drop"]
+max_review_rounds = 2
+max_fix_rounds = 2
+build_timeout_s = 1800
+
+[decision]
+backend = "rules"         # "jev" and "laya" arrive in a later milestone
+threshold = 0.85          # confidence at or above this acts; below it escalates
+
+[herdr]
+bin = "herdr"
+machine = ""              # a saved SSH machine label; empty means this computer
