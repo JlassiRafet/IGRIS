@@ -1,0 +1,1 @@
+{"id":"cli:pane:wait-output","result":{"matched_line":"IGRIS_EXIT=0","pane_id":"w2:p2","read":{"format":"text","pane_id":"w2:p2","revision":0,"source":"recent_unwrapped","tab_id":"w2:t1","text":"echo hello; echo IGRIS_EXIT=$?\n\nigris-fx1 igris/fx1 ❯ echo hello; echo IGRIS_EXIT=$?\nhello\nIGRIS_EXIT=0","truncated":false,"workspace_id":"w2"},"revision":0,"type":"output_matched"}}
