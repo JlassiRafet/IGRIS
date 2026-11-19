@@ -10,6 +10,8 @@ use serde_json::Value;
 pub enum Action {
     /// Read the machine: the same snapshot as `igris doctor --json`.
     Detect {},
+    /// The setup page: the same snapshot, as plain groups and sentences (`view::build`).
+    Check {},
 }
 
 pub fn parse(body: &[u8]) -> Result<Action, SetupError> {
@@ -21,6 +23,8 @@ pub fn run(action: &Action, host: &dyn Host) -> Value {
         Action::Detect {} => {
             serde_json::to_value(igris_detect::detect(host)).unwrap_or(Value::Null)
         }
+        Action::Check {} => serde_json::to_value(crate::view::build(&igris_detect::detect(host)))
+            .unwrap_or(Value::Null),
     }
 }
 
@@ -103,5 +107,18 @@ mod tests {
         ] {
             assert!(v.get(key).is_some(), "{key}");
         }
+    }
+
+    #[test]
+    fn check_parses() {
+        assert!(matches!(
+            parse(br#"{"action":"check"}"#),
+            Ok(Action::Check {})
+        ));
+    }
+
+    #[test]
+    fn check_rejects_extra_fields() {
+        assert!(parse(br#"{"action":"check","x":1}"#).is_err());
     }
 }

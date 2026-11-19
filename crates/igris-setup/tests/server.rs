@@ -229,6 +229,23 @@ fn auth_sets_the_cookie_once() {
 }
 
 #[test]
+fn check_action_returns_the_view() {
+    let (port, token, _rx) = start(LONG);
+    let cookie = login(port, &token);
+    let r = api(port, &cookie, r#"{"action":"check"}"#);
+    assert_eq!(r.status, 200, "{}", r.body);
+    let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
+    assert!(v["lead"].is_string() && v["counts"].is_object());
+    let ids: Vec<_> = v["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["machine", "build", "decision", "chat"]);
+}
+
+#[test]
 fn api_without_cookie_is_401() {
     let (port, _t, _rx) = start(LONG);
     let r = api(port, "igris_session=nope", r#"{"action":"detect"}"#);
