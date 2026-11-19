@@ -190,6 +190,7 @@ dependencies = [
  "clap",
  "igris-core",
  "igris-detect",
+ "igris-setup",
  "serde_json",
 ]
 

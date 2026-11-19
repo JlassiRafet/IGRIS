@@ -59,6 +59,15 @@ enum Cmd {
     },
     /// List tasks, or show one in full.
     Status { id: Option<String> },
+    /// Open the local setup app in your browser (127.0.0.1 only, stops when idle).
+    Setup {
+        /// Print the link without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+        /// Stop after this many seconds without a valid request.
+        #[arg(long, hide = true, default_value_t = 1800)]
+        idle_seconds: u64,
+    },
     /// Merge an approved, green task into its base branch (fast-forward only).
     Merge {
         id: String,
@@ -131,8 +140,35 @@ fn status(id: Option<&str>) -> Out {
     Ok((v, 0))
 }
 
+/// Serve the setup app. It runs for a long time, so it prints its one JSON line (the link) at
+/// start instead of at the end, and returns when the app has been idle for too long.
+fn setup(no_open: bool, idle_seconds: u64) -> Result<(), Box<dyn Error>> {
+    let app = igris_setup::App::bind(std::time::Duration::from_secs(idle_seconds))?;
+    let url = app.url();
+    println!("{}", json!({"url": url, "port": app.port()}));
+    eprintln!("open this link in your browser: {url}");
+    if !no_open {
+        let opener = if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        // Best effort: the link is already printed, so a missing opener is not an error.
+        let _ = std::process::Command::new(opener)
+            .arg(&url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+    let exit = app.run(&igris_detect::RealHost::new())?;
+    eprintln!("setup stopped: {exit:?}");
+    Ok(())
+}
+
 fn dispatch(cmd: Cmd) -> Out {
     match cmd {
+        Cmd::Setup { .. } => unreachable!("handled in main"),
         Cmd::Doctor { repo, config, json } => doctor::run(&repo, config.as_deref(), json),
         Cmd::Run {
             repo,
@@ -149,7 +185,22 @@ fn dispatch(cmd: Cmd) -> Out {
 }
 
 fn main() -> ExitCode {
-    match dispatch(Cli::parse().cmd) {
+    let cmd = Cli::parse().cmd;
+    if let Cmd::Setup {
+        no_open,
+        idle_seconds,
+    } = cmd
+    {
+        return match setup(no_open, idle_seconds) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("igris: {e}");
+                println!("{}", json!({"status": "error", "error": e.to_string()}));
+                ExitCode::from(1)
+            }
+        };
+    }
+    match dispatch(cmd) {
         Ok((v, code)) => {
             println!("{v}");
             ExitCode::from(code)
