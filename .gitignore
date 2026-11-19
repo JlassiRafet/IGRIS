@@ -5,4 +5,6 @@
 /site/dist
 /site/.astro
 /site/public/index.html
+/site/public/pipeline.css
+/site/public/pipeline.js
 .DS_Store
