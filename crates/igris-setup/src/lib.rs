@@ -5,6 +5,9 @@
 pub mod action;
 pub mod auth;
 pub mod guard;
+pub mod server;
+
+pub use server::{App, Exit};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {
