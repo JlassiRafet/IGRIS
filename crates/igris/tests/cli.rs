@@ -533,13 +533,19 @@ fn setup_prints_a_loopback_url_and_exits_when_idle() {
 
 #[test]
 fn setup_never_binds_all_interfaces() {
-    let help = Command::new(env!("CARGO_BIN_EXE_igris"))
-        .args(["setup", "--help"])
-        .output()
-        .unwrap();
-    assert!(!String::from_utf8_lossy(&help.stdout).contains("0.0.0.0"));
     let (mut child, v) = start_setup("3");
     let port = v["port"].as_u64().unwrap() as u16;
     assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_ok());
+    // This machine's own non-loopback address (a UDP connect sends no packet): it must refuse.
+    let local = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| s.connect("192.0.2.1:9").and_then(|_| s.local_addr()))
+        .map(|a| a.ip());
+    if let Some(ip) = local.ok().filter(|ip| !ip.is_loopback()) {
+        let addr = std::net::SocketAddr::new(ip, port);
+        assert!(
+            std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)).is_err(),
+            "reachable on {ip}"
+        );
+    }
     let _ = child.kill();
 }

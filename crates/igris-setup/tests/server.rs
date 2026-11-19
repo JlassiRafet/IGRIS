@@ -289,14 +289,14 @@ fn exits_when_idle() {
 }
 
 #[test]
-fn a_request_resets_the_idle_clock() {
-    let (port, _t, rx) = start(Duration::from_millis(600));
-    let h = host(port);
+fn a_logged_in_request_resets_the_idle_clock() {
+    let (port, token, rx) = start(Duration::from_millis(600));
+    let cookie = login(port, &token);
     thread::sleep(Duration::from_millis(400));
-    assert_eq!(send(port, "GET", "/", &[("Host", &h)], "").status, 200);
+    assert_eq!(api(port, &cookie, r#"{"action":"detect"}"#).status, 200);
     thread::sleep(Duration::from_millis(400));
     assert_eq!(
-        send(port, "GET", "/", &[("Host", &h)], "").status,
+        api(port, &cookie, r#"{"action":"detect"}"#).status,
         200,
         "still serving 800 ms in"
     );
@@ -305,4 +305,45 @@ fn a_request_resets_the_idle_clock() {
         .expect("exits")
         .unwrap();
     assert!(matches!(exit, Exit::Idle));
+}
+
+#[test]
+fn unauthenticated_traffic_cannot_hold_the_server_open() {
+    let (port, _t, rx) = start(Duration::from_millis(500));
+    let h = host(port);
+    let end = Instant::now() + Duration::from_secs(4);
+    let mut n = 0;
+    while Instant::now() < end {
+        if let Ok(exit) = rx.try_recv() {
+            assert!(matches!(exit.unwrap(), Exit::Idle));
+            return;
+        }
+        // A page load, a 403 and a 404, every 50 ms: none of them is a logged-in request.
+        match n % 3 {
+            0 => send(port, "GET", "/", &[("Host", &h)], ""),
+            1 => send(port, "GET", "/", &[("Host", "evil.com")], ""),
+            _ => send(port, "GET", "/nope", &[("Host", &h)], ""),
+        };
+        n += 1;
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!("the server never went idle under unauthenticated traffic");
+}
+
+#[test]
+fn it_listens_on_loopback_only() {
+    let app = App::bind(LONG).unwrap();
+    let port = app.port();
+    thread::spawn(move || app.run(&Stub));
+    // Find this machine's own non-loopback address (no packet is sent by a UDP connect).
+    let local = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| s.connect("192.0.2.1:9").and_then(|_| s.local_addr()))
+        .map(|a| a.ip());
+    match local {
+        Ok(ip) if !ip.is_loopback() => assert!(
+            TcpStream::connect_timeout(&(ip, port).into(), Duration::from_secs(1)).is_err(),
+            "reachable on {ip}: the server is not loopback-only"
+        ),
+        _ => eprintln!("no non-loopback address here; loopback-only check skipped"),
+    }
 }

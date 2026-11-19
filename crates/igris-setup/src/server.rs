@@ -7,6 +7,7 @@ use crate::guard::{ReqMeta, SESSION_COOKIE, Verdict, check};
 use igris_detect::Host;
 use serde::Deserialize;
 use std::io::Read;
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Request, Response, Server};
 
@@ -23,7 +24,7 @@ pub enum Exit {
 
 pub struct App {
     server: Server,
-    port: u16,
+    addr: SocketAddr,
     auth: Auth,
     idle: Duration,
 }
@@ -39,35 +40,37 @@ impl App {
     pub fn bind(idle: Duration) -> Result<App, SetupError> {
         let server = Server::http("127.0.0.1:0")
             .map_err(|e| SetupError::Io(std::io::Error::other(e.to_string())))?;
-        let port = server
+        let addr = server
             .server_addr()
             .to_ip()
-            .map(|a| a.port())
-            .ok_or_else(|| SetupError::Io(std::io::Error::other("no loopback address")))?;
+            .filter(|a| a.ip().is_loopback())
+            .ok_or_else(|| SetupError::Io(std::io::Error::other("not a loopback address")))?;
         Ok(App {
             server,
-            port,
+            addr,
             auth: Auth::new(Instant::now())?,
             idle,
         })
     }
 
     pub fn port(&self) -> u16 {
-        self.port
+        self.addr.port()
     }
 
     /// The link to open: the token sits in the fragment, which browsers never send to a server.
     pub fn url(&self) -> String {
-        format!("http://127.0.0.1:{}/#t={}", self.port, self.auth.token())
+        format!("http://{}/#t={}", self.addr, self.auth.token())
     }
 
     /// Serve until idle. Requests are handled one at a time on this thread.
     pub fn run(mut self, host: &dyn Host) -> Result<Exit, SetupError> {
         loop {
-            match self.server.recv_timeout(Duration::from_millis(100))? {
-                Some(request) => self.handle(request, host),
-                None if self.auth.idle(Instant::now(), self.idle) => return Ok(Exit::Idle),
-                None => {}
+            // Checked on every pass, so steady traffic cannot hold the server open.
+            if self.auth.idle(Instant::now(), self.idle) {
+                return Ok(Exit::Idle);
+            }
+            if let Some(request) = self.server.recv_timeout(Duration::from_millis(100))? {
+                self.handle(request, host);
             }
         }
     }
@@ -83,7 +86,7 @@ impl App {
                     origins: values(&request, "Origin"),
                     cookies: values(&request, "Cookie"),
                 },
-                self.port,
+                self.addr.port(),
                 self.auth.session(),
             )
         };
@@ -92,7 +95,9 @@ impl App {
             Verdict::Unauthorized => {
                 return reply(request, 401, "text/plain", "unauthorized", None);
             }
-            Verdict::Allow => self.auth.touch(Instant::now()),
+            // `/api/` passed the cookie check, so only a logged-in request keeps the app alive.
+            Verdict::Allow if path.starts_with("/api/") => self.auth.touch(Instant::now()),
+            Verdict::Allow => {}
         }
         let get = *request.method() == Method::Get;
         match (get, path.as_str()) {
@@ -105,6 +110,7 @@ impl App {
                         .and_then(|b| self.auth.redeem(&b.token));
                     match id {
                         Some(id) => {
+                            self.auth.touch(Instant::now());
                             let cookie =
                                 format!("{SESSION_COOKIE}={id}; HttpOnly; SameSite=Strict; Path=/");
                             reply(
