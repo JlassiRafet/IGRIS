@@ -2,6 +2,7 @@
 //! browser can only trigger actions from a fixed list (`action`), and the page is reached with a
 //! one-time token that turns into a session cookie (`auth`).
 
+pub mod action;
 pub mod auth;
 pub mod guard;
 
