@@ -23,3 +23,63 @@ fn pipeline_files_are_split_out() {
         assert!(tag.contains("src="), "inline script: {tag}");
     }
 }
+
+/// Every tag in `html`, as the text between `<` and `>`.
+fn tags(html: &str) -> Vec<&str> {
+    html.match_indices('<')
+        .filter_map(|(at, _)| html[at + 1..].find('>').map(|e| &html[at + 1..at + 1 + e]))
+        .collect()
+}
+
+#[test]
+fn setup_page_has_no_inline_code() {
+    let html = ui("setup.html");
+    assert!(!html.contains("<style"), "no inline style block");
+    assert!(!html.to_lowercase().contains("javascript:"));
+    for tag in tags(&html) {
+        let mut parts = tag.split_whitespace();
+        let name = parts.next().unwrap_or("");
+        if name == "script" {
+            assert!(tag.contains("src="), "inline script: {tag}");
+        }
+        for attr in parts {
+            assert!(!attr.starts_with("style="), "inline style attribute: {tag}");
+            assert!(
+                !(attr.starts_with("on") && attr.contains('=')),
+                "inline event handler: {tag}"
+            );
+        }
+    }
+}
+
+/// The one link out: the docs. It is a link the person clicks, not something the page loads.
+const DOCS: &str = "https://jlassirafet.github.io/IGRIS/docs/";
+
+#[test]
+fn setup_files_load_nothing_external() {
+    for name in ["setup.html", "setup.css", "setup.js", "palette.js"] {
+        let text = ui(name)
+            .replace("http://www.w3.org/2000/svg", "")
+            .replace(DOCS, "");
+        assert!(!text.contains("http://"), "{name}: external http");
+        assert!(!text.contains("https://"), "{name}: external https");
+        assert!(!text.contains("@import"), "{name}: @import");
+    }
+}
+
+#[test]
+fn setup_js_never_writes_html() {
+    for name in ["setup.js", "palette.js"] {
+        let js = ui(name);
+        for bad in [
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "eval(",
+            "new Function",
+        ] {
+            assert!(!js.contains(bad), "{name} uses {bad}");
+        }
+    }
+}

@@ -19,8 +19,37 @@ pub enum Verdict {
 
 pub const SESSION_COOKIE: &str = "igris_session";
 
+/// The only paths served without the session cookie: the page, its files and the token exchange.
+/// Everything else, known or not, needs the cookie, so a route added later is closed by default.
+const PUBLIC: [&str; 6] = [
+    "/",
+    "/auth",
+    "/setup.css",
+    "/setup.js",
+    "/palette.js",
+    "/favicon.svg",
+];
+
+pub fn is_public(path: &str) -> bool {
+    PUBLIC.contains(&path)
+}
+
+/// The path of a request target: drops a query, and the `scheme://authority` of an absolute-form
+/// target (`POST http://host/api/x`), which would otherwise slip past a prefix check.
+pub fn normalize_path(target: &str) -> &str {
+    let t = target.split('?').next().unwrap_or("");
+    if t.starts_with('/') {
+        return t;
+    }
+    match t.split_once("://") {
+        Some((_, rest)) => rest.find('/').map_or("/", |i| &rest[i..]),
+        None => t,
+    }
+}
+
 /// Judge a request. Order matters: Host, then method, then Origin (POST), then the cookie
-/// (`/api/`), so a bad Host is always `Forbidden` whatever else the request carries.
+/// (everything but the public paths), so a bad Host is always `Forbidden` whatever else the
+/// request carries.
 pub fn check(req: &ReqMeta, port: u16, session: Option<&str>) -> Verdict {
     let [host] = req.hosts[..] else {
         return Verdict::Forbidden;
@@ -48,7 +77,7 @@ pub fn check(req: &ReqMeta, port: u16, session: Option<&str>) -> Verdict {
         }
         _ => return Verdict::Forbidden,
     }
-    if req.path.starts_with("/api/") && !has_session(&req.cookies, session) {
+    if !is_public(normalize_path(req.path)) && !has_session(&req.cookies, session) {
         return Verdict::Unauthorized;
     }
     Verdict::Allow
@@ -62,7 +91,7 @@ fn has_session(cookies: &[&str], session: Option<&str>) -> bool {
     cookie
         .split(';')
         .filter_map(|p| p.trim().split_once('='))
-        .any(|(k, v)| k == SESSION_COOKIE && v == session)
+        .any(|(k, v)| k == SESSION_COOKIE && crate::auth::ct_eq(v.as_bytes(), session.as_bytes()))
 }
 
 #[cfg(test)]
@@ -221,5 +250,78 @@ mod tests {
             Some("igris_session=abc"),
         );
         assert_eq!(check(&r, PORT, Some("abc")), Verdict::Forbidden);
+    }
+
+    #[test]
+    fn unknown_paths_need_the_cookie() {
+        let get = |cookie| {
+            check(
+                &req("GET", "/secret", Some("127.0.0.1:8421"), None, cookie),
+                PORT,
+                Some("abc"),
+            )
+        };
+        assert_eq!(get(None), Verdict::Unauthorized);
+        assert_eq!(get(Some("igris_session=zzz")), Verdict::Unauthorized);
+        assert_eq!(get(Some("igris_session=abc")), Verdict::Allow);
+    }
+
+    #[test]
+    fn the_page_and_its_files_are_public() {
+        let h = Some("127.0.0.1:8421");
+        for path in [
+            "/",
+            "/setup.css",
+            "/setup.js",
+            "/palette.js",
+            "/favicon.svg",
+        ] {
+            assert_eq!(
+                check(&req("GET", path, h, None, None), PORT, None),
+                Verdict::Allow,
+                "{path}"
+            );
+        }
+        let o = Some("http://127.0.0.1:8421");
+        assert_eq!(
+            check(&req("POST", "/auth", h, o, None), PORT, None),
+            Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn absolute_form_targets_cannot_skip_the_cookie() {
+        let h = Some("127.0.0.1:8421");
+        let o = Some("http://127.0.0.1:8421");
+        let api = "http://127.0.0.1:8421/api/action";
+        assert_eq!(
+            check(&req("POST", api, h, o, None), PORT, Some("abc")),
+            Verdict::Unauthorized
+        );
+        assert_eq!(
+            check(
+                &req("POST", api, h, o, Some("igris_session=abc")),
+                PORT,
+                Some("abc")
+            ),
+            Verdict::Allow
+        );
+        let page = "http://127.0.0.1:8421/";
+        assert_eq!(
+            check(&req("GET", page, h, None, None), PORT, None),
+            Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn normalize_path_strips_scheme_authority_and_query() {
+        assert_eq!(normalize_path("/"), "/");
+        assert_eq!(normalize_path("/setup.css?x=1"), "/setup.css");
+        assert_eq!(
+            normalize_path("http://127.0.0.1:8421/api/action"),
+            "/api/action"
+        );
+        assert_eq!(normalize_path("http://127.0.0.1:8421"), "/");
+        assert_eq!(normalize_path("/a://b"), "/a://b");
     }
 }

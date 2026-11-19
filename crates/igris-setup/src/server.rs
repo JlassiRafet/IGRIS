@@ -3,7 +3,7 @@
 use crate::SetupError;
 use crate::action;
 use crate::auth::Auth;
-use crate::guard::{ReqMeta, SESSION_COOKIE, Verdict, check};
+use crate::guard::{ReqMeta, SESSION_COOKIE, Verdict, check, is_public, normalize_path};
 use igris_detect::Host;
 use serde::Deserialize;
 use std::io::Read;
@@ -12,7 +12,12 @@ use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 const MAX_BODY: usize = 64 * 1024;
-const PAGE: &str = include_str!("page.html");
+// The page and its files, from the one shared UI folder (`ui/`, inside this crate).
+const PAGE: &str = include_str!("../ui/setup.html");
+const CSS: &str = include_str!("../ui/setup.css");
+const SETUP_JS: &str = include_str!("../ui/setup.js");
+const PALETTE_JS: &str = include_str!("../ui/palette.js");
+const FAVICON: &str = include_str!("../ui/favicon.svg");
 
 #[derive(Debug)]
 pub enum Exit {
@@ -76,7 +81,7 @@ impl App {
     }
 
     fn handle(&mut self, mut request: Request, host: &dyn Host) {
-        let path = request.url().split('?').next().unwrap_or("").to_string();
+        let path = normalize_path(request.url()).to_string();
         let verdict = {
             check(
                 &ReqMeta {
@@ -95,13 +100,33 @@ impl App {
             Verdict::Unauthorized => {
                 return reply(request, 401, "text/plain", "unauthorized", None);
             }
-            // `/api/` passed the cookie check, so only a logged-in request keeps the app alive.
-            Verdict::Allow if path.starts_with("/api/") => self.auth.touch(Instant::now()),
+            // A non-public path passed the cookie check, so only a logged-in request keeps the app alive.
+            Verdict::Allow if !is_public(&path) => self.auth.touch(Instant::now()),
             Verdict::Allow => {}
         }
         let get = *request.method() == Method::Get;
         match (get, path.as_str()) {
             (true, "/") => reply(request, 200, "text/html; charset=utf-8", PAGE, None),
+            (true, "/setup.css") => reply(request, 200, "text/css; charset=utf-8", CSS, None),
+            (true, "/setup.js") => {
+                reply(
+                    request,
+                    200,
+                    "text/javascript; charset=utf-8",
+                    SETUP_JS,
+                    None,
+                );
+            }
+            (true, "/palette.js") => {
+                reply(
+                    request,
+                    200,
+                    "text/javascript; charset=utf-8",
+                    PALETTE_JS,
+                    None,
+                );
+            }
+            (true, "/favicon.svg") => reply(request, 200, "image/svg+xml", FAVICON, None),
             (false, "/auth") => match read_body(&mut request) {
                 Err(status) => reply(request, status, "text/plain", "bad body", None),
                 Ok(body) => {
