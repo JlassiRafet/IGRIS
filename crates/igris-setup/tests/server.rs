@@ -57,6 +57,10 @@ impl Resp {
 /// Send one raw HTTP/1.1 request and parse the answer. Every response in this file is also
 /// checked: nothing may ever carry a CORS header.
 fn send(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &str) -> Resp {
+    send_bytes(port, method, path, headers, body.as_bytes())
+}
+
+fn send_bytes(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Resp {
     let mut raw = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\n");
     for (k, v) in headers {
         raw.push_str(&format!("{k}: {v}\r\n"));
@@ -65,10 +69,11 @@ fn send(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &st
         raw.push_str(&format!("Content-Length: {}\r\n", body.len()));
     }
     raw.push_str("\r\n");
-    raw.push_str(body);
+    let mut bytes = raw.into_bytes();
+    bytes.extend_from_slice(body);
     let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    s.write_all(raw.as_bytes()).unwrap();
+    s.write_all(&bytes).unwrap();
     let mut buf = Vec::new();
     s.read_to_end(&mut buf).ok();
     let text = String::from_utf8_lossy(&buf).to_string();
@@ -256,6 +261,60 @@ fn bad_bodies_get_400_or_413() {
     assert_eq!(api(port, &cookie, "not json").status, 400);
     assert_eq!(api(port, &cookie, r#"{"action":"rm"}"#).status, 400);
     assert_eq!(api(port, &cookie, &"a".repeat(65_537)).status, 413);
+}
+
+#[test]
+fn api_with_a_wrong_cookie_is_401() {
+    let (port, token, _rx) = start(LONG);
+    login(port, &token);
+    let r = api(port, "igris_session=nope", r#"{"action":"detect"}"#);
+    assert_eq!(r.status, 401, "a session exists, but this is not it");
+}
+
+#[test]
+fn unknown_path_without_cookie_is_401() {
+    let (port, _t, _rx) = start(LONG);
+    let h = host(port);
+    let r = send(port, "GET", "/nope", &[("Host", &h)], "");
+    assert_eq!(r.status, 401);
+}
+
+#[test]
+fn absolute_form_target_without_cookie_is_401() {
+    let (port, _t, _rx) = start(LONG);
+    let (h, o) = (host(port), origin(port));
+    let target = format!("http://127.0.0.1:{port}/api/action");
+    let r = send(
+        port,
+        "POST",
+        &target,
+        &[("Host", &h), ("Origin", &o)],
+        r#"{"action":"detect"}"#,
+    );
+    assert_eq!(r.status, 401);
+}
+
+#[test]
+fn duplicate_host_header_is_403() {
+    let (port, _t, _rx) = start(LONG);
+    let h = host(port);
+    let r = send(port, "GET", "/", &[("Host", &h), ("Host", &h)], "");
+    assert_eq!(r.status, 403);
+}
+
+#[test]
+fn non_utf8_body_is_400() {
+    let (port, token, _rx) = start(LONG);
+    let cookie = login(port, &token);
+    let (h, o) = (host(port), origin(port));
+    let r = send_bytes(
+        port,
+        "POST",
+        "/api/action",
+        &[("Host", &h), ("Origin", &o), ("Cookie", &cookie)],
+        &[0xff, 0xfe],
+    );
+    assert_eq!(r.status, 400);
 }
 
 #[test]

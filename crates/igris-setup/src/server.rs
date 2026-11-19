@@ -3,7 +3,7 @@
 use crate::SetupError;
 use crate::action;
 use crate::auth::Auth;
-use crate::guard::{ReqMeta, SESSION_COOKIE, Verdict, check};
+use crate::guard::{ReqMeta, SESSION_COOKIE, Verdict, check, is_public, normalize_path};
 use igris_detect::Host;
 use serde::Deserialize;
 use std::io::Read;
@@ -76,7 +76,7 @@ impl App {
     }
 
     fn handle(&mut self, mut request: Request, host: &dyn Host) {
-        let path = request.url().split('?').next().unwrap_or("").to_string();
+        let path = normalize_path(request.url()).to_string();
         let verdict = {
             check(
                 &ReqMeta {
@@ -95,8 +95,8 @@ impl App {
             Verdict::Unauthorized => {
                 return reply(request, 401, "text/plain", "unauthorized", None);
             }
-            // `/api/` passed the cookie check, so only a logged-in request keeps the app alive.
-            Verdict::Allow if path.starts_with("/api/") => self.auth.touch(Instant::now()),
+            // A non-public path passed the cookie check, so only a logged-in request keeps the app alive.
+            Verdict::Allow if !is_public(&path) => self.auth.touch(Instant::now()),
             Verdict::Allow => {}
         }
         let get = *request.method() == Method::Get;
