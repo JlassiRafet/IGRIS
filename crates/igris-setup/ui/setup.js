@@ -304,8 +304,9 @@ function runAt(n) {
   a.run();
 }
 
-function openPalette() {
-  opener = document.activeElement;
+/** `from` is the control that was clicked: Safari and macOS Firefox do not focus a button on click. */
+function openPalette(from) {
+  opener = from ?? document.activeElement;
   scrim.classList.add('on');
   input.value = '';
   current = 0;
@@ -315,10 +316,11 @@ function openPalette() {
 
 function closePalette() {
   scrim.classList.remove('on');
-  if (opener && opener.focus) opener.focus();
+  input.blur();
+  if (opener && opener !== document.body && opener.focus) opener.focus();
 }
 
-$('qa').addEventListener('click', openPalette);
+$('qa').addEventListener('click', (e) => openPalette(e.currentTarget));
 scrim.addEventListener('mousedown', (e) => {
   if (e.target === scrim) closePalette();
 });

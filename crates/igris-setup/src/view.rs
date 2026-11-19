@@ -253,6 +253,16 @@ fn build_group(s: &Snapshot) -> (Group, Option<&'static str>) {
         ));
     }
 
+    // Found agents, but none logged in, and no row says what to do: add the step the lead talks about.
+    let agent_needs_step = rows.iter().skip(1).any(|r| r.status == Status::NeedsStep);
+    if !found.is_empty() && !found.iter().any(|a| a.login == Login::LoggedIn) && !agent_needs_step {
+        rows.push(row(
+            "Coding agent",
+            "No coding agent is logged in. Log in to Claude Code or Codex.",
+            Status::NeedsStep,
+        ));
+    }
+
     let blocker = if !s.herdr.found {
         Some("Herdr is missing.")
     } else if !s.herdr.ok {
@@ -778,5 +788,53 @@ mod tests {
             json.contains("<img src=x onerror=alert(1)>"),
             "kept as plain text for textContent"
         );
+    }
+
+    /// A lead that says "not ready" must come with a row to act on and a count to match.
+    fn assert_login_step(s: &Snapshot) {
+        let v = build(s);
+        assert!(
+            v.lead
+                .starts_with("Not ready to run tasks yet. No coding agent is logged in."),
+            "{}",
+            v.lead
+        );
+        let g = group(&v, "build");
+        assert!(g.open && g.status == Status::NeedsStep);
+        let r = row(g, "Coding agent");
+        assert_eq!(r.status, Status::NeedsStep);
+        assert_eq!(
+            r.detail,
+            "No coding agent is logged in. Log in to Claude Code or Codex."
+        );
+        assert_eq!(v.counts.needs_step, 2, "this step and Hermes");
+    }
+
+    #[test]
+    fn found_but_not_logged_in_needs_a_step() {
+        // Only `pi`, whose login can never be read.
+        let mut s = real();
+        for a in &mut s.agents {
+            a.found = a.kind == "pi";
+        }
+        assert_login_step(&s);
+        // Claude Code found, but its login state could not be read.
+        let mut s = real();
+        for a in &mut s.agents {
+            a.found = a.kind == "claude";
+        }
+        s.agents[1].login = Login::Unknown;
+        assert_login_step(&s);
+    }
+
+    #[test]
+    fn a_logged_out_agent_is_not_listed_twice() {
+        let mut s = real();
+        s.agents[1] = agent("claude", true, Login::LoggedOut, None);
+        s.agents[2] = agent("codex", false, Login::Unknown, None);
+        let v = build(&s);
+        let g = group(&v, "build");
+        assert!(g.rows.iter().all(|r| r.name != "Coding agent"));
+        assert_eq!(row(g, "Claude Code").status, Status::NeedsStep);
     }
 }
