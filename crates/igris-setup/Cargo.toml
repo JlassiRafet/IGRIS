@@ -1,0 +1,18 @@
+[package]
+name = "igris-setup"
+description = "IGRIS local setup app: a loopback-only server with a fixed action list behind `igris setup`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+getrandom = "=0.4.3"
+igris-detect = { version = "0.0.0", path = "../igris-detect" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
+tiny_http = { version = "=0.12.0", default-features = false }
