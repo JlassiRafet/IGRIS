@@ -246,6 +246,33 @@ fn check_action_returns_the_view() {
 }
 
 #[test]
+fn setup_files_are_public_with_the_right_types() {
+    let (port, _t, _rx) = start(LONG);
+    let h = host(port);
+    for (path, ctype) in [
+        ("/setup.css", "text/css; charset=utf-8"),
+        ("/setup.js", "text/javascript; charset=utf-8"),
+        ("/palette.js", "text/javascript; charset=utf-8"),
+        ("/favicon.svg", "image/svg+xml"),
+    ] {
+        let r = send(port, "GET", path, &[("Host", &h)], "");
+        assert_eq!(r.status, 200, "{path}");
+        assert_eq!(r.header("content-type"), Some(ctype), "{path}");
+        assert!(!r.body.is_empty(), "{path}");
+    }
+}
+
+#[test]
+fn root_serves_the_setup_page() {
+    let (port, _t, _rx) = start(LONG);
+    let h = host(port);
+    let r = send(port, "GET", "/", &[("Host", &h)], "");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("<title>IGRIS setup"));
+    assert!(r.body.contains(r#"id="groups""#));
+}
+
+#[test]
 fn api_without_cookie_is_401() {
     let (port, _t, _rx) = start(LONG);
     let r = api(port, "igris_session=nope", r#"{"action":"detect"}"#);

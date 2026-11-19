@@ -12,7 +12,12 @@ use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 const MAX_BODY: usize = 64 * 1024;
-const PAGE: &str = include_str!("page.html");
+// The page and its files, from the one shared UI folder (`ui/`, inside this crate).
+const PAGE: &str = include_str!("../ui/setup.html");
+const CSS: &str = include_str!("../ui/setup.css");
+const SETUP_JS: &str = include_str!("../ui/setup.js");
+const PALETTE_JS: &str = include_str!("../ui/palette.js");
+const FAVICON: &str = include_str!("../ui/favicon.svg");
 
 #[derive(Debug)]
 pub enum Exit {
@@ -102,6 +107,26 @@ impl App {
         let get = *request.method() == Method::Get;
         match (get, path.as_str()) {
             (true, "/") => reply(request, 200, "text/html; charset=utf-8", PAGE, None),
+            (true, "/setup.css") => reply(request, 200, "text/css; charset=utf-8", CSS, None),
+            (true, "/setup.js") => {
+                reply(
+                    request,
+                    200,
+                    "text/javascript; charset=utf-8",
+                    SETUP_JS,
+                    None,
+                );
+            }
+            (true, "/palette.js") => {
+                reply(
+                    request,
+                    200,
+                    "text/javascript; charset=utf-8",
+                    PALETTE_JS,
+                    None,
+                );
+            }
+            (true, "/favicon.svg") => reply(request, 200, "image/svg+xml", FAVICON, None),
             (false, "/auth") => match read_body(&mut request) {
                 Err(status) => reply(request, status, "text/plain", "bad body", None),
                 Ok(body) => {

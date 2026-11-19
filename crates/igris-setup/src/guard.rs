@@ -21,7 +21,14 @@ pub const SESSION_COOKIE: &str = "igris_session";
 
 /// The only paths served without the session cookie: the page, its files and the token exchange.
 /// Everything else, known or not, needs the cookie, so a route added later is closed by default.
-const PUBLIC: [&str; 5] = ["/", "/auth", "/setup.css", "/setup.js", "/palette.js"];
+const PUBLIC: [&str; 6] = [
+    "/",
+    "/auth",
+    "/setup.css",
+    "/setup.js",
+    "/palette.js",
+    "/favicon.svg",
+];
 
 pub fn is_public(path: &str) -> bool {
     PUBLIC.contains(&path)
@@ -262,7 +269,13 @@ mod tests {
     #[test]
     fn the_page_and_its_files_are_public() {
         let h = Some("127.0.0.1:8421");
-        for path in ["/", "/setup.css", "/setup.js", "/palette.js"] {
+        for path in [
+            "/",
+            "/setup.css",
+            "/setup.js",
+            "/palette.js",
+            "/favicon.svg",
+        ] {
             assert_eq!(
                 check(&req("GET", path, h, None, None), PORT, None),
                 Verdict::Allow,
