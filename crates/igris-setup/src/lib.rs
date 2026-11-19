@@ -6,6 +6,7 @@ pub mod action;
 pub mod auth;
 pub mod guard;
 pub mod server;
+pub mod view;
 
 pub use server::{App, Exit};
 
