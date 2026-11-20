@@ -4,8 +4,7 @@
 /site/node_modules
 /site/dist
 /site/.astro
-/site/public/index.html
-/site/public/pipeline.css
-/site/public/pipeline.js
+/site/public/pipeline/
 /site/public/favicon.svg
+/site/public/logo.svg
 .DS_Store

@@ -9,6 +9,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'IGRIS',
+			customCss: ['./src/styles/docs.css'],
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/JlassiRafet/IGRIS' }],
 			sidebar: [{ label: 'Docs', items: [{ label: 'Overview', slug: 'docs' }] }],
 		}),

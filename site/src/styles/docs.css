@@ -1,0 +1,18 @@
+/* Hallmark · shape: Starlight docs theme · genre: modern-minimal · theme: custom (by request) · job: try · idea: "The docs wear the same red and type as the Home page." · vibe: "plain, readable, same family"
+ * paper: Starlight's own · accent: oklch(0.52 0.22 25) · display: Inter · body: Inter · hero: none · nav: Starlight · footer: Starlight · imagery: none · signature: none, the Home page carries it
+ * axes: starlight/Inter/red · posture: docs · contrast: pass · fold: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P3 H3 E3 S3 R4 V3 · weakest: S, a docs theme has no signature of its own by design. */
+@import "./fonts.css";
+
+:root{
+  --sl-font:"Inter","Helvetica Neue",Arial,"Noto Sans",sans-serif;
+  --sl-font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sl-color-accent-low:#3a0a10;
+  --sl-color-accent:#d00018;
+  --sl-color-accent-high:#ff6a70;
+}
+:root[data-theme="light"]{
+  --sl-color-accent-low:#fde7ea;
+  --sl-color-accent:#d00018;
+  --sl-color-accent-high:#8f0014;
+}
