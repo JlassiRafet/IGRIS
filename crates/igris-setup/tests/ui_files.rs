@@ -83,3 +83,19 @@ fn setup_js_never_writes_html() {
         }
     }
 }
+
+/// The app's favicon is a copy of the logo's favicon. A copy can drift, so this pins it. (Skipped
+/// when the repository's `assets/` folder is absent, as in a packaged crate.)
+#[test]
+fn favicon_matches_the_logo_asset() {
+    let asset = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/logo/favicon/IGRIS_favicon.svg");
+    let Ok(want) = fs::read_to_string(&asset) else {
+        return;
+    };
+    assert_eq!(
+        ui("favicon.svg"),
+        want,
+        "copy assets/logo/favicon/IGRIS_favicon.svg to ui/favicon.svg"
+    );
+}
