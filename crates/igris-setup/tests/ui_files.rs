@@ -115,3 +115,27 @@ fn fonts_ship_with_their_licence() {
         assert_eq!(&bytes[..4], b"wOF2", "{name}");
     }
 }
+
+#[test]
+fn setup_css_colours_live_in_root() {
+    let css = ui("setup.css");
+    let start = css.find(":root").expect(":root block");
+    let end = start + css[start..].find('}').expect("end of :root") + 1;
+    let outside = format!("{}{}", &css[..start], &css[end..]);
+    for bad in ["rgb(", "rgba(", "hsl(", "hsla("] {
+        assert!(!outside.contains(bad), "colour literal {bad} outside :root");
+    }
+    let bytes = outside.as_bytes();
+    for (i, _) in outside.match_indices('#') {
+        let hex = bytes[i + 1..]
+            .iter()
+            .take_while(|b| b.is_ascii_hexdigit())
+            .count();
+        let next = bytes.get(i + 1 + hex).copied().unwrap_or(b' ');
+        assert!(
+            !(3..=8).contains(&hex) || next.is_ascii_alphanumeric(),
+            "hex colour outside :root near {:?}",
+            &outside[i..(i + 9).min(outside.len())]
+        );
+    }
+}
