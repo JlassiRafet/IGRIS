@@ -21,13 +21,15 @@ pub const SESSION_COOKIE: &str = "igris_session";
 
 /// The only paths served without the session cookie: the page, its files and the token exchange.
 /// Everything else, known or not, needs the cookie, so a route added later is closed by default.
-const PUBLIC: [&str; 6] = [
+const PUBLIC: [&str; 8] = [
     "/",
     "/auth",
     "/setup.css",
     "/setup.js",
     "/palette.js",
     "/favicon.svg",
+    "/fonts/JetBrainsMono-Regular.woff2",
+    "/fonts/JetBrainsMono-SemiBold.woff2",
 ];
 
 pub fn is_public(path: &str) -> bool {
@@ -323,5 +325,26 @@ mod tests {
         );
         assert_eq!(normalize_path("http://127.0.0.1:8421"), "/");
         assert_eq!(normalize_path("/a://b"), "/a://b");
+    }
+
+    #[test]
+    fn the_font_files_are_public() {
+        let h = Some("127.0.0.1:8421");
+        for path in [
+            "/fonts/JetBrainsMono-Regular.woff2",
+            "/fonts/JetBrainsMono-SemiBold.woff2",
+        ] {
+            assert_eq!(
+                check(&req("GET", path, h, None, None), PORT, None),
+                Verdict::Allow,
+                "{path}"
+            );
+        }
+        let other = check(&req("GET", "/fonts/other.woff2", h, None, None), PORT, None);
+        assert_eq!(
+            other,
+            Verdict::Unauthorized,
+            "only the two shipped files are public"
+        );
     }
 }

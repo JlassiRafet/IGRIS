@@ -99,3 +99,19 @@ fn favicon_matches_the_logo_asset() {
         "copy assets/logo/favicon/IGRIS_favicon.svg to ui/favicon.svg"
     );
 }
+
+#[test]
+fn fonts_ship_with_their_licence() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("ui")
+        .join("fonts");
+    let licence = fs::read_to_string(dir.join("OFL.txt")).expect("ui/fonts/OFL.txt");
+    assert!(licence.contains("SIL OPEN FONT LICENSE"));
+    for name in [
+        "JetBrainsMono-Regular.woff2",
+        "JetBrainsMono-SemiBold.woff2",
+    ] {
+        let bytes = fs::read(dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(&bytes[..4], b"wOF2", "{name}");
+    }
+}

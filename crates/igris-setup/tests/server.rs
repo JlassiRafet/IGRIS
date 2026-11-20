@@ -76,8 +76,22 @@ fn send_bytes(port: u16, method: &str, path: &str, headers: &[(&str, &str)], bod
     s.write_all(&bytes).unwrap();
     let mut buf = Vec::new();
     s.read_to_end(&mut buf).ok();
-    let text = String::from_utf8_lossy(&buf).to_string();
-    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+    let split = buf
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map_or(buf.len(), |i| i + 4);
+    let head = String::from_utf8_lossy(&buf[..split]).to_string();
+    let raw = &buf[split..];
+    let body_bytes = if head
+        .to_ascii_lowercase()
+        .contains("transfer-encoding: chunked")
+    {
+        dechunk(raw)
+    } else {
+        raw.to_vec()
+    };
+    let body = String::from_utf8_lossy(&body_bytes).to_string();
+    let (head, body) = (head.as_str(), body.as_str());
     let mut lines = head.lines();
     let status = lines
         .next()
@@ -99,6 +113,21 @@ fn send_bytes(port: u16, method: &str, path: &str, headers: &[(&str, &str)], bod
         headers,
         body: body.to_string(),
     }
+}
+
+/// Decode a chunked body (hex size line, data, CRLF, repeated, ending with a zero chunk).
+fn dechunk(mut raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    while let Some(eol) = raw.windows(2).position(|w| w == b"\r\n") {
+        let size =
+            usize::from_str_radix(String::from_utf8_lossy(&raw[..eol]).trim(), 16).unwrap_or(0);
+        if size == 0 || raw.len() < eol + 2 + size {
+            break;
+        }
+        out.extend_from_slice(&raw[eol + 2..eol + 2 + size]);
+        raw = &raw[(eol + 2 + size + 2).min(raw.len())..];
+    }
+    out
 }
 
 type Running = mpsc::Receiver<Result<Exit, SetupError>>;
@@ -260,6 +289,27 @@ fn setup_files_are_public_with_the_right_types() {
         assert_eq!(r.header("content-type"), Some(ctype), "{path}");
         assert!(!r.body.is_empty(), "{path}");
     }
+}
+
+#[test]
+fn font_files_are_public_with_the_right_type() {
+    let (port, _t, _rx) = start(LONG);
+    let h = host(port);
+    for name in [
+        "JetBrainsMono-Regular.woff2",
+        "JetBrainsMono-SemiBold.woff2",
+    ] {
+        let r = send(port, "GET", &format!("/fonts/{name}"), &[("Host", &h)], "");
+        assert_eq!(r.status, 200, "{name}");
+        assert_eq!(r.header("content-type"), Some("font/woff2"), "{name}");
+        assert!(
+            r.body.starts_with("wOF2"),
+            "{name} is not a woff2 file, body starts {:?}",
+            r.body.chars().take(12).collect::<String>()
+        );
+    }
+    let r = send(port, "GET", "/fonts/other.woff2", &[("Host", &h)], "");
+    assert_eq!(r.status, 401, "unknown font paths stay closed");
 }
 
 #[test]
