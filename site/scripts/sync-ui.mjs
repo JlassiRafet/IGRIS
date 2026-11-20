@@ -3,7 +3,7 @@
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const files = ['index.html', 'pipeline.css', 'pipeline.js'];
+const files = ['index.html', 'pipeline.css', 'pipeline.js', 'favicon.svg'];
 const dir = (p) => fileURLToPath(new URL(p, import.meta.url));
 mkdirSync(dir('../public/'), { recursive: true });
 for (const f of files) copyFileSync(dir(`../../crates/igris-setup/ui/${f}`), dir(`../public/${f}`));

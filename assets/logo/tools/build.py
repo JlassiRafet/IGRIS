@@ -90,16 +90,26 @@ def split_layers(rgba):
     opaque = rgba[..., 3] >= 128
     red = rgba[..., 0].astype(int)
     helmet = clean(opaque & (red < 64), 0, 60, 40)
-    shade = clean(opaque & (red >= 64) & (red < 154), 2, 200, 60)
-    # Everything opaque that is not helmet is plume. It also runs under the helmet's edge, so the
-    # helmet drawn on top leaves no hairline gap between the two.
-    plume = opaque & ~helmet
-    plume = clean(plume, 1, 200, 60)
-    strip = morph(plume, "max", 4) & morph(helmet, "max", 4)
-    plume = plume | strip
-    shade = shade & plume
-    ys, xs = np.where(helmet | plume)
-    return helmet, shade, plume, (xs.min(), ys.min(), xs.max() + 1, ys.max() + 1)
+    whole = clean(opaque & ~helmet, 1, 200, 60)  # the plume, shade included
+    shade = clean(opaque & (red >= 64) & (red < 154), 2, 200, 60) & whole
+    main = whole & ~shade
+    # The source has a thin lighter-red rim around the shade. Left as plume it shows as a one-pixel
+    # bright line along the shade's edge, so bands thinner than 5 px that hug the shade join it.
+    # (Thin plume tips elsewhere are untouched.)
+    thin = main & ~morph(morph(main, "min", 2), "max", 2)
+    rim = thin & morph(shade, "max", 3)
+    shade, main = shade | rim, main & ~rim
+    # Every visible edge must come from ONE path, or a hairline of the layer below peeks out where
+    # two independently traced outlines disagree by a fraction of a pixel. So each layer reaches
+    # only underneath the layer above it, never into a real gap or past the silhouette:
+    #   main  (bottom): reaches 3 px under the shade and 4 px under the helmet
+    #   shade (middle): reaches 3 px under the helmet
+    #   helmet (top)
+    under_main = main | (morph(main, "max", 3) & shade) | (morph(whole, "max", 4) & helmet)
+    under_shade = shade | (morph(shade, "max", 3) & helmet)
+    ys, xs = np.where(helmet | whole)
+    return dict(helmet=helmet, shade=under_shade, plume=under_main,
+                core=(helmet, shade, main), bbox=(xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
 
 
 def colours(rgba, layers):
@@ -187,13 +197,14 @@ def render(svg, png, px):
 
 def main():
     rgba = np.array(Image.open(SRC).convert("RGBA"))
-    helmet, shade, plume, bbox = split_layers(rgba)
-    original = colours(rgba, (helmet, shade, plume))
+    layers = split_layers(rgba)
+    bbox = layers["bbox"]
+    original = colours(rgba, layers["core"])
     print("original colours:", original)
 
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
-        paths = {n: trace(m, tmp, n) for n, m in (("helmet", helmet), ("shade", shade), ("plume", plume))}
+        paths = {n: trace(layers[n], tmp, n) for n in ("helmet", "shade", "plume")}
 
         out = {d: ROOT / d for d in ("svg", "png", "favicon")}
         for d in out.values():
@@ -220,7 +231,7 @@ def main():
 
         # Favicon: tighter margins and a thin dark rim so it reads on any tab colour.
         gf = dict(paths=paths, fit=fit(bbox, 256, 0.90))
-        (out["svg"] / "IGRIS_favicon.svg").write_text(
+        (out["favicon"] / "IGRIS_favicon.svg").write_text(
             doc(256, mark(gf, DARK_BG, outline=(OUTLINE, 34)), "IGRIS favicon"))
 
         for name in variants:
@@ -230,12 +241,11 @@ def main():
         frames = []
         for px in (16, 24, 32, 48, 64):
             p = tmp / f"fav_{px}.png"
-            render(out["svg"] / "IGRIS_favicon.svg", p, px)
+            render(out["favicon"] / "IGRIS_favicon.svg", p, px)
             frames.append(str(p))
         subprocess.run(["magick", *frames, str(out["favicon"] / "IGRIS_favicon.ico")], check=True)
         for px in (32, 180, 512):
-            render(out["svg"] / "IGRIS_favicon.svg", out["favicon"] / f"IGRIS_favicon_{px}.png", px)
-        shutil.copy(out["svg"] / "IGRIS_favicon.svg", out["favicon"] / "IGRIS_favicon.svg")
+            render(out["favicon"] / "IGRIS_favicon.svg", out["favicon"] / f"IGRIS_favicon_{px}.png", px)
     print("done")
 
 

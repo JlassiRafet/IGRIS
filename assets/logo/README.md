@@ -5,9 +5,9 @@ A knight's helm with a red plume. Everything here is built from `source/IGRIS-lo
 | Folder | What |
 |---|---|
 | `source/` | The original artwork (raster). The only hand-made file. |
-| `svg/` | Vector files. `IGRIS_master.svg` is the dark-background full-colour mark. |
+| `svg/` | The mark as vectors. `IGRIS_master.svg` is the dark-background full-colour mark. |
 | `png/` | Exports: full colour 512/1024/2048, original and one-colour 1024, avatar 512/1024. |
-| `favicon/` | `IGRIS_favicon.svg` (source), `.ico` (16, 24, 32, 48, 64) and PNGs at 32, 180, 512. |
+| `favicon/` | `IGRIS_favicon.svg` (the one favicon source: the app and the site copy it), `.ico` (16, 24, 32, 48, 64) and PNGs at 32, 180, 512. |
 | `tools/build.py` | Rebuilds `svg/`, `png/` and `favicon/` from `source/`. |
 
 ## Which file where
