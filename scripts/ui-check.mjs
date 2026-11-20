@@ -142,6 +142,19 @@ try {
     ok('Tab reaches Quick actions, the command bar, the primary button and the group summaries', ['qa', 'cmd', 'cta'].every((x) => seen.has(x)) && [...seen].some((x) => x.startsWith('summary')), [...seen].join(' '));
     ok('every focused control shows a focus ring', bad.length === 0, bad.join(' '));
 
+    ok('every row announces its status to a screen reader', await a.ev(`[...document.querySelectorAll('.rows li')].every(li => (li.querySelector('.box .sr')?.textContent || '').trim() !== '')`));
+    // A rescan from the keyboard keeps focus on the same group.
+    await a.ev(`document.querySelector('#groups details.g > summary').focus()`);
+    const fid = await a.ev(`document.activeElement.parentElement.dataset.id`);
+    await a.key('r', 'KeyR', 82, { text: 'r' });
+    await scanned(a);
+    ok('a rescan keeps focus on the same group', (await a.ev(`document.activeElement.tagName === 'SUMMARY' && document.activeElement.parentElement.dataset.id`)) === fid, `was ${fid}`);
+    const clearance = () => a.ev(`parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom) >= document.querySelector('.dock').getBoundingClientRect().height`);
+    ok('focus scrolls clear of the dock at 1360 px', (await clearance()) === true);
+    // Forced colours (high contrast): the drawn shapes must keep their own colours.
+    await a.send('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: 'active' }] });
+    ok('forced colours: the hexagon, boxes and bar keep their shapes', await a.ev(`['.hex', '.box', '.bar i'].every(q => getComputedStyle(document.querySelector(q)).forcedColorAdjust === 'none')`));
+    await a.send('Emulation.setEmulatedMedia', { features: [] });
     // A second tab opened with the same, spent link still renders (the cookie is shared).
     const t = await a.send('Target.createTarget', { url });
     const list = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
@@ -158,6 +171,7 @@ try {
     // A narrow window: no sideways scroll, and the dock never covers the last row.
     await a.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
+    ok('focus scrolls clear of the dock at 390 px', (await clearance()) === true);
     ok('390 px: no horizontal scroll', (await a.ev(`document.documentElement.scrollWidth <= innerWidth`)) === true, await a.ev(`document.documentElement.scrollWidth + ' vs ' + innerWidth`));
     await a.ev(`window.scrollTo(0, document.documentElement.scrollHeight)`);
     await sleep(150);

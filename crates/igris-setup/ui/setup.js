@@ -20,9 +20,16 @@ function el(tag, cls, text) {
 
 const BOX = { ready: 'done', needs_step: 'cur', optional: 'opt', info: 'opt' };
 
+const LABEL = { ready: 'ready', needs_step: 'needs a step', optional: 'optional', info: 'found' };
+
 function rowEl(r, last) {
   const li = el('li', BOX[r.status] ?? 'opt');
-  li.append(el('span', 'tree', last ? '└' : '├'), el('span', 'box'), el('span', 'name2', r.name), el('span', 'det', r.detail));
+  const tree = el('span', 'tree', last ? '└' : '├');
+  tree.setAttribute('aria-hidden', 'true');
+  const box = el('span', 'box');
+  // The drawn box carries the status for screen readers too.
+  box.append(el('span', 'sr', LABEL[r.status] ?? ''));
+  li.append(tree, box, el('span', 'name2', r.name), el('span', 'det', r.detail));
   return li;
 }
 
@@ -190,7 +197,10 @@ async function scan() {
     } catch {
       return fail('The setup app sent an answer this page cannot read. Run igris setup again.');
     }
+    // A rebuild replaces the focused group, so remember it and focus its new summary.
+    const keep = document.activeElement?.closest?.('details.g')?.dataset.id;
     draw(view);
+    if (keep) document.querySelector(`#groups details.g[data-id="${CSS.escape(keep)}"] > summary`)?.focus();
     barDone(`scanned ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
     defaultHints();
   } finally {

@@ -139,3 +139,59 @@ fn setup_css_colours_live_in_root() {
         );
     }
 }
+
+/// Relative luminance of `#rrggbb` (WCAG 2).
+fn luminance(hex: &str) -> f64 {
+    let c = |i: usize| {
+        let v = f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap()) / 255.0;
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * c(1) + 0.7152 * c(3) + 0.0722 * c(5)
+}
+
+fn contrast(a: &str, b: &str) -> f64 {
+    let (x, y) = (luminance(a), luminance(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+fn token(css: &str, name: &str) -> String {
+    let at = css
+        .find(&format!("{name}:"))
+        .unwrap_or_else(|| panic!("token {name}"))
+        + name.len()
+        + 1;
+    css[at..at + 7].to_string()
+}
+
+#[test]
+fn setup_css_text_and_shapes_pass_contrast() {
+    let css = ui("setup.css");
+    let t = |n: &str| token(&css, n);
+    let (bg, bar) = (t("--bg"), t("--bar"));
+    for (name, min) in [
+        ("--text", 4.5),
+        ("--dim", 4.5),
+        ("--helmet", 4.5),
+        ("--accent", 4.5),
+        ("--faint", 3.0),
+    ] {
+        for surface in [&bg, &bar] {
+            let c = contrast(&t(name), surface);
+            assert!(c >= min, "{name} is {c:.2}:1 on {surface}, needs {min}");
+        }
+    }
+    assert!(
+        contrast(&t("--on-accent"), &t("--accent")) >= 4.5,
+        "text on the red fill"
+    );
+    // --faint is for shapes and the decorative tree glyph only; text uses --dim or brighter.
+    assert_eq!(
+        css.matches("color:var(--faint)").count(),
+        1,
+        "--faint as a text colour: only .tree"
+    );
+}

@@ -3,7 +3,7 @@
 :root{
   --mono:"JetBrains Mono","JetBrainsMono Nerd Font",ui-monospace,Menlo,Consolas,monospace;
   --bg:#0b1114; --bar:#0f171b; --line:#1f2a30; --line-hi:#33434b;
-  --text:#e6eaed; --dim:#7d8a92; --faint:#4a575e; --helmet:#c9ced3;
+  --text:#e6eaed; --dim:#7d8a92; --faint:#5f6c73; --helmet:#c9ced3;
   --accent:#ff3038; --accent-deep:#c9001a; --on-accent:#0b1114;
   --glow:rgba(255,48,56,.38); --accent-wash:rgba(255,48,56,.09);
   --scrim:rgba(5,8,10,.72); --shadow:#000000;
@@ -13,6 +13,8 @@
 
 *{box-sizing:border-box;min-width:0}
 html,body{margin:0;overflow-x:clip}
+/* The fixed dock covers the bottom of the window: keep keyboard focus clear of it. */
+html{scroll-padding-bottom:16rem}
 body{background:var(--bg);color:var(--text);font:15px/1.7 var(--mono);min-height:100vh}
 button,input{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
@@ -32,7 +34,7 @@ kbd.k{font-size:inherit;color:var(--helmet);border:0;padding:0}
 .tabs li{display:flex}
 .tab{display:flex;align-items:center;gap:8px;padding:0 18px;font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .tab[aria-current="page"]{color:var(--accent);border-bottom-color:var(--accent)}
-.tab[aria-disabled="true"]{color:var(--faint);cursor:not-allowed}
+.tab[aria-disabled="true"]{cursor:not-allowed}
 .spacer{flex:1}
 .qa{align-self:center;margin:0 20px;display:flex;gap:12px;align-items:center;padding:7px 12px;border:1px solid var(--line-hi);background:transparent;cursor:pointer;font-size:13px;flex:none}
 .qa:hover{border-color:var(--accent);color:var(--accent)}
@@ -67,7 +69,7 @@ details.g>summary::-webkit-details-marker{display:none}
 .name2{color:var(--helmet);overflow-wrap:anywhere}
 .det{color:var(--dim);overflow-wrap:anywhere}
 /* Boxes are drawn, not typed: the font has no checkbox glyphs. */
-.box{display:inline-block;width:1ch;height:1ch;margin-top:.5em;border:1px solid var(--faint)}
+.box{position:relative;display:inline-block;width:1ch;height:1ch;margin-top:.5em;border:1px solid var(--faint)}
 .done .box{background:linear-gradient(45deg,transparent 44%,var(--faint) 44% 56%,transparent 56%),linear-gradient(-45deg,transparent 44%,var(--faint) 44% 56%,transparent 56%)}
 .cur .box{border-color:var(--accent);background:linear-gradient(135deg,var(--accent) 50%,transparent 50%)}
 .cur .name2{color:var(--text);font-weight:600}
@@ -102,8 +104,8 @@ details.g>summary::-webkit-details-marker{display:none}
 .pgrp{padding:8px 16px 2px;font-size:12px;letter-spacing:.09em;color:var(--dim);text-transform:uppercase}
 .opt-i{display:flex;gap:1.2ch;padding:4px 16px;cursor:pointer;border-left:2px solid transparent}
 .opt-i[aria-selected="true"]{background:var(--accent-wash);border-left-color:var(--accent);color:var(--accent)}
-.opt-i[aria-disabled="true"]{color:var(--faint);cursor:not-allowed}
-.opt-i .tag{margin-left:auto;color:var(--faint);font-size:12.5px}
+.opt-i[aria-disabled="true"]{cursor:not-allowed}
+.opt-i .tag{margin-left:auto;font-size:12.5px}
 .empty{padding:12px 16px;color:var(--dim)}
 .pft{padding:8px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim)}
 
@@ -116,4 +118,12 @@ details.g>summary::-webkit-details-marker{display:none}
   .id{padding-right:16px}
 }
 @media (prefers-reduced-motion:reduce){.caret{animation:none}*{transition:none!important}}
-@media (forced-colors:active){.hex,.box{border:1px solid CanvasText}}
+/* High contrast: the browser repaints backgrounds, which would erase the drawn shapes. */
+@media (forced-colors:active){
+  .hex,.box,.bar i{forced-color-adjust:none}
+  .hex{background:GrayText} .hex.on{background:Highlight;filter:none}
+  .box{border:1px solid CanvasText;background:none}
+  .done .box{background:linear-gradient(45deg,transparent 44%,CanvasText 44% 56%,transparent 56%),linear-gradient(-45deg,transparent 44%,CanvasText 44% 56%,transparent 56%)}
+  .cur .box{border-color:Highlight;background:linear-gradient(135deg,Highlight 50%,transparent 50%)}
+  .bar i{background:GrayText} .bar i.on{background:Highlight}
+}
