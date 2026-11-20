@@ -80,6 +80,24 @@ try {
   await ev(`document.getElementById('pill').focus()`);
   ok('the pill shows a focus ring from the keyboard', (await ev(`getComputedStyle(document.getElementById('pill')).outlineStyle !== 'none' || document.getElementById('pill').matches(':focus-visible')`)) === true);
 
+  // Keyboard: open with Enter, reach the list with Tab, Esc returns to the pill, Tabbing out closes.
+  const press = async (key, code, vk, text) => {
+    await send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', key, code, windowsVirtualKeyCode: vk, text });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
+  };
+  const openState = () => ev(`document.getElementById('dock').dataset.open`);
+  await ev(`document.getElementById('pill').focus()`);
+  await press('Enter', 'Enter', 13, '\r');
+  ok('Enter on the pill opens the list', (await openState()) === 'true');
+  await press('Tab', 'Tab', 9);
+  ok('Tab from the pill goes into the list', (await ev(`!!document.activeElement.closest('.menu')`)) === true);
+  await press('Escape', 'Escape', 27);
+  ok('Esc from the list returns focus to the pill and closes it', (await ev(`document.activeElement.id`)) === 'pill' && (await openState()) === 'false');
+  await press('Enter', 'Enter', 13, '\r');
+  for (let i = 0; i < 8; i++) await press('Tab', 'Tab', 9);
+  ok('tabbing out of the list closes it', (await openState()) === 'false');
+  await ev(`document.activeElement.blur()`);
+
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await ev(`document.documentElement.style.scrollBehavior = ''`);
   ok('reduced motion: no smooth scrolling', (await ev(`getComputedStyle(document.documentElement).scrollBehavior`)) === 'auto');

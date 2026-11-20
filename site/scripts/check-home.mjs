@@ -17,7 +17,9 @@ const cssDir = `${dist}_astro/`;
 const css = existsSync(cssDir) ? readdirSync(cssDir).filter((f) => f.endsWith('.css')).map((f) => readFileSync(cssDir + f, 'utf8')).join('\n') : '';
 const all = html + css;
 // Nothing may load from outside. Plain links (the GitHub link) are fine; resource loads are not.
-need(!/<(?:script|link|img|iframe|source)[^>]+(?:src|href)=["']https?:\/\//i.test(html.replace(/<a\b[^>]*>/gi, '')), 'no external script, stylesheet or image');
+const external = (page) => /<(?:script|link|img|iframe|source)[^>]+(?:src|href)=["']https?:\/\//i.test(page.replace(/<a\b[^>]*>/gi, ''));
+need(!external(html), 'no external script, stylesheet or image on the Home page');
+need(!external(readFileSync(`${dist}pipeline/index.html`, 'utf8')), 'no external script, stylesheet or font on the pipeline page');
 need(!/@import\s+url\(["']?https?:/i.test(css) && !/url\(["']?https?:/i.test(css), 'no external url() in the CSS');
 need(!/transition:\s*all/i.test(all), 'no `transition: all`');
 need(/overflow-x:\s*clip/.test(css), '`overflow-x: clip` is set');
