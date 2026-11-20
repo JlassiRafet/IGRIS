@@ -1,10 +1,12 @@
-// The Check setup page. It asks the local server for a "view" (groups, rows, plain sentences) and
-// draws it. All text goes in through textContent: nothing from the snapshot is ever parsed as HTML.
+// The Check setup page, terminal skin. It asks the local server for a "view" (groups, rows, plain
+// sentences) and draws it. All text goes in through textContent: nothing from the snapshot is ever
+// parsed as HTML.
 import { filterActions, move, isOpenKey } from './palette.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const DOCS = 'https://jlassirafet.github.io/IGRIS/docs/';
+const SEGMENTS = 24;
 const $ = (id) => document.getElementById(id);
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** An element with an optional class and plain text. */
 function el(tag, cls, text) {
@@ -14,94 +16,53 @@ function el(tag, cls, text) {
   return n;
 }
 
-/** An icon from the sprite in setup.html. `cls` adds to "i" (for example "s" for the small size). */
-function icon(id, cls = '') {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('class', `i ${cls}`.trim());
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS(SVG_NS, 'use');
-  use.setAttribute('href', `#i-${id}`);
-  svg.append(use);
-  return svg;
-}
+// ---------- drawing the view ----------
 
-const STATUS = {
-  ready: { label: 'Ready', icon: 'tick', cls: 'ok', dot: 'check' },
-  needs_step: { label: 'Needs a step', icon: 'alert', cls: 'warn', dot: 'alert' },
-  optional: { label: 'Optional', icon: 'dash', cls: 'opt', dot: 'dash' },
-  info: { label: '', icon: 'dash', cls: 'opt', dot: 'dash' },
-};
-const GROUP_ICON = { machine: 'cpu', build: 'term', decision: 'split', chat: 'chat' };
+const BOX = { ready: 'done', needs_step: 'cur', optional: 'opt', info: 'opt' };
 
-function pill(status) {
-  const s = STATUS[status];
-  if (!s || !s.label) return null;
-  const p = el('span', `pill ${s.cls}`);
-  p.append(icon(s.icon), document.createTextNode(s.label));
-  return p;
-}
+const LABEL = { ready: 'ready', needs_step: 'needs a step', optional: 'optional', info: 'found' };
 
-function rowEl(r) {
-  const s = STATUS[r.status] ?? STATUS.info;
-  const li = el('li', 'row');
-  const dot = el('span', `dot ${s.cls}`);
-  dot.append(icon(s.dot, 's'));
-  const meta = el('span', 'meta');
-  meta.append(el('b', '', r.name), el('span', 'sub', r.detail));
-  li.append(dot, meta);
-  const p = pill(r.status);
-  if (p) li.append(p);
+function rowEl(r, last) {
+  const li = el('li', BOX[r.status] ?? 'opt');
+  const tree = el('span', 'tree', last ? '└' : '├');
+  tree.setAttribute('aria-hidden', 'true');
+  const box = el('span', 'box');
+  // The drawn box carries the status for screen readers too.
+  box.append(el('span', 'sr', LABEL[r.status] ?? ''));
+  li.append(tree, box, el('span', 'name2', r.name), el('span', 'det', r.detail));
   return li;
 }
 
-function rowsEl(rows) {
-  const ul = el('ul', 'rows');
-  for (const r of rows) ul.append(rowEl(r));
-  return ul;
+/** The folded part of a group (more agents, the ports checked) as one last row. */
+function moreRow(m) {
+  const names = m.rows.map((r) => r.name).join(', ');
+  const note = m.rows.length ? ` (${m.rows[0].detail.toLowerCase()})` : '';
+  return { name: m.title, detail: names ? names + note : m.chips.join(', '), status: 'optional' };
+}
+
+function stateText(g) {
+  const live = g.rows.filter((r) => r.status !== 'info');
+  const ready = live.filter((r) => r.status === 'ready').length;
+  const need = live.filter((r) => r.status === 'needs_step').length;
+  if (need) return need === 1 ? '1 needs a step' : `${need} need a step`;
+  if (ready && ready === live.length && live.length > 1) return `${ready} of ${live.length} ready`;
+  return ready ? 'ready' : 'optional';
 }
 
 function groupEl(g, open) {
   const d = el('details', 'g');
   d.dataset.id = g.id;
   d.open = open;
-
+  const needs = g.status === 'needs_step';
+  const hex = el('span', needs ? 'hex on' : 'hex');
+  hex.setAttribute('aria-hidden', 'true');
   const summary = el('summary');
-  const gic = el('span', 'gic');
-  gic.setAttribute('aria-hidden', 'true');
-  gic.append(icon(GROUP_ICON[g.id] ?? 'dash'));
-  const gt = el('span', 'gt');
-  gt.append(el('h2', '', g.title), el('span', 'gs', g.summary));
-  summary.append(gic, gt);
-  const p = pill(g.status);
-  if (p) summary.append(p);
-  summary.append(icon('chev', 'chev'));
-
-  const body = el('div', 'gbody');
-  if (g.facts.length) {
-    const facts = el('div', 'facts');
-    for (const f of g.facts) {
-      const fact = el('div', 'fact');
-      fact.append(el('span', '', f.label), el('b', '', f.value));
-      facts.append(fact);
-    }
-    body.append(facts);
-  }
-  if (g.hint) body.append(el('p', 'hint', g.hint));
-  if (g.rows.length) body.append(rowsEl(g.rows));
-  if (g.more) {
-    const more = el('details', 'sub2');
-    const ms = el('summary');
-    ms.append(icon('chev', 's chev'), document.createTextNode(g.more.title));
-    more.append(ms);
-    if (g.more.rows.length) more.append(rowsEl(g.more.rows));
-    if (g.more.chips.length) {
-      const chips = el('div', 'chips');
-      for (const c of g.more.chips) chips.append(el('span', 'chip', c));
-      more.append(chips);
-    }
-    body.append(more);
-  }
-  d.append(summary, body);
+  summary.append(hex, el('span', 'gname', g.title), el('span', needs ? 'state on' : 'state', stateText(g)));
+  const rows = g.rows.slice();
+  if (g.more) rows.push(moreRow(g.more));
+  const ul = el('ul', 'rows');
+  rows.forEach((r, i) => ul.append(rowEl(r, i === rows.length - 1)));
+  d.append(summary, ul);
   return d;
 }
 
@@ -120,41 +81,88 @@ $('groups').addEventListener(
   true,
 );
 
-function draw(view) {
-  $('lead').textContent = view.lead;
-  const counts = $('counts');
-  counts.replaceChildren();
+function summaryLine(view) {
   const c = view.counts;
-  const parts = [
-    ['ready', c.ready, `${c.ready} ready`],
-    ['needs_step', c.needs_step, c.needs_step === 1 ? '1 needs a step' : `${c.needs_step} need a step`],
-    ['optional', c.optional, `${c.optional} optional`],
-  ];
-  for (const [status, n, text] of parts) {
-    if (!n) continue;
-    const s = STATUS[status];
-    const p = el('span', `pill ${s.cls}`);
-    p.setAttribute('role', 'listitem');
-    p.append(icon(s.icon), document.createTextNode(text));
-    counts.append(p);
-  }
-  const groups = $('groups');
-  expected.clear();
-  const els = view.groups.map((g) => {
-    expected.set(g.id, g.open);
-    return groupEl(g, userOpen.has(g.id) ? userOpen.get(g.id) : g.open);
+  const parts = [];
+  if (c.ready) parts.push(el('span', 'val', `${c.ready} ready`));
+  if (c.needs_step) parts.push(el('span', 'val', c.needs_step === 1 ? '1 needs a step' : `${c.needs_step} need a step`));
+  if (c.optional) parts.push(document.createTextNode(`${c.optional} optional`));
+  const line = $('summary');
+  line.replaceChildren();
+  parts.forEach((p, i) => {
+    if (i) line.append(document.createTextNode(', '));
+    line.append(p);
   });
-  groups.replaceChildren(...els);
+  line.append(document.createTextNode(`. ${view.lead}`));
 }
 
-function showErr(text) {
-  const e = $('err');
-  e.textContent = text;
-  e.hidden = !text;
+function draw(view) {
+  const machine = view.groups.find((g) => g.id === 'machine');
+  const facts = $('facts');
+  facts.replaceChildren();
+  for (const f of machine ? machine.facts : []) {
+    const item = el('div');
+    item.append(el('dt', '', f.label), el('dd', '', f.value));
+    facts.append(item);
+  }
+  $('hint').textContent = machine?.hint ?? '';
+  summaryLine(view);
+  expected.clear();
+  const els = view.groups
+    .filter((g) => g.id !== 'machine')
+    .map((g) => {
+      expected.set(g.id, g.open);
+      return groupEl(g, userOpen.has(g.id) ? userOpen.get(g.id) : g.open);
+    });
+  $('groups').replaceChildren(...els);
 }
-const setStamp = (text) => {
-  $('stamp').textContent = text;
-};
+
+// ---------- the block bar and the hints line ----------
+
+const bar = $('bar');
+const segs = Array.from({ length: SEGMENTS }, () => bar.appendChild(document.createElement('i')));
+const barText = bar.appendChild(el('span', 't', ''));
+let timer = null;
+function barTo(n, text, pct) {
+  segs.forEach((s, i) => s.classList.toggle('on', i < n));
+  barText.textContent = text;
+  bar.setAttribute('aria-valuenow', String(pct));
+}
+function barStart() {
+  clearInterval(timer);
+  barTo(0, 'scanning', 0);
+  if (reduceMotion()) return;
+  let n = 0;
+  timer = setInterval(() => {
+    n = Math.min(n + 1, SEGMENTS - 4);
+    barTo(n, 'scanning', Math.round((100 * n) / SEGMENTS));
+    if (n >= SEGMENTS - 4) clearInterval(timer);
+  }, 45);
+}
+function barDone(text) {
+  clearInterval(timer);
+  barTo(SEGMENTS, text, 100);
+}
+function barFail() {
+  clearInterval(timer);
+  barTo(0, 'scan failed', 0);
+}
+
+const hints = $('hints');
+function defaultHints() {
+  hints.classList.remove('bad');
+  hints.replaceChildren(
+    el('b', '', '/'), document.createTextNode(' quick actions · '),
+    el('b', '', 'ctrl k'), document.createTextNode(' same · '),
+    el('b', '', 'r'), document.createTextNode(' scan again · 127.0.0.1 only'),
+  );
+}
+function say(text, bad = false) {
+  hints.classList.toggle('bad', bad);
+  hints.textContent = text;
+}
+
+// ---------- talking to the local server ----------
 
 async function post(path, body) {
   return fetch(path, {
@@ -164,11 +172,16 @@ async function post(path, body) {
   });
 }
 
+function fail(message) {
+  barFail();
+  say(`error: ${message}`, true);
+}
+
 let scanning = false;
 async function scan() {
   if (scanning) return;
   scanning = true;
-  setStamp('Scanning…');
+  barStart();
   try {
     let r;
     try {
@@ -184,17 +197,15 @@ async function scan() {
     } catch {
       return fail('The setup app sent an answer this page cannot read. Run igris setup again.');
     }
+    // A rebuild replaces the focused group, so remember it and focus its new summary.
+    const keep = document.activeElement?.closest?.('details.g')?.dataset.id;
     draw(view);
-    showErr('');
-    setStamp(`Scanned ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+    if (keep) document.querySelector(`#groups details.g[data-id="${CSS.escape(keep)}"] > summary`)?.focus();
+    barDone(`scanned ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+    defaultHints();
   } finally {
     scanning = false;
   }
-}
-
-function fail(message) {
-  showErr(message);
-  setStamp('Not scanned');
 }
 
 /** Trade the one-time token in the link for the session cookie, and take it out of the address bar. */
@@ -212,41 +223,19 @@ async function boot() {
   await scan();
 }
 
-// Theme: follows the system, and can be flipped for this visit. Nothing is stored: the port, and so
-// the page's storage, changes on every run.
-const root = document.documentElement;
-const isDark = () =>
-  root.dataset.theme === 'dark' || (!root.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-function paintTheme() {
-  const dark = isDark();
-  $('thl').textContent = dark ? 'Light' : 'Dark';
-  $('thi').firstElementChild.setAttribute('href', dark ? '#i-sun' : '#i-moon');
-}
-function toggleTheme() {
-  root.dataset.theme = isDark() ? 'light' : 'dark';
-  paintTheme();
-}
+// ---------- quick actions ----------
 
 const setAll = (open) => document.querySelectorAll('#groups details.g').forEach((d) => (d.open = open));
-
-// Quick actions
 const actions = [
-  { group: 'Actions', title: 'Scan again', keywords: 'refresh detect', icon: 'refresh', run: scan },
-  { group: 'Actions', title: 'Expand all sections', keywords: 'open show', icon: 'chev', run: () => setAll(true) },
-  { group: 'Actions', title: 'Collapse all sections', keywords: 'close hide fold', icon: 'chev', run: () => setAll(false) },
-  { group: 'Actions', title: 'Switch theme', keywords: 'dark light mode', icon: 'sun', run: toggleTheme },
-  {
-    group: 'Actions',
-    title: 'Open the docs',
-    keywords: 'help guide',
-    icon: 'book',
-    run: () => window.open(DOCS, '_blank', 'noopener,noreferrer'),
-  },
-  { group: 'Go to', title: 'Check setup', keywords: 'home', icon: 'scan', run: () => $('h1').focus() },
-  { group: 'Go to', title: 'Pipeline', keywords: 'configure', icon: 'route', soon: true },
-  { group: 'Go to', title: 'Keys and logins', keywords: 'secrets', icon: 'key', soon: true },
-  { group: 'Go to', title: 'Review and apply', keywords: 'install', icon: 'clip', soon: true },
-  { group: 'Go to', title: 'Test run', keywords: 'smoke doctor', icon: 'play', soon: true },
+  { group: 'Actions', title: 'Scan again', keywords: 'refresh detect', run: scan },
+  { group: 'Actions', title: 'Expand all groups', keywords: 'open show', run: () => setAll(true) },
+  { group: 'Actions', title: 'Collapse all groups', keywords: 'close hide fold', run: () => setAll(false) },
+  { group: 'Actions', title: 'Open the docs', keywords: 'help guide', run: () => window.open(DOCS, '_blank', 'noopener,noreferrer') },
+  { group: 'Go to', title: 'Check', keywords: 'home', run: () => $('main').focus() },
+  { group: 'Go to', title: 'Pipeline', keywords: 'configure', soon: true },
+  { group: 'Go to', title: 'Keys', keywords: 'secrets logins', soon: true },
+  { group: 'Go to', title: 'Review', keywords: 'install apply', soon: true },
+  { group: 'Go to', title: 'Test', keywords: 'smoke doctor run', soon: true },
 ];
 
 const scrim = $('scrim');
@@ -260,7 +249,7 @@ function renderList() {
   shown = filterActions(actions, input.value);
   list.replaceChildren();
   if (!shown.length) {
-    list.append(el('li', 'empty', 'No matching action. Try “scan” or “theme”.'));
+    list.append(el('li', 'empty', 'No matching action. Try “scan” or “expand”.'));
     input.setAttribute('aria-activedescendant', '');
     return;
   }
@@ -278,8 +267,8 @@ function renderList() {
     li.setAttribute('role', 'option');
     li.setAttribute('aria-selected', String(n === current));
     if (a.soon) li.setAttribute('aria-disabled', 'true');
-    li.append(icon(a.icon), el('span', '', a.title));
-    if (a.soon) li.append(el('span', 'tag', 'Soon'));
+    li.append(el('span', '', '▸'), el('span', '', a.title));
+    if (a.soon) li.append(el('span', 'tag', 'soon'));
     li.addEventListener('mouseenter', () => {
       current = n;
       markCurrent();
@@ -321,6 +310,7 @@ function closePalette() {
 }
 
 $('qa').addEventListener('click', (e) => openPalette(e.currentTarget));
+$('cmd').addEventListener('click', (e) => openPalette(e.currentTarget));
 scrim.addEventListener('mousedown', (e) => {
   if (e.target === scrim) closePalette();
 });
@@ -339,7 +329,13 @@ document.addEventListener('keydown', (e) => {
     else openPalette();
     return;
   }
-  if (!open) return;
+  if (!open) {
+    if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'r') {
+      e.preventDefault();
+      scan();
+    }
+    return;
+  }
   if (e.key === 'Escape') {
     e.preventDefault();
     closePalette();
@@ -355,9 +351,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-$('th').addEventListener('click', toggleTheme);
-$('scan').addEventListener('click', scan);
-$('cta').addEventListener('click', () => setStamp('The pipeline editor arrives in the next release.'));
+$('cta').addEventListener('click', () => say('The pipeline editor arrives in the next release.'));
 $('qk').textContent = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl K';
-paintTheme();
 boot();

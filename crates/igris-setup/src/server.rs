@@ -18,6 +18,8 @@ const CSS: &str = include_str!("../ui/setup.css");
 const SETUP_JS: &str = include_str!("../ui/setup.js");
 const PALETTE_JS: &str = include_str!("../ui/palette.js");
 const FAVICON: &str = include_str!("../ui/favicon.svg");
+const FONT_REGULAR: &[u8] = include_bytes!("../ui/fonts/JetBrainsMono-Regular.woff2");
+const FONT_SEMIBOLD: &[u8] = include_bytes!("../ui/fonts/JetBrainsMono-SemiBold.woff2");
 
 #[derive(Debug)]
 pub enum Exit {
@@ -127,6 +129,12 @@ impl App {
                 );
             }
             (true, "/favicon.svg") => reply(request, 200, "image/svg+xml", FAVICON, None),
+            (true, "/fonts/JetBrainsMono-Regular.woff2") => {
+                reply(request, 200, "font/woff2", FONT_REGULAR, None);
+            }
+            (true, "/fonts/JetBrainsMono-SemiBold.woff2") => {
+                reply(request, 200, "font/woff2", FONT_SEMIBOLD, None);
+            }
             (false, "/auth") => match read_body(&mut request) {
                 Err(status) => reply(request, status, "text/plain", "bad body", None),
                 Ok(body) => {
@@ -157,7 +165,7 @@ impl App {
                         let out = action::run(&a, host).to_string();
                         reply(request, 200, "application/json", &out, None);
                     }
-                    Err(e) => reply(request, 400, "text/plain", &e.to_string(), None),
+                    Err(e) => reply(request, 400, "text/plain", e.to_string(), None),
                 },
             },
             _ => reply(request, 404, "text/plain", "not found", None),
@@ -197,9 +205,15 @@ fn read_body(request: &mut Request) -> Result<Vec<u8>, u16> {
 }
 
 /// Answer, with the headers every response carries. The only place a response is built.
-fn reply(request: Request, status: u16, ctype: &str, body: &str, cookie: Option<String>) {
+fn reply(
+    request: Request,
+    status: u16,
+    ctype: &str,
+    body: impl AsRef<[u8]>,
+    cookie: Option<String>,
+) {
     let header = |k: &str, v: &str| Header::from_bytes(k.as_bytes(), v.as_bytes()).unwrap();
-    let mut r = Response::from_string(body)
+    let mut r = Response::from_data(body.as_ref().to_vec())
         .with_status_code(status)
         .with_header(header("Content-Type", ctype))
         .with_header(header("Cache-Control", "no-store"))

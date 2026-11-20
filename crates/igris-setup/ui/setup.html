@@ -9,110 +9,44 @@
 </head>
 <body>
 
-<div class="scene" aria-hidden="true">
-<svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
-  <defs>
-    <linearGradient id="skyg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--sky1)"/><stop offset=".62" stop-color="var(--sky2)"/></linearGradient>
-    <radialGradient id="sung"><stop offset="0" stop-color="var(--sun)" stop-opacity="1"/><stop offset="1" stop-color="var(--sun)" stop-opacity="0"/></radialGradient>
-  </defs>
-  <rect class="sky" width="1600" height="1000"/>
-  <circle cx="1180" cy="300" r="260" fill="url(#sung)"/>
-  <circle class="sunc" cx="1180" cy="300" r="62"/>
-  <path class="h1" d="M0 560 C240 470 420 520 640 480 C860 440 1060 520 1280 470 C1420 440 1520 470 1600 450 V1000 H0Z"/>
-  <path class="h2" d="M0 650 C200 590 380 640 600 600 C820 560 1000 650 1240 610 C1400 585 1500 610 1600 590 V1000 H0Z"/>
-  <path class="h3" d="M0 760 C260 700 460 760 720 720 C980 680 1180 770 1400 730 C1500 712 1560 724 1600 716 V1000 H0Z"/>
-  <rect class="lk" y="860" width="1600" height="140" opacity=".75"/>
-  <path d="M120 900h260M520 930h340M980 905h300" stroke="#fff" stroke-opacity=".35" stroke-width="5" stroke-linecap="round"/>
-</svg>
-</div>
+<header class="strip">
+  <div class="id"><img src="/favicon.svg" alt="" width="34" height="34"><div><small>IGRIS setup</small><b>This machine</b></div></div>
+  <ul class="tabs" aria-label="Setup steps">
+    <li><a class="tab" href="/" aria-current="page">Check <span aria-hidden="true">×</span></a></li>
+    <li><span class="tab" aria-disabled="true" title="Next release">Pipeline</span></li>
+    <li><span class="tab" aria-disabled="true" title="Next release">Keys</span></li>
+    <li><span class="tab" aria-disabled="true" title="Next release">Review</span></li>
+    <li><span class="tab" aria-disabled="true" title="Next release">Test</span></li>
+  </ul>
+  <span class="spacer"></span>
+  <button class="qa" id="qa" type="button" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /">Quick actions <kbd id="qk">Ctrl K</kbd></button>
+</header>
 
-<svg class="sprite" aria-hidden="true">
-  <defs>
-    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></symbol>
-    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></symbol>
-    <symbol id="i-key" viewBox="0 0 24 24"><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></symbol>
-    <symbol id="i-clip" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></symbol>
-    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
-    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
-    <symbol id="i-term" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
-    <symbol id="i-split" viewBox="0 0 24 24"><path d="M16 3h5v5M8 3H3v5M12 22v-8.3a4 4 0 0 0-1.17-2.87L3 3M15 9l6-6"/></symbol>
-    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
-    <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
-    <symbol id="i-panes" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18M3 12h9"/></symbol>
-    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
-    <symbol id="i-tick" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
-    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
-    <symbol id="i-dash" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-dasharray="3.2 3.2"/></symbol>
-    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
-    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
-    <symbol id="i-cmd" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
-    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
-    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
-    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
-    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
-    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
-    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
-    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
-  </defs>
-</svg>
+<main class="term" id="main" tabindex="-1">
+  <noscript><p class="line">error: IGRIS setup needs JavaScript. It runs only on this computer.</p></noscript>
+  <dl class="facts" id="facts" aria-label="This machine"></dl>
+  <p class="note" id="hint"></p>
+  <p class="line dim">Welcome to igris setup! Press <kbd class="k">/</kbd> for quick actions.</p>
+  <p class="line dim">This page only runs on this computer and stops after 30 minutes without use.</p>
+  <p class="prompt"><span class="ps">$</span>igris doctor</p>
+  <div class="bar" id="bar" role="progressbar" aria-label="Scan" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+  <p class="summary" id="summary" role="status">Scanning this machine…</p>
+  <div class="groups" id="groups"></div>
+</main>
 
-<div class="shell">
-<div class="win">
-
-  <header class="top">
-    <div class="brand"><span class="mark" aria-hidden="true"><svg class="i s"><use href="#i-tick"/></svg></span>IGRIS <small>Setup</small></div>
-    <span class="spacer"></span>
-    <button class="tb qa" id="qa" type="button" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /">
-      <svg class="i"><use href="#i-cmd"/></svg><span>Quick actions</span><kbd id="qk">Ctrl K</kbd>
-    </button>
-    <a class="tb docs" href="https://jlassirafet.github.io/IGRIS/docs/" target="_blank" rel="noopener noreferrer"><svg class="i"><use href="#i-book"/></svg><span>Docs</span></a>
-    <button class="tb" id="th" type="button"><svg class="i" id="thi"><use href="#i-moon"/></svg><span id="thl">Dark</span></button>
-  </header>
-
-  <div class="body">
-    <nav class="rail" aria-label="Setup steps">
-      <h2>Steps, in order</h2>
-      <ol>
-        <li><a class="step" href="/" aria-current="page"><svg class="i"><use href="#i-scan"/></svg>Check setup<span class="n">Now</span></a></li>
-        <li><span class="step" aria-disabled="true"><svg class="i"><use href="#i-route"/></svg>Pipeline<span class="n">Next</span></span></li>
-        <li><span class="step" aria-disabled="true"><svg class="i"><use href="#i-key"/></svg>Keys and logins</span></li>
-        <li><span class="step" aria-disabled="true"><svg class="i"><use href="#i-clip"/></svg>Review and apply</span></li>
-        <li><span class="step" aria-disabled="true"><svg class="i"><use href="#i-play"/></svg>Test run</span></li>
-      </ol>
-      <p class="railfoot"><svg class="i s"><use href="#i-shield"/></svg><span>Private to this computer. Stops after 30 minutes idle.</span></p>
-    </nav>
-
-    <main class="main" id="main">
-      <noscript><p class="err">IGRIS setup needs JavaScript. It runs only on this computer.</p></noscript>
-
-      <section class="sum" aria-labelledby="h1">
-        <h1 id="h1" tabindex="-1">Your setup</h1>
-        <p class="lead" id="lead">Scanning your machine…</p>
-        <div class="counts" id="counts" role="list" aria-label="Summary"></div>
-        <div class="acts">
-          <button class="cta" id="cta" type="button"><span>Set up your pipeline</span><span class="fly" aria-hidden="true"><svg><use href="#i-send"/></svg></span></button>
-          <button class="ghost" id="scan" type="button"><svg class="i s"><use href="#i-refresh"/></svg>Scan again</button>
-          <span class="stamp" id="stamp" role="status">Scanning…</span>
-        </div>
-      </section>
-
-      <p class="err" id="err" role="alert" hidden></p>
-
-      <div class="groups" id="groups"></div>
-    </main>
+<div class="dock">
+  <div class="row">
+    <button class="cmd" id="cmd" type="button"><span class="ar" aria-hidden="true">→</span><span class="caret" aria-hidden="true"></span><span>Type / for quick actions</span></button>
+    <button class="cta" id="cta" type="button"><span>Set up your pipeline</span><span class="fly" aria-hidden="true"><span>→</span></span></button>
   </div>
-</div>
+  <p class="hints" id="hints" role="status"><b>/</b> quick actions · <b>ctrl k</b> same · <b>r</b> scan again · 127.0.0.1 only</p>
 </div>
 
 <div class="scrim" id="scrim">
   <div class="pal" role="dialog" aria-modal="true" aria-label="Quick actions">
-    <div class="pin">
-      <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
-      <input id="pq" type="text" role="combobox" aria-expanded="true" aria-controls="pl" aria-autocomplete="list" aria-activedescendant="" aria-label="Search actions" placeholder="Search actions" autocomplete="off" spellcheck="false">
-      <kbd>Esc</kbd>
-    </div>
+    <div class="pin"><span class="ar" aria-hidden="true">→</span><input id="pq" type="text" role="combobox" aria-expanded="true" aria-controls="pl" aria-autocomplete="list" aria-activedescendant="" aria-label="Search actions" placeholder="Search actions" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
     <ul class="plist" id="pl" role="listbox" aria-label="Actions"></ul>
-    <div class="pft"><span>↑ ↓ to move</span><span>Enter to run</span><span>Esc to close</span></div>
+    <div class="pft">↑ ↓ move · enter run · esc close</div>
   </div>
 </div>
 
