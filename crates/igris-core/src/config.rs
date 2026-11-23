@@ -1,7 +1,7 @@
 //! `igris.toml`: which agents play which role, the check command, and the policy knobs.
 //! Unknown keys are an error, so a typo never silently falls back to a default.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Every agent kind Herdr 0.9.1 can start (`herdr agent start --kind`).
@@ -46,13 +46,15 @@ pub enum ConfigError {
     Invalid(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Agents {
     pub builder: String,
     pub reviewer: String,
     pub builder_args: Vec<String>,
-    reviewer_args: Option<Vec<String>>,
+    /// `None` means the default for the chosen reviewer (see `reviewer_args()`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewer_args: Option<Vec<String>>,
 }
 
 impl Agents {
@@ -82,7 +84,7 @@ impl Default for Agents {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Checks {
     pub command: String,
@@ -98,7 +100,7 @@ impl Default for Checks {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Policy {
     pub base: String,
@@ -123,10 +125,12 @@ impl Default for Policy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DecisionCfg {
     pub backend: String,
+    /// Written through `f64` text so 0.85 stays 0.85 in the file.
+    #[serde(serialize_with = "short_f32")]
     pub threshold: f32,
 }
 
@@ -139,13 +143,21 @@ impl Default for DecisionCfg {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HerdrCfg {
     pub bin: String,
     /// A saved SSH machine label. Empty (the default) means this computer.
-    #[serde(deserialize_with = "empty_is_none")]
+    #[serde(deserialize_with = "empty_is_none", serialize_with = "none_is_empty")]
     pub machine: Option<String>,
+}
+
+fn short_f32<S: serde::Serializer>(v: &f32, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_f64(v.to_string().parse().unwrap_or(f64::from(*v)))
+}
+
+fn none_is_empty<S: serde::Serializer>(v: &Option<String>, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(v.as_deref().unwrap_or(""))
 }
 
 fn empty_is_none<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
@@ -162,7 +174,7 @@ impl Default for HerdrCfg {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub agents: Agents,
@@ -184,6 +196,19 @@ impl Config {
         path: Option<&Path>,
         home: Option<&Path>,
     ) -> Result<Self, ConfigError> {
+        let found = Self::find(repo, path, home).map_err(ConfigError::NotFound)?;
+        let shown = found.display().to_string();
+        let text = std::fs::read_to_string(&found).map_err(|e| ConfigError::Read {
+            path: shown.clone(),
+            reason: e.to_string(),
+        })?;
+        let cfg = Self::parse(&text, &shown)?;
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
+    /// The file `load_from` would read, or the list of places it looked.
+    pub fn find(repo: &Path, path: Option<&Path>, home: Option<&Path>) -> Result<PathBuf, String> {
         let mut tried: Vec<PathBuf> = vec![];
         if let Some(p) = path {
             tried.push(p.to_path_buf());
@@ -193,69 +218,75 @@ impl Config {
                 tried.push(h.join(".config/igris/igris.toml"));
             }
         }
-        let Some(found) = tried.iter().find(|p| p.is_file()) else {
-            let list = tried
+        tried.iter().find(|p| p.is_file()).cloned().ok_or_else(|| {
+            tried
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect::<Vec<_>>()
-                .join(", ");
-            return Err(ConfigError::NotFound(list));
-        };
-        let shown = found.display().to_string();
-        let text = std::fs::read_to_string(found).map_err(|e| ConfigError::Read {
-            path: shown.clone(),
-            reason: e.to_string(),
-        })?;
-        let cfg: Config = toml::from_str(&text).map_err(|e| ConfigError::Parse {
-            path: shown.clone(),
-            reason: e.message().to_string(),
-        })?;
-        cfg.validate()?;
-        Ok(cfg)
+                .join(", ")
+        })
     }
 
-    fn validate(&self) -> Result<(), ConfigError> {
+    fn parse(text: &str, shown: &str) -> Result<Self, ConfigError> {
+        toml::from_str(text).map_err(|e| ConfigError::Parse {
+            path: shown.to_string(),
+            reason: e.message().to_string(),
+        })
+    }
+
+    /// Parse text without checking the values, so a form can show a half-filled file and its problems.
+    pub fn from_toml_str(text: &str) -> Result<Self, ConfigError> {
+        Self::parse(text, "igris.toml")
+    }
+
+    /// The file text for this config. Comments in an old file are not kept.
+    pub fn to_toml(&self) -> String {
+        let body = toml::to_string(self).unwrap_or_default();
+        format!("# Written by igris. Keys are documented in examples/igris.example.toml.\n{body}")
+    }
+
+    /// Every problem with the values, in words. Empty means the config can run.
+    pub fn problems(&self) -> Vec<String> {
+        let mut out = vec![];
         for (key, kind) in [
             ("agents.builder", &self.agents.builder),
             ("agents.reviewer", &self.agents.reviewer),
         ] {
             if !KINDS.contains(&kind.as_str()) {
-                return Err(ConfigError::Invalid(format!(
+                out.push(format!(
                     "{key}: unknown agent kind '{kind}'. Use one of: {}",
                     KINDS.join(", ")
-                )));
+                ));
             }
         }
         if self.checks.command.trim().is_empty() {
-            return Err(ConfigError::Invalid(
-                "checks.command is required: the command that proves the work is done, for example \"npm test\"".into(),
-            ));
+            out.push("checks.command is required: the command that proves the work is done, for example \"npm test\"".into());
         }
         match self.decision.backend.as_str() {
             "rules" => {}
-            b @ ("jev" | "laya") => {
-                return Err(ConfigError::Invalid(format!(
-                    "decision.backend '{b}' arrives in a later milestone; use \"rules\" for now"
-                )));
-            }
-            b => {
-                return Err(ConfigError::Invalid(format!(
-                    "decision.backend: unknown backend '{b}'; use \"rules\""
-                )));
-            }
+            b @ ("jev" | "laya") => out.push(format!(
+                "decision.backend '{b}' arrives in a later milestone; use \"rules\" for now"
+            )),
+            b => out.push(format!(
+                "decision.backend: unknown backend '{b}'; use \"rules\""
+            )),
         }
         if !(0.0..=1.0).contains(&self.decision.threshold) {
-            return Err(ConfigError::Invalid(
-                "decision.threshold must be between 0 and 1".into(),
-            ));
+            out.push("decision.threshold must be between 0 and 1".into());
         }
-        crate::decide::risky_globs(&self.policy.risky_paths)
-            .map_err(|e| ConfigError::Invalid(format!("policy.risky_paths: {e}")))?;
+        if let Err(e) = crate::decide::risky_globs(&self.policy.risky_paths) {
+            out.push(format!("policy.risky_paths: {e}"));
+        }
         if self.checks.timeout_s == 0 || self.policy.build_timeout_s == 0 {
-            return Err(ConfigError::Invalid(
-                "checks.timeout_s and policy.build_timeout_s must be above 0".into(),
-            ));
+            out.push("checks.timeout_s and policy.build_timeout_s must be above 0".into());
         }
-        Ok(())
+        out
+    }
+
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        match self.problems().into_iter().next() {
+            Some(first) => Err(ConfigError::Invalid(first)),
+            None => Ok(()),
+        }
     }
 }
