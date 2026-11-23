@@ -1,153 +1,197 @@
+// One task through IGRIS, left to right. The tasks are examples; the steps, the four decision
+// questions, the risk rules and the limits (2 review rounds, 2 fix rounds) are the real ones
+// from crates/igris-core (decide.rs, orchestrate.rs) and examples/igris.example.toml.
+(() => {
+const $ = id => document.getElementById(id);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sleep = ms => (reduce ? Promise.resolve() : new Promise(r => setTimeout(r, ms)));
 
-{
-const $=id=>document.getElementById(id);
-const C={you:'var(--you)',her:'var(--her)',jev:'var(--jev)',cla:'var(--cla)',cdx:'var(--cdx)',hrd:'var(--hrd)',sh:'var(--sh)'};
-const tx=c=>`color-mix(in oklab,${c} var(--tmix),var(--tk))`;
-const SPLIT='var(--split)';
-const ST={idle:['var(--st-idle)','idle'],working:['var(--st-work)','working'],blocked:['var(--st-block)','blocked'],done:['var(--st-done)','done']};
-const AG={claude:['Claude Code','claude','#ff6a2b',['haiku','sonnet','opus']],codex:['Codex','codex','#35d0ff',['small','mid','large']],
- gemini:['Gemini CLI','gemini','#c6f432',['flash-lite','flash','pro']],opencode:['OpenCode','opencode','#f0f0f0',['small','mid','large']]};
-const DL={laya:['Laya','local'],
- jev:['Jev','hosted']};
-const CH={telegram:'Telegram',discord:'Discord',slack:'Slack',whatsapp:'WhatsApp',signal:'Signal',email:'Email',matrix:'Matrix',teams:'Microsoft Teams',sms:'SMS',cli:'Terminal'};
-const DEF={ch:'telegram',dl:'laya',b:'claude',r:'codex'},MAP={ch:CH,dl:DL,b:AG,r:AG};
-let cfg={...DEF};try{Object.assign(cfg,JSON.parse(localStorage.getItem('aop-cfg')||'{}'))}catch(e){}
-for(const k in DEF)if(!Object.hasOwn(MAP[k],cfg[k]))cfg[k]=DEF[k];
-const N={};
-function applyCfg(){
- const b=AG[cfg.b],r=AG[cfg.r],d=DL[cfg.dl];
- Object.assign(N,{B:b[0],b:b[1],bl:b[0].toLowerCase(),BU:b[0].toUpperCase(),R:r[0],r:r[1],rl:r[0].toLowerCase(),RU:r[0].toUpperCase(),
-  D:d[0],d:d[0].toLowerCase(),DU:d[0].toUpperCase(),dh:d[1],CH:CH[cfg.ch],ch:CH[cfg.ch].toLowerCase()});
- document.documentElement.style.setProperty('--cla',b[2]);document.documentElement.style.setProperty('--cdx',r[2]);
- document.querySelectorAll('[data-n]').forEach(e=>e.textContent=N[e.dataset.n]);
- try{localStorage.setItem('aop-cfg',JSON.stringify(cfg))}catch(e){}}
-[['selCh','ch',CH,v=>v],['selDl','dl',DL,v=>v[0]+' ('+v[1]+')'],['selB','b',AG,v=>v[0]],['selR','r',AG,v=>v[0]]].forEach(([id,k,M,lab])=>{
- const el=$(id);el.innerHTML=Object.entries(M).map(([key,v])=>`<option value="${key}">${lab(v)}</option>`).join('');el.value=cfg[k];
- el.onchange=()=>{cfg[k]=el.value;applyCfg()}});
-applyCfg();
-const INFO={
- you:['You','Message Hermes from {CH}, any other chat app Hermes supports (Telegram, Discord, Slack, WhatsApp, Signal, Email, Matrix, Teams, SMS and more), or the terminal. You only step in to approve risky actions, merges and deploys.','var(--you)'],
- hermes:['Hermes · assistant','Takes your request, splits it into tasks, asks {D} for quick calls, drives the agents through the Herdr CLI, checks results in the shell and reports back. Use any cheap model you like: it only plans and summarizes.','var(--her)'],
- jev:['{D} · decision layer','Answers typed questions (which agent, which model tier, how risky, needs approval?) with a confidence score. Sharp answers run right away; split answers go to a stronger model or to you. Hermes and the agents can both ask it. It never writes code.','var(--jev)'],
- herdr:['Herdr · workspaces','One terminal with a pane per agent, each in its own git worktree. The sidebar shows each one: yellow working, red blocked, blue done. Hermes drives it through its CLI, sessions survive closing the terminal, and it can reach other machines over SSH.','var(--hrd)'],
- claude:['{B} · builder','Plans and writes the code in its own worktree, runs it, and fixes what {R} finds. Any agent Herdr supports can take this role.','var(--cla)'],
- codex:['{R} · reviewer','The second opinion. Reviews the diff read-only and flags bugs before anything merges. It never edits the code itself.','var(--cdx)'],
- shell:['Shell · judge','Runs tests, lint and git. Hermes trusts this output, not an agent saying "tests passed".','var(--sh)'],
- report:['Report','Hermes sends you what changed, the test results and the review verdict on {CH}. Merge and deploy wait for your yes.','var(--her)'],
- log:['Session log','Every decision and handoff, with {D}\'s confidence. This is how you audit what the team did, and it becomes training data for the decision layer.','#8c8c8c'],
- status:['Status bar','Live state of each part and the running count of {D} decisions.','#8c8c8c']
-};
-const T=[
- {msg:'add a login page',agent:.93,tier:[1,.88],risk:['low',.86],file:'src/auth.ts',files:3,tests:42,issue:true,cost:.012,acts:['reading src/','editing auth.ts','writing tests']},
- {msg:'fix the failing cart test',agent:.95,tier:[0,.91],risk:['low',.92],file:'src/cart.ts',files:1,tests:57,cost:.004,acts:['reading test log','editing cart.ts','rerun one test']},
- {msg:'run the db migration',agent:.9,tier:[1,.84],risk:['high',.94],high:true,file:'db/014.sql',files:2,tests:61,cost:.015,acts:['reading schema','writing 014.sql','dry run']},
- {msg:'rename props in settings ui',agent:.88,tier:[0,.55],risk:['low',.9],file:'ui/settings.tsx',files:4,tests:61,cost:.006,acts:['finding usages','renaming props','fixing imports']}
-];
-let paused=false,speed=1,decisions=1204,done=0,cost=0,clk=new Date();clk.setHours(23,48,10);
-const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-function sleep(ms){return new Promise(r=>{let left=ms/speed,last=performance.now();const f=now=>{if(!paused)left-=now-last;last=now;left<=0?r():requestAnimationFrame(f)};requestAnimationFrame(f)})}
-const NS='http://www.w3.org/2000/svg';
-function fly(id,col){
- if(reduce)return sleep(150);
- const p=$(id),L=p.getTotalLength(),g=$('dots'),dur=Math.max(450,L*4.2);
- const cs=[7,5,4,3].map((s,i)=>{const c=document.createElementNS(NS,'rect');c.setAttribute('width',s);c.setAttribute('height',s);c.setAttribute('rx',s/2);c.style.fill=col;c.setAttribute('opacity',1-i*.24);g.appendChild(c);return[c,s]});
- return new Promise(res=>{let t=0,last=performance.now();const f=now=>{if(!paused)t+=(now-last)*speed;last=now;
-  cs.forEach(([c,s],i)=>{const d=Math.max(0,Math.min(L,t/dur*L-i*8)),pt=p.getPointAtLength(d);c.setAttribute('x',Math.round(pt.x-s/2));c.setAttribute('y',Math.round(pt.y-s/2))});
-  if(t<dur)requestAnimationFrame(f);else{cs.forEach(([c])=>c.remove());res()}};requestAnimationFrame(f)})}
-const on=(id,v)=>$(id).classList.toggle('on',!!v);
-function mark(i){for(let k=0;k<5;k++){const m=$('m'+k);m.classList.toggle('on',k===i);m.classList.toggle('done',i>=0&&k<i)}}
-const cap=s=>$('cap').textContent=s;
-const tag=p=>p>=.8?'sharp':'split';
-let lines=[];
-function log(who,msg,r){
- clk=new Date(clk.getTime()+1000+Math.random()*2000);
- const R={B:[N.bl,C.cla],R:[N.rl,C.cdx],D:[N.d,C.jev]}[who]||[who,{you:C.you,hermes:C.her,shell:C.sh,herdr:C.hrd}[who]];
- lines.push([clk.toTimeString().slice(0,8),R[0],msg,r||'',R[1]]);lines=lines.slice(-5);
- $('log').innerHTML=lines.map((l,i)=>`<div style="opacity:${.45+i*.14}"><span class="d">${l[0]}</span><b style="color:${tx(l[4])}">${l[1]}</b><span class="ell">${l[2]}</span><span class="d ell" style="text-align:right">${l[3]}</span></div>`).join('')}
-function setRow(i,v,p){$('v'+i).textContent=v;const b=$('b'+i);b.style.width=Math.round(p*100)+'%';b.style.background=p>=.8?C.jev:SPLIT;
- $('p'+i).textContent=p.toFixed(2);$('g'+i).textContent=tag(p);$('g'+i).style.color=tx(p>=.8?C.jev:SPLIT)}
-function resetJev(){for(let i=0;i<3;i++){$('v'+i).textContent='…';$('b'+i).style.width='0';$('p'+i).textContent='—';$('g'+i).textContent=''}}
-const panes=['idle','idle','idle'];
-function pane(i,st,pct,act){panes[i]=st;const[c,w]=ST[st];
- $('pb'+i).style.width=pct+'%';$('pp'+i).textContent=pct+'%';if(act)$('pa'+i).textContent=act;
- $('pd'+i).style.background=c;$('sd'+i).style.background=c;$('ps'+i).textContent=w;$('ps'+i).style.color=tx(c);on('pn'+i,st==='working'||st==='blocked');
- const roll=panes.includes('blocked')?'blocked':panes.includes('done')?'done':panes.includes('working')?'working':'idle';
- $('sApp').style.background=ST[roll][0];$('sR').textContent='3 panes · '+ST[roll][1];$('sR').style.color=tx(roll==='idle'?C.hrd:ST[roll][0]);
- $('sC').textContent=panes[1]==='working'?'reviewing':panes[1]}
-const status=s=>$('sH').textContent=s;
-function bump(){decisions++;$('jN').textContent=decisions.toLocaleString('en');$('sJ').textContent=decisions.toLocaleString('en')+' decisions'}
-
-async function task(t){
- const tier=AG[cfg.b][3][t.tier[0]];
- mark(0);on('bYou',1);$('youMsg').textContent='» '+t.msg;$('hTask').textContent='» '+t.msg;status('reading');
- cap('1. You message Hermes on '+N.CH+': "'+t.msg+'".');log('you','"'+t.msg+'"',N.ch);
- await fly('pYou',C.you);on('bYou',0);on('bHer',1);await sleep(500);
- mark(1);on('bJev',1);resetJev();cap('2. Hermes asks '+N.D+' three quick questions.');log('hermes','asks '+N.d+': agent · tier · risk','3 questions');
- await fly('pJev',C.her);
- const rows=[['which agent',[N.bl,t.agent]],['model tier',[tier,t.tier[1]]],['risk',t.risk]];
- for(let i=0;i<3;i++){const[l,[v,p]]=rows[i];setRow(i,v,p);bump();
-  log('D',l+' → '+v,'p='+p.toFixed(2)+' '+tag(p)+(p>=.8?' → act':' → escalate'));await sleep(700)}
- if(t.tier[1]<.8){cap('Split answer: Hermes double-checks with a stronger model before acting.');
-  log('hermes','split on tier → asks a stronger model','escalate');await sleep(900);log('hermes','stronger model: '+tier+' is enough','→ '+tier);await sleep(600)}
- on('bJev',0);mark(2);status('dispatching');$('tierLbl').textContent=tier;
- cap('3. Hermes opens a Herdr pane and hands the task to '+N.B+' ('+tier+').');log('hermes','herdr agent prompt builder',tier);
- await fly('pD1',C.her);pane(0,'working',5,'starting');
- for(let k=0;k<3;k++){await sleep(750);pane(0,'working',(k+1)*28,t.acts[k]);
-  if(t.high&&k===1){
-   cap(N.B+' reaches a risky step and asks '+N.D+': does this need your approval?');log('B','asks '+N.d+': needs approval?','mid-task');
-   on('bJev',1);resetJev();$('l2').textContent='approval?';await fly('pAsk',C.cla);setRow(2,'yes',.94);bump();log('D','needs approval → yes','p=0.94 sharp');
-   await sleep(700);await fly('pD1',C.jev);on('bJev',0);$('l2').textContent='risk';
-   pane(0,'blocked',56,'needs approval');log('herdr',N.b+' blocked · waiting for you','red');
-   cap('The pane turns red and Hermes asks you on '+N.CH+' before going on.');
-   on('bYou',1);$('youMsg').textContent='» run migration on staging? y';
-   await fly('pYouB',C.her);await sleep(1200);log('you','approved: staging only','y');on('bYou',0);pane(0,'working',60,'migrating staging')}}
- await sleep(600);pane(0,'done',100,t.files+' files changed');log('B',t.files+' files changed · '+t.file,'');
- cap('4. Hermes hands the diff to '+N.R+' for a read-only review.');log('hermes','herdr agent prompt reviewer','review diff');
- await fly('pCX',C.cla);pane(1,'working',25,'reading task');await sleep(700);pane(1,'working',65,'reading diff');await sleep(700);
- if(t.issue){pane(1,'done',100,'1 issue found');log('R','1 issue: missing input check','fix it');
-  cap(N.R+' found a bug. '+N.B+' fixes it before anything merges.');await fly('pXC',C.cdx);pane(0,'working',80,'fixing issue');
-  await sleep(900);pane(0,'done',100,'issue fixed');log('B','fixed · ready for re-review','');await fly('pCX',C.cla);pane(1,'working',50,'re-review');await sleep(700)}
- pane(1,'done',100,'approved');log('R','review passed · 0 issues','');
- mark(3);status('verifying');cap('5. Hermes runs the tests itself. The shell decides what "done" means.');
- await fly('pVer',C.her);pane(2,'working',10,'npm test');log('hermes','shell: npm test','');
- await sleep(600);pane(2,'working',55,'running '+t.tests);await sleep(800);pane(2,'done',100,t.tests+' passed');log('shell',t.tests+' passed · 0 failed','exit 0');
- mark(4);status('reporting');cap('6. Hermes reports back on '+N.CH+'. Merge and deploy wait for your yes.');
- await Promise.all([fly('pM1',C.cla),fly('pM2',C.cdx),fly('pM3',C.sh)]);on('bRep',1);
- $('repMsg').textContent=t.files+' files · '+t.tests+' tests · merge? [y/n]';log('hermes','report sent · waiting for you','');
- await fly('pRep',C.her);await sleep(1300);$('repMsg').textContent='you said yes · merged ✓';log('you','approved merge','y');
- done++;cost+=t.cost;$('hDone').textContent=done;$('hCost').textContent='$'+cost.toFixed(3);
- await sleep(1500);on('bRep',0);on('bHer',0);mark(-1);status('listening');$('repMsg').textContent='nothing to approve';
- for(let i=0;i<3;i++)pane(i,'idle',0,'waiting');await sleep(600)}
-(async()=>{for(;;)for(const t of T)await task(t)})();
-
-const root=document.documentElement,mq=matchMedia('(prefers-color-scheme: dark)');
-let theme=null;try{theme=localStorage.getItem('igris-theme')}catch(e){}
-const eff=()=>theme||(mq.matches?'dark':'light');
-const IC={pause:'<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx="1.1" fill="currentColor"/><rect x="9.4" y="3" width="2.6" height="10" rx="1.1" fill="currentColor"/></svg>',
- play:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.2v9.6a.8.8 0 0 0 1.2.7l7.6-4.8a.8.8 0 0 0 0-1.4L6.2 2.5A.8.8 0 0 0 5 3.2z" fill="currentColor"/></svg>',
- moon:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.6 5.6 0 0 1 6.4 3a5.6 5.6 0 1 0 6.6 6.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
- sun:'<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></g></svg>'};
-const setBtn=(el,icon,label)=>{el.innerHTML=IC[icon];el.setAttribute('aria-label',label);el.title=label};
-function applyTheme(){if(theme)root.dataset.theme=theme;else delete root.dataset.theme;eff()==='dark'?setBtn($('bTheme'),'sun','Switch to light mode'):setBtn($('bTheme'),'moon','Switch to dark mode')}
-$('bTheme').onclick=()=>{theme=eff()==='dark'?'light':'dark';try{localStorage.setItem('igris-theme',theme)}catch(e){}applyTheme()};
-mq.addEventListener('change',applyTheme);applyTheme();
-const playBtn=()=>{document.body.classList.toggle('paused',paused);paused?setBtn($('bPlay'),'play','Play'):setBtn($('bPlay'),'pause','Pause')};playBtn();
-$('bPlay').onclick=()=>{paused=!paused;playBtn()};
-$('bSpd').onclick=()=>{speed=speed===1?2:speed===2?0.5:1;$('bSpd').textContent=speed+'×';$('bSpd').setAttribute('aria-label','Speed '+speed+'×')};
-
-const wrap=$('wrap'),stage=$('stage'),tip=$('tip');
-function fit(){const s=Math.min(1,wrap.clientWidth/720);stage.style.transform='scale('+s+')';wrap.style.height=724*s+'px'}
-new ResizeObserver(fit).observe(wrap);fit();
-let curEl=null;
-function show(el){const[h,b,c]=INFO[el.dataset.k].map(x=>x.replace(/\{(\w+)\}/g,(m,k)=>N[k]??m));tip.style.setProperty('--tc',c);tip.innerHTML='<b>'+h+'</b>'+b;
- const r=el.getBoundingClientRect(),tw=tip.offsetWidth,th=tip.offsetHeight,W=innerWidth,H=innerHeight;
- let x=Math.min(Math.max(8,r.left),W-tw-8),y=r.bottom+8;if(y+th>H-8)y=r.top-th-8;if(y<8)y=Math.max(8,Math.min(r.top+16,H-th-8));
- tip.style.left=x+'px';tip.style.top=y+'px';tip.classList.add('show');curEl=el}
-function hide(){tip.classList.remove('show');curEl=null}
-document.addEventListener('pointerover',e=>{if(e.pointerType!=='mouse')return;const el=e.target.closest('.hot');if(el){if(el!==curEl)show(el)}else if(curEl)hide()});
-addEventListener('scroll',()=>{if(curEl)hide()},{passive:true});
-
-document.addEventListener('click',e=>{const el=e.target.closest('.hot');if(el)show(el)});
-
-document.addEventListener('pointerdown',e=>{if(!e.target.closest('.hot'))hide()});
+// The wordmark, decoded from the same half-block rows the terminal app uses (wordmark.rs).
+const ROWS = ['▀█▀ █▀▀ █▀█ ▀█▀ █▀▀', '▄█▄ █▄█ █▀▄ ▄█▄ ▄▄█'];
+const GLOW = [0xbc, 0xfa, 0xf1], ACC = [0x08, 0x79, 0xf3];
+const wm = $('wm');
+for (let r = 0; r < 4; r++) for (let c = 0; c < 19; c++) {
+  const ch = ROWS[r >> 1][c], on = (r % 2 ? '▄█' : '▀█').includes(ch);
+  const px = document.createElement('i');
+  if (on) px.style.background = `rgb(${GLOW.map((g, k) => Math.round(g + (ACC[k] - g) * ((c / 18 + r / 3) / 2))).join()})`;
+  wm.append(px);
 }
+const plume = document.createElement('b');
+plume.textContent = 'ʅ'; plume.setAttribute('aria-hidden', 'true');
+wm.append(plume);
+
+// Marks: Simple Icons (CC0) for Telegram, Claude and MiniMax. OpenAI, Nous (Hermes) and Herdr have
+// none there, so they get a monogram. Every mark is one solid colour.
+const SI = {
+  telegram: 'M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z',
+  claude: 'm4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z',
+  minimax: 'M11.43 3.92a.86.86 0 1 0-1.718 0v14.236a1.999 1.999 0 0 1-3.997 0V9.022a.86.86 0 1 0-1.718 0v3.87a1.999 1.999 0 0 1-3.997 0V11.49a.57.57 0 0 1 1.139 0v1.404a.86.86 0 0 0 1.719 0V9.022a1.999 1.999 0 0 1 3.997 0v9.134a.86.86 0 0 0 1.719 0V3.92a1.998 1.998 0 1 1 3.996 0v11.788a.57.57 0 1 1-1.139 0zm10.572 3.105a2 2 0 0 0-1.999 1.997v7.63a.86.86 0 0 1-1.718 0V3.923a1.999 1.999 0 0 0-3.997 0v16.16a.86.86 0 0 1-1.719 0V18.08a.57.57 0 1 0-1.138 0v2a1.998 1.998 0 0 0 3.996 0V3.92a.86.86 0 0 1 1.719 0v12.73a1.999 1.999 0 0 0 3.996 0V9.023a.86.86 0 1 1 1.72 0v6.686a.57.57 0 0 0 1.138 0V9.022a2 2 0 0 0-1.998-1.997'
+};
+const fill = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+const line = d => `<svg class="ln" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+const mini = `<svg class="in" viewBox="0 0 24 24" aria-hidden="true"><path d="${SI.minimax}"/></svg>`;
+
+const NODES = [
+  { id: 'you', name: 'You', role: 'Telegram, Discord or the terminal', c: '#c9ced3', mark: fill(SI.telegram) },
+  { id: 'hermes', name: 'Hermes', role: `Your assistant<br>${mini}MiniMax M3`, c: '#bcfaf1', mark: '<span>H</span>' },
+  { id: 'decide', name: 'Decide', role: 'Picks agent, size and risk', c: '#8fd3f2', mark: line('M12 4v7m0 0-6 8m6-8 6 8') },
+  { id: 'build', name: 'Build', role: 'Claude Code, in its own worktree', c: '#6bb8f0', mark: fill(SI.claude) },
+  { id: 'review', name: 'Review', role: 'Codex, read-only', c: '#539fdf', mark: '<span>Cx</span>' },
+  { id: 'checks', name: 'Checks', role: 'Your command; exit 0 is a pass', c: '#4393f4', mark: line('m5 8 4 4-4 4M12 17h7') },
+  { id: 'report', name: 'Report', role: 'Verdict, rounds, files', c: '#c9ced3', mark: line('m5 12.5 4.5 4.5L19 7') }
+];
+const WHO = { you: '#c9ced3', hermes: '#bcfaf1', igris: '#e6e9ec', claude: '#6bb8f0', codex: '#539fdf', shell: '#4393f4' };
+
+// Build the rail: seven steps and six wires, the three Herdr panes grouped.
+const rail = $('rail'), els = {}, wires = [];
+const node = n => {
+  const e = document.createElement('div');
+  e.className = 'node'; e.style.setProperty('--c', n.c);
+  e.innerHTML = `<span class="mark">${n.mark}</span><b>${n.name}</b><small>${n.role}</small><i class="st">idle</i>`;
+  els[n.id] = { e, st: e.querySelector('.st') };
+  return e;
+};
+const wire = i => { const w = document.createElement('div'); w.className = 'wire'; wires[i] = w; return w; };
+const [you, hermes, decide, build, review, checks, report] = NODES.map(node);
+const herdr = document.createElement('div');
+herdr.className = 'herdr';
+herdr.innerHTML = '<span>Herdr · one pane per agent</span>';
+herdr.append(build, wire(3), review, wire(4), checks);
+rail.append(you, wire(0), hermes, wire(1), decide, wire(2), herdr, wire(5), report);
+
+const STATE = { idle: ['idle', ''], run: ['● Running', ''], ok: ['✓ Done', 'ok'], ask: ['? Needs approval', 'ask'], bad: ['✕ Failed', 'bad'] };
+function setNode(id, state, text) {
+  const o = els[id];
+  o.e.classList.toggle('on', state === 'run');
+  o.st.className = 'st ' + STATE[state][1];
+  o.st.textContent = text || STATE[state][0];
+}
+function chip(text, cls) { const c = $('run'); c.textContent = text; c.className = 'chip ' + (cls || ''); }
+async function send(i) {
+  wires[i].classList.add('lit');
+  if (reduce) return;
+  const p = document.createElement('i');
+  p.className = 'packet'; wires[i].append(p);
+  await p.animate([{ left: '0' }, { left: 'calc(100% - 8px)' }], { duration: 480, easing: 'ease-in-out' }).finished;
+  p.remove();
+}
+const say = s => { $('live').textContent = s; };
+
+// The decision panel: the four questions the rules answer (decide.rs).
+const Q = ['agent', 'tier', 'risk', 'needs_approval'];
+function resetDecision() {
+  $('decision').innerHTML = Q.map(q => `<div class="row"><span>${q}</span><b>…</b><em></em></div>`).join('');
+}
+function answer(i, value, hi) {
+  const r = $('decision').children[i];
+  r.querySelector('b').textContent = value;
+  r.querySelector('em').textContent = '1.00';
+  r.classList.toggle('hi', !!hi);
+}
+
+// The session log: the last eight lines, newest at the bottom.
+let lines = [], clock = 0;
+function log(who, msg) {
+  clock += 1 + ((lines.length * 5 + msg.length) % 3);
+  lines.push({ t: `${Math.floor(clock / 60)}:${String(clock % 60).padStart(2, '0')}`, who, msg });
+  lines = lines.slice(-8);
+  $('log').innerHTML = lines.map((l, i) =>
+    `<div style="opacity:${(0.5 + 0.5 * (i + 1) / lines.length).toFixed(2)}"><time>${l.t}</time><span class="w" style="color:${WHO[l.who]}">${l.who}</span><span class="m"></span></div>`).join('');
+  [...$('log').children].forEach((d, i) => { d.querySelector('.m').textContent = lines[i].msg; });
+}
+
+// The result panel.
+const R0 = { verdict: '—', review: '0 of 2 review rounds', fix: '0 of 2 fix rounds', checks: '—', files: '—' };
+const R = { ...R0 };
+function result(patch, hint) {
+  Object.assign(R, patch);
+  $('result').innerHTML = `<dl class="res"><dt>Verdict</dt><dd>${R.verdict}</dd><dt>Review</dt><dd>${R.review}</dd><dt>Checks</dt><dd>${R.checks}</dd><dt>Fixes</dt><dd>${R.fix}</dd><dt>Files</dt><dd></dd></dl>${hint ? `<p class="hint">${hint}</p>` : ''}`;
+  $('result').querySelector('dd:last-of-type').textContent = R.files;
+}
+
+// Example tasks. "tier" is small for short fix, rename, typo or bump tasks (decide.rs). Risk is
+// high when the task has a risky word (migration, deploy, secret, auth, delete, drop) or touches
+// a risky path (.env*, **/*.sql, **/migrations/**, **/auth/**).
+const TASKS = [
+  { msg: 'fix the failing cart test', tier: 'small', files: ['src/cart.ts'], tests: 57,
+    note: 'edits src/cart.ts' },
+  { msg: 'add rate limiting to the api', tier: 'mid', files: ['src/api/limiter.ts', 'src/api/routes.ts', 'test/limiter.test.ts'], tests: 84,
+    changes: 'no test for the 429 case', note: 'edits 3 files' },
+  { msg: 'add a users table migration', tier: 'mid', risky: 'risky word: migration', files: ['db/migrations/014_users.sql'], tests: 61,
+    note: 'writes 014_users.sql' },
+  { msg: 'bump axios to 1.7', tier: 'small', files: ['package.json', 'package-lock.json'], tests: 112,
+    fail: '3 snapshot tests changed', note: 'edits package.json' }
+];
+
+async function runTask(T) {
+  clock = 0; lines = [];
+  ['you', 'hermes', 'decide', 'build', 'review', 'checks', 'report'].forEach(id => setNode(id, 'idle'));
+  wires.forEach(w => w.classList.remove('lit'));
+  $('log').innerHTML = ''; resetDecision(); result(R0);
+  $('task').textContent = T.msg;
+  const high = !!T.risky;
+  let fixes = 0, reviews = 0;
+
+  chip('Running', 'run'); say(`You ask: ${T.msg}`);
+  setNode('you', 'run'); log('you', `"${T.msg}"`); await sleep(700);
+  await send(0); setNode('you', 'ok', '✓ Sent');
+  setNode('hermes', 'run'); log('hermes', `igris run --task "${T.msg}"`); await sleep(500);
+  await send(1); setNode('hermes', 'ok', '✓ Handed over');
+
+  say('IGRIS decides which agent, how big the task is, and how risky.');
+  setNode('decide', 'run');
+  const out = [['claude', false], [T.tier, false], [high ? 'high' : 'low', high], [high ? 'yes' : 'no', high]];
+  for (let i = 0; i < 4; i++) { answer(i, out[i][0], out[i][1]); await sleep(420); }
+  log('igris', `agent=claude tier=${T.tier} risk=${high ? 'high' : 'low'} needs_approval=${high ? 'yes' : 'no'}`);
+  if (high) {
+    setNode('decide', 'ask'); chip('Needs approval', 'ask'); say('The task looks risky, so it waits for your yes.');
+    log('igris', `exit 3 · needs approval (${T.risky})`); await sleep(1100);
+    log('you', 'y'); await sleep(500);
+    log('hermes', `igris run --approved --task "${T.msg}"`); chip('Running', 'run'); await sleep(500);
+  }
+  setNode('decide', 'ok', high ? '✓ Approved' : '✓ Decided'); await sleep(300);
+
+  say('The builder writes the code in its own worktree.');
+  await send(2); setNode('build', 'run'); log('claude', `${T.note} in its worktree`); await sleep(1200);
+  setNode('build', 'ok');
+
+  say('A different agent reads the diff and approves it or asks for changes.');
+  await send(3); setNode('review', 'run');
+  log('codex', 'reading the diff, read-only'); await sleep(900);
+  if (T.changes) {
+    reviews++; result({ review: `${reviews} of 2 review rounds` });
+    log('codex', `changes requested: ${T.changes}`); setNode('review', 'bad', '✕ Changes asked'); await sleep(700);
+    setNode('build', 'run'); log('claude', `review round ${reviews}: adding the missing test`); await sleep(1000);
+    setNode('build', 'ok'); setNode('review', 'run'); log('codex', 're-reading the diff'); await sleep(800);
+  }
+  log('codex', 'approved'); setNode('review', 'ok'); result({ review: `${reviews} of 2 review rounds` });
+
+  say('Your own command runs in the shell. Exit 0 means done.');
+  await send(4); setNode('checks', 'run'); log('shell', 'npm test'); await sleep(900);
+  if (T.fail) {
+    fixes++; setNode('checks', 'bad', '✕ Exit 1'); result({ checks: 'exit 1', fix: `${fixes} of 2 fix rounds` });
+    log('shell', `exit 1 · ${T.fail}`); await sleep(800);
+    setNode('build', 'run'); log('claude', `fix round ${fixes}: updating the snapshots`); await sleep(1000);
+    setNode('build', 'ok'); setNode('checks', 'run'); log('shell', 'npm test'); await sleep(900);
+  }
+  log('shell', `exit 0 · ${T.tests} passed`); setNode('checks', 'ok');
+  result({ checks: `exit 0 · ${T.tests} passed`, fix: `${fixes} of 2 fix rounds` });
+
+  say('IGRIS reports the verdict. Merging waits for you.');
+  await send(5); setNode('report', 'ok', '✓ Approved');
+  result({ verdict: 'approved', files: T.files.join(', ') }, 'Done. Merge it with <code>igris merge</code> (fast-forward only).');
+  chip('Done', 'ok'); log('igris', 'done · approved · ready to merge'); await sleep(1500);
+  log('you', 'igris merge'); log('igris', 'merged into main (fast-forward)'); chip('Merged', 'ok');
+  result({}, 'Merged into <code>main</code>.');
+  await sleep(3200);
+}
+
+// Still frame: with reduced motion the page shows one finished task and stops.
+// ?task=0..3 picks it (the README screenshot uses the review-and-fix one).
+const pick = Number(new URLSearchParams(location.search).get('task'));
+(async () => {
+  if (reduce) { await runTask(TASKS[pick >= 0 && pick < TASKS.length && location.search.includes('task') ? pick : 1]); return; }
+  const order = TASKS.map((_, i) => i).sort(() => Math.random() - 0.5);
+  for (;;) for (const i of order) await runTask(TASKS[i]);
+})();
+})();
