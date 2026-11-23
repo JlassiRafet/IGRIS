@@ -23,6 +23,8 @@ pub enum Action {
     Cancel,
     Yes,
     No,
+    /// A click inside an overlay: keeps it open. Mouse only.
+    Stay,
 }
 
 impl Action {
@@ -50,5 +52,34 @@ impl Action {
         Action::Cancel,
         Action::Yes,
         Action::No,
+        Action::Stay,
     ];
+
+    /// The words the help, the palette and the footer use for this action.
+    pub fn describe(self) -> String {
+        match self {
+            Action::Quit => "Quit",
+            Action::Help => "Open this help",
+            Action::Palette => "Filter and run an action",
+            Action::Goto(s) => return format!("Go to {}", s.title()),
+            Action::NextScreen => "Next screen",
+            Action::PrevScreen => "Previous screen",
+            Action::Rescan => "Rescan this machine",
+            Action::Up => "Move up",
+            Action::Down => "Move down",
+            Action::PageUp => "Page up",
+            Action::PageDown => "Page down",
+            Action::Home => "Jump to the start",
+            Action::End => "Jump to the end",
+            Action::NextField => "Next field or group",
+            Action::PrevField => "Previous field or group",
+            Action::Activate => "Open or press the focused item",
+            Action::Toggle => "Fold, unfold or toggle",
+            Action::Cancel => "Close, cancel or go back",
+            Action::Yes => "Yes",
+            Action::No => "No",
+            Action::Stay => "",
+        }
+        .to_string()
+    }
 }
