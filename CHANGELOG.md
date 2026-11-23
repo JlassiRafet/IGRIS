@@ -8,10 +8,14 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 - The web setup app (`igris setup`, its 127.0.0.1 server and pages). It never shipped in a release. A terminal app replaces it (see Added).
 
 ### Changed
+- The top band says what IGRIS does and promises in keywords: `Build · Review · Verify` and `Local · No telemetry · No stored keys` (the first screen shows the same two lines). The version is no longer in the band; `igris --version` has it.
 - The pipeline page (`/pipeline/`) is redesigned and keeps its terminal look, top to bottom: You and Hermes (optional), then an IGRIS group holding the decision (agent, tier, risk, needs_approval) and the three Herdr panes (Claude Code builds, Codex reviews, your shell checks), then the report. Fixed-size boxes, no window frame, the real Claude Code, Codex, Hermes, Jev (TypeSafe AI), Telegram and MiniMax logos in one solid colour each, a soft glow in each tool's own colour while it works, and a tail of pixels carrying the task along the wires. Four example tasks follow the real rules (exit 3 for a risky task, 2 review rounds, 2 fix rounds). With reduced motion it shows one finished task. No hover boxes.
 - The terminal app has a new look: the wordmark with a moving sheen while the first scan runs, then a step rail (or a strip in a narrow window), framed panels, aligned status columns that never clip, a detail strip, a framed input box, progress bars, hover highlight and a `Next` row above calm key hints. `IGRIS_NO_MOTION=1` stops the animation.
 - The Pages Home is rebuilt in the style of the owner's reference: a white grid page, a big bold headline, numbered sections and a floating Index pill with the scroll percentage. The pipeline animation moves to `/pipeline/`. The docs take the same red and fonts. Fonts are self-hosted (Inter, JetBrains Mono); the site loads nothing from outside.
 - `igris merge` names the files that block removing the worktree and says what to do. `scripts/smoke.sh` takes `SMOKE_AGENTS` to pick agents and models.
+
+### Fixed
+- `igris` now ends when its terminal is closed (SIGHUP). Before, it kept running at about 45% CPU on a dead terminal, and `scripts/tui-e2e.sh` checks it.
 
 ### Added
 - `igris` with no arguments opens a terminal app (keyboard and mouse): Check what this machine has and fix gaps (a tool's own login, the documented Herdr install after a yes), edit `igris.toml` in a Pipeline form with live validation, Review the exact change and Apply it (the old file is kept as `.bak`), then Test with the doctor's checks and an optional sample task. Without a terminal it prints the usage and exits 2.

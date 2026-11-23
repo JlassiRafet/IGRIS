@@ -254,16 +254,23 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
     );
 }
 
-/// SIGINT, SIGTERM and SIGHUP set this flag; the loop sees it and returns, so `TermGuard` drops.
+/// SIGINT and SIGTERM set this flag; the loop sees it and returns, so `TermGuard` drops.
+/// SIGHUP (the terminal went away) ends the process at once: there is no terminal left to restore, and
+/// reading from a dead one can spin inside the event reader, where the loop would never see a flag.
 fn stop_flag() -> std::io::Result<Arc<AtomicBool>> {
     let flag = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
-    for sig in [
-        signal_hook::consts::SIGINT,
-        signal_hook::consts::SIGTERM,
-        signal_hook::consts::SIGHUP,
-    ] {
-        signal_hook::flag::register(sig, Arc::clone(&flag))?;
+    {
+        for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+            signal_hook::flag::register(sig, Arc::clone(&flag))?;
+        }
+        let hup = signal_hook::consts::SIGHUP;
+        // SAFETY: the handler only calls `emulate_default_handler`, which is async-signal-safe.
+        unsafe {
+            signal_hook::low_level::register(hup, move || {
+                let _ = signal_hook::low_level::emulate_default_handler(hup);
+            })?;
+        }
     }
     // Windows has no SIGTERM or SIGHUP; Ctrl-C arrives as a key event while the app owns the console.
     Ok(flag)
@@ -446,7 +453,7 @@ mod tests {
     #[test]
     fn at_100x30_the_steps_are_a_rail_beside_the_panel() {
         let (text, hits) = render(100, 30, &scanned((100, 30)));
-        let (x, y) = row_of(&text, "Review");
+        let (x, y) = row_of(&text, "3  Review");
         assert!(x < 22, "the rail is on the left: {x}");
         assert_eq!(hits.at(x, y), Some(Action::Goto(Screen::Review)));
         assert!(
@@ -454,7 +461,7 @@ mod tests {
             "the panel is framed and titled:\n{text}"
         );
         assert!(
-            text.contains("local · no telemetry · no secrets stored"),
+            text.contains("Local · No telemetry · No stored keys"),
             "{text}"
         );
     }
@@ -526,7 +533,7 @@ mod tests {
         };
         let mut s = scanned((100, 30));
         let (text, _) = render(100, 30, &s);
-        let (x, y) = row_of(&text, "Review");
+        let (x, y) = row_of(&text, "3  Review");
         assert_eq!(
             bg(&s, x, y),
             ratatui::style::Color::Reset,
