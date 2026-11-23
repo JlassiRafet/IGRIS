@@ -631,4 +631,33 @@ mod tests {
             "hostile text was not rendered at all"
         );
     }
+
+    #[test]
+    fn the_next_row_and_the_hints_stay_inside_the_window_on_every_screen_at_80x24() {
+        let mut s = scanned((80, 24));
+        s.toast = Some("A long message ".repeat(12));
+        s.blocker =
+            Some("log in to a coding agent with a very long name (Enter on the row) ".repeat(4));
+        for screen in Screen::ALL {
+            s.screen = screen;
+            let (text, _) = render(80, 24, &s);
+            let rows: Vec<&str> = text.lines().collect();
+            for y in [21usize, 22, 23] {
+                let row = rows[y];
+                assert!(
+                    row.chars().last() == Some(' ') && row.chars().nth(79) == Some(' '),
+                    "{screen:?} row {y} touches the edge: {row:?}"
+                );
+                assert!(
+                    row.chars().nth(0) == Some(' '),
+                    "{screen:?} row {y}: {row:?}"
+                );
+            }
+            assert!(
+                rows[22].trim_end().ends_with('…'),
+                "{screen:?}: a long Next sentence is shortened: {:?}",
+                rows[22]
+            );
+        }
+    }
 }

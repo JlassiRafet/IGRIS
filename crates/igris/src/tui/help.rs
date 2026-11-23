@@ -48,6 +48,14 @@ const MOUSE: [&str; 6] = [
     "Wheel: scroll the list.",
 ];
 
+/// What IGRIS promises. Checked in the polish design doc: no network crate in the build, loopback
+/// probes only, fixed commands only.
+const ABOUT: [&str; 3] = [
+    "IGRIS itself sends nothing anywhere: no telemetry, no analytics.",
+    "It stores no logins or keys; each tool keeps its own.",
+    "It runs only fixed commands: a tool's own login, the Herdr installer after a yes, and the checks.",
+];
+
 /// All lines of the overlay for the current filter.
 pub fn lines(query: &str) -> Vec<Line<'static>> {
     let all = help_entries();
@@ -67,6 +75,9 @@ pub fn lines(query: &str) -> Vec<Line<'static>> {
     out.push(Line::from(""));
     out.push(Line::from("Mouse").bold());
     out.extend(MOUSE.iter().map(|l| Line::from(format!("  {l}"))));
+    out.push(Line::from(""));
+    out.push(Line::from("About").bold());
+    out.extend(ABOUT.iter().map(|l| Line::from(format!("  {l}"))));
     out.push(Line::from(""));
     out.push(Line::from(format!("Docs: {}", env!("CARGO_PKG_HOMEPAGE"))));
     out.push(Line::from(
@@ -135,5 +146,27 @@ mod tests {
         ] {
             assert!(text.contains(part), "{part}");
         }
+    }
+
+    #[test]
+    fn the_about_block_states_the_privacy_promises() {
+        let text: String = lines("")
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("About") && text.contains("IGRIS itself sends nothing anywhere"),
+            "{text}"
+        );
+        assert!(
+            text.contains("stores no logins or keys") && text.contains("only fixed commands"),
+            "{text}"
+        );
     }
 }

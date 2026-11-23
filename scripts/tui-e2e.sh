@@ -38,6 +38,9 @@ wait_for "▀█▀ █▀▀ █▀█" 10   # the wordmark
 wait_for "Pipeline" 5       # the tab strip
 wait_for "optional" 60          # the scan finished: the count chips are on screen
 echo "ok  wordmark, tabs, scan"
+wait_for "no telemetry" 5   # the privacy line in the top band
+wait_for "Setup" 5          # the step rail and its progress
+echo "ok  the privacy line and the step rail"
 
 tmux send-keys -t "$S" 2;   wait_for "Builder agent" 5
 echo "ok  2 opens the Pipeline form"
@@ -60,7 +63,26 @@ echo "ok  the wheel moves the focus"
 tmux resize-window -t "$S" -x 70 -y 20; wait_for "at least 80x24" 5
 tmux resize-window -t "$S" -x 100 -y 30; wait_for "Builder agent" 5
 echo "ok  too small a window says so, and recovers"
+tmux resize-window -t "$S" -x 90 -y 30; wait_for "/4 done" 5   # under 100 columns the rail is a strip
+tmux resize-window -t "$S" -x 100 -y 30; wait_for "Setup" 5
+echo "ok  under 100 columns the rail becomes a strip, and back"
 
 tmux send-keys -t "$S" q;   wait_for "EXIT=0" 5
 echo "ok  q exits with code 0"
+
+# Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
+distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1
+  local sess="igris-e2e-m$$"
+  tmux new-session -d -s "$sess" -x 100 -y 30 "env HOME=$HOME_DIR COLORTERM=truecolor $1 '$BIN' --repo '$REPO'; sleep 30"
+  for _ in $(seq 1 600); do tmux capture-pane -t "$sess" -p | grep -q "optional" && break; sleep 0.1; done
+  local n
+  n=$(for _ in 1 2 3 4; do tmux capture-pane -t "$sess" -e -p | head -4 | md5sum; sleep 0.7; done | sort -u | wc -l)
+  tmux kill-session -t "$sess" 2>/dev/null || true
+  echo "$n"
+}
+moving=$(distinct_frames "")
+still=$(distinct_frames "IGRIS_NO_MOTION=1")
+[ "$moving" -gt 1 ] || { echo "FAIL: the sheen did not move ($moving distinct frames)"; exit 1; }
+[ "$still" = 1 ] || { echo "FAIL: IGRIS_NO_MOTION=1 still moved ($still distinct frames)"; exit 1; }
+echo "ok  the sheen moves, and IGRIS_NO_MOTION=1 stops it"
 echo "tui-e2e: all checks passed"
