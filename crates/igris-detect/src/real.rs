@@ -86,7 +86,9 @@ impl Host for RealHost {
         std::env::consts::OS
     }
     fn home(&self) -> Option<String> {
-        std::env::var("HOME").ok().filter(|h| h.starts_with('/'))
+        std::env::home_dir()
+            .filter(|h| h.is_absolute())
+            .and_then(|h| h.to_str().map(str::to_string))
     }
     fn cpu_cores(&self) -> Option<u32> {
         std::thread::available_parallelism()
@@ -141,11 +143,27 @@ impl Host for RealHost {
     }
     fn which(&self, name: &str) -> Option<String> {
         let path = std::env::var_os("PATH")?;
+        let names = file_names(name);
         std::env::split_paths(&path)
-            .map(|d| d.join(name))
+            .flat_map(|d| names.iter().map(move |n| d.join(n)))
             .find(|p| is_executable(p))
             .map(|p| p.display().to_string())
     }
+}
+
+/// The file names `name` can have: just `name`, and on Windows also with each `PATHEXT` extension
+/// (the `claude` command is `claude.cmd` there).
+fn file_names(name: &str) -> Vec<String> {
+    let mut v = vec![name.to_string()];
+    if cfg!(windows) {
+        let ext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+        v.extend(
+            ext.split(';')
+                .filter(|e| e.starts_with('.'))
+                .map(|e| format!("{name}{}", e.to_ascii_lowercase())),
+        );
+    }
+    v
 }
 
 #[cfg(unix)]

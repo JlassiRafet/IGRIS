@@ -68,8 +68,10 @@ impl Drop for TermGuard {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::*;
 
+    #[cfg(unix)] // on Windows these switches are console calls, not bytes
     #[test]
     fn restore_writes_every_off_switch() {
         let mut out = Vec::new();

@@ -47,8 +47,9 @@ fn is_executable(p: &Path) -> bool {
 
 fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
+    let names = igris_core::platform::executable_names_here(name);
     std::env::split_paths(&path)
-        .map(|d| d.join(name))
+        .flat_map(|d| names.iter().map(move |n| d.join(n)))
         .find(|p| is_executable(p))
 }
 

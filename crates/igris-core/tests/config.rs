@@ -116,6 +116,7 @@ fn threshold_must_be_between_0_and_1() {
     assert!(e.contains("threshold"), "{e}");
 }
 
+#[cfg(unix)] // writes under ~/.config, the Unix place
 #[test]
 fn lookup_order_is_explicit_then_repo_then_home() {
     let repo = tmp("repo");
@@ -234,4 +235,20 @@ fn find_returns_the_file_or_the_places_it_looked() {
     assert!(e.contains("igris.toml"), "{e}");
     let f = write(&repo, "igris.toml", "[checks]\ncommand = \"t\"\n");
     assert_eq!(Config::find(&repo, None, Some(&home)).unwrap(), f);
+}
+
+#[test]
+fn the_lookup_order_is_explicit_then_repo_then_user_file_on_every_platform() {
+    let (repo, user_dir) = (tmp("order-repo"), tmp("order-user"));
+    let user = write(&user_dir, "igris.toml", "[checks]\ncommand = \"u\"\n");
+    assert_eq!(Config::find_in(&repo, None, Some(&user)).unwrap(), user);
+    let in_repo = write(&repo, "igris.toml", "[checks]\ncommand = \"r\"\n");
+    assert_eq!(Config::find_in(&repo, None, Some(&user)).unwrap(), in_repo);
+    let flag = write(&repo, "other.toml", "[checks]\ncommand = \"f\"\n");
+    assert_eq!(
+        Config::find_in(&repo, Some(&flag), Some(&user)).unwrap(),
+        flag
+    );
+    let missing = Config::find_in(&tmp("order-none"), None, None).unwrap_err();
+    assert!(missing.contains("igris.toml"), "{missing}");
 }

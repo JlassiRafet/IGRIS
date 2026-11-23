@@ -257,6 +257,7 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
 /// SIGINT, SIGTERM and SIGHUP set this flag; the loop sees it and returns, so `TermGuard` drops.
 fn stop_flag() -> std::io::Result<Arc<AtomicBool>> {
     let flag = Arc::new(AtomicBool::new(false));
+    #[cfg(unix)]
     for sig in [
         signal_hook::consts::SIGINT,
         signal_hook::consts::SIGTERM,
@@ -264,6 +265,7 @@ fn stop_flag() -> std::io::Result<Arc<AtomicBool>> {
     ] {
         signal_hook::flag::register(sig, Arc::clone(&flag))?;
     }
+    // Windows has no SIGTERM or SIGHUP; Ctrl-C arrives as a key event while the app owns the console.
     Ok(flag)
 }
 
@@ -287,7 +289,7 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let size = ratatui::crossterm::terminal::size()?;
     let mut state = State::new(size);
     state.repo = opts.repo.clone();
-    state.home = std::env::var_os("HOME").map(PathBuf::from);
+    state.home = igris_core::platform::home();
     let mut hits = HitMap::default();
     let started = std::time::Instant::now();
     let (tx, rx) = std::sync::mpsc::channel();

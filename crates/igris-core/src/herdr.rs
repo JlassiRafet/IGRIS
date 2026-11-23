@@ -277,7 +277,7 @@ impl Herdr {
         ])
     }
 
-    /// Run `cmd` in `pane` under `sh -c` (so the user's login shell does not matter) and wait for
+    /// Run `cmd` in `pane` under `sh -c` (`cmd /V:ON /C` on Windows) (so the user's login shell does not matter) and wait for
     /// its exit code. The marker carries a per-run nonce because `wait-output` also matches output
     /// already on screen, and a re-run in the same pane must not match the previous run's marker.
     /// Returns `(None, tail)` on timeout; the pane is left open.
@@ -288,7 +288,7 @@ impl Herdr {
         timeout_ms: u64,
     ) -> Result<(Option<i32>, String), HerdrError> {
         let marker = format!("IGRIS_EXIT_{}=", unique());
-        let line = format!("sh -c {}", sh_quote(&format!("{cmd}; echo {marker}$?")));
+        let line = pane_line(cfg!(windows), cmd, &marker);
         self.call(&["pane", "run", pane, &line])?;
         let tail = || {
             self.call_text(&[
@@ -327,5 +327,17 @@ impl Herdr {
     pub fn remove_worktree(&self, workspace_id: &str) -> Result<(), HerdrError> {
         self.call(&["worktree", "remove", "--workspace", workspace_id])
             .map(|_| ())
+    }
+}
+
+/// The line typed into a Herdr pane to run `cmd` and then print `<marker><exit code>`. On Windows it
+/// uses `cmd.exe` with delayed expansion (`!ERRORLEVEL!`): `%ERRORLEVEL%` would be read before the
+/// command ran. The Windows form is built from the documented cmd.exe rules and still has to be
+/// run on a real Windows machine.
+pub fn pane_line(windows: bool, cmd: &str, marker: &str) -> String {
+    if windows {
+        format!("cmd /V:ON /C \"{cmd} & echo {marker}!ERRORLEVEL!\"")
+    } else {
+        format!("sh -c {}", sh_quote(&format!("{cmd}; echo {marker}$?")))
     }
 }

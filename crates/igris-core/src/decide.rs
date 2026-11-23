@@ -135,5 +135,8 @@ pub fn igris_home_from(env: Option<OsString>, home: Option<OsString>) -> PathBuf
 }
 
 pub fn igris_home() -> PathBuf {
-    igris_home_from(std::env::var_os("IGRIS_HOME"), std::env::var_os("HOME"))
+    igris_home_from(
+        std::env::var_os("IGRIS_HOME"),
+        crate::platform::home().map(OsString::from),
+    )
 }

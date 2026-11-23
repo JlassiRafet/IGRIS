@@ -22,12 +22,30 @@ pub const LOGIN: &[(&str, &[&str])] = &[
     ("codex", &["codex", "login"]),
 ];
 
+/// The documented Herdr installer for this platform, shown before it is run, with its source.
+#[cfg(not(windows))]
 pub const INSTALL_HERDR: (&str, &str) = (
     "curl -fsSL https://herdr.dev/install.sh | sh",
     "https://herdr.dev",
 );
-/// The same command as one fixed argv for `sh`.
+/// The same command as one fixed argv.
+#[cfg(not(windows))]
 pub const INSTALL_HERDR_ARGV: &[&str] = &["sh", "-c", INSTALL_HERDR.0];
+
+/// Windows: the installer is `install.ps1` (the URL answers 200, 2026-11-23); running it on a real
+/// Windows machine is still to be checked by the first Windows tester.
+#[cfg(windows)]
+pub const INSTALL_HERDR: (&str, &str) = (
+    "powershell -NoProfile -Command \"irm https://herdr.dev/install.ps1 | iex\"",
+    "https://herdr.dev",
+);
+#[cfg(windows)]
+pub const INSTALL_HERDR_ARGV: &[&str] = &[
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "irm https://herdr.dev/install.ps1 | iex",
+];
 
 const DOCS_CLAUDE: &str = "https://docs.anthropic.com/en/docs/claude-code/overview";
 const DOCS_CODEX: &str = "https://developers.openai.com/codex";
@@ -154,14 +172,17 @@ mod tests {
         assert_eq!(
             f[0],
             Fix::Install {
-                cmd: "curl -fsSL https://herdr.dev/install.sh | sh",
+                cmd: INSTALL_HERDR.0,
                 url: "https://herdr.dev"
             }
         );
+        #[cfg(not(windows))]
         assert_eq!(
             INSTALL_HERDR_ARGV,
             ["sh", "-c", "curl -fsSL https://herdr.dev/install.sh | sh"]
         );
+        #[cfg(windows)]
+        assert_eq!(INSTALL_HERDR_ARGV[0], "powershell");
     }
 
     #[test]

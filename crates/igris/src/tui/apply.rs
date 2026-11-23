@@ -35,7 +35,7 @@ impl Target {
     pub fn path(&self, repo: &Path, home: &Path) -> PathBuf {
         match self {
             Target::Repo => repo.join("igris.toml"),
-            Target::UserConfig => home.join(".config/igris/igris.toml"),
+            Target::UserConfig => igris_core::platform::user_config_file_here(home),
         }
     }
 }
@@ -146,6 +146,7 @@ pub fn apply(c: &Change) -> io::Result<Applied> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     fn tmp(name: &str) -> PathBuf {
@@ -188,11 +189,13 @@ mod tests {
         let p = d.join("igris.toml");
         let old: &[u8] = b"[checks]\r\ncommand = \"x\"\r\n# caf\xc3\xa9\r\n";
         fs::write(&p, old).unwrap();
+        #[cfg(unix)]
         fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
         let done = apply(&plan_change(&p, "new\n".into()).unwrap()).unwrap();
         assert_eq!(fs::read(done.backup.as_ref().unwrap()).unwrap(), old);
         assert_eq!(done.backup.unwrap(), d.join("igris.toml.bak"));
         assert_eq!(fs::read_to_string(&p).unwrap(), "new\n");
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&p).unwrap().permissions().mode() & 0o777,
             0o600,
@@ -238,6 +241,7 @@ mod tests {
         assert_eq!(d.first(), Some(&DiffLine::Same("a".into())));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_directory_that_cannot_be_written_fails_and_leaves_the_original_alone() {
         let d = tmp("readonly");
@@ -260,6 +264,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // asserts the Unix config path; platform.rs tests the Windows one
     #[test]
     fn the_user_config_folder_is_created_when_missing() {
         let home = tmp("home");
