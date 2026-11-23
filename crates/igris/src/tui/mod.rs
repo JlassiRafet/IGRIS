@@ -645,13 +645,10 @@ mod tests {
             for y in [21usize, 22, 23] {
                 let row = rows[y];
                 assert!(
-                    row.chars().last() == Some(' ') && row.chars().nth(79) == Some(' '),
+                    row.ends_with(' ') && row.chars().nth(79) == Some(' '),
                     "{screen:?} row {y} touches the edge: {row:?}"
                 );
-                assert!(
-                    row.chars().nth(0) == Some(' '),
-                    "{screen:?} row {y}: {row:?}"
-                );
+                assert!(row.starts_with(' '), "{screen:?} row {y}: {row:?}");
             }
             assert!(
                 rows[22].trim_end().ends_with('…'),
