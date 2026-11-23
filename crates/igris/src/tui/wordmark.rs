@@ -1,9 +1,11 @@
-//! The IGRIS wordmark: block-pixel letters with a gradient and a red plume above the G.
+//! The IGRIS wordmark: block-pixel letters with a gradient and a slim red plume above the G.
 use super::theme::{ColorDepth, Theme};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
-pub const PLUME: &str = "    ▀▄";
+/// One slim glyph that sweeps back like the logo's plume; it sits over the middle of the G (letter 2).
+pub const PLUME: char = 'ʅ';
+const PLUME_COL: usize = 5;
 pub const ROWS: [&str; 2] = ["▀█▀ █▀▀ █▀█ ▀█▀ █▀▀", "▄█▄ █▄█ █▀▄ ▄█▄ ▄▄█"];
 pub const WIDTH: u16 = 19;
 use super::style::{ACCENT, GLOW, RED, SHEEN};
@@ -72,7 +74,10 @@ fn row(text: &'static str, style: impl Fn(usize) -> Style) -> Line<'static> {
 
 /// `tick` counts 100 ms steps; with `theme.motion` a bright band sweeps over the letters.
 pub fn wordmark(theme: &Theme, tick: usize) -> Vec<Line<'static>> {
-    let mut lines = vec![row(PLUME, |_| plume(theme))];
+    let mut lines = vec![Line::from(vec![
+        Span::raw(" ".repeat(PLUME_COL)),
+        Span::styled(PLUME.to_string(), plume(theme)),
+    ])];
     for (r, text) in ROWS.iter().enumerate() {
         let last = (WIDTH - 1) as f32;
         lines.push(row(text, |c| {
@@ -82,20 +87,17 @@ pub fn wordmark(theme: &Theme, tick: usize) -> Vec<Line<'static>> {
     lines
 }
 
-/// The wordmark as pixels: `(letters, plume)`, each 6 rows by 19 columns. Decoded from the half-block
-/// rows above, so the small and the large wordmark can never drift apart.
-fn pixels() -> (Vec<Vec<bool>>, Vec<Vec<bool>>) {
-    let blank = || vec![vec![false; WIDTH as usize]; 6];
-    let (mut letters, mut plume) = (blank(), blank());
-    for (r, text) in [PLUME, ROWS[0], ROWS[1]].iter().enumerate() {
+/// The letters as pixels, 4 rows by 19 columns. Decoded from the half-block rows above, so the small
+/// and the large wordmark can never drift apart.
+fn pixels() -> Vec<Vec<bool>> {
+    let mut letters = vec![vec![false; WIDTH as usize]; 4];
+    for (r, text) in ROWS.iter().enumerate() {
         for (c, ch) in text.chars().enumerate() {
-            let (top, bottom) = (matches!(ch, '▀' | '█'), matches!(ch, '▄' | '█'));
-            let grid = if r == 0 { &mut plume } else { &mut letters };
-            grid[2 * r][c] = top;
-            grid[2 * r + 1][c] = bottom;
+            letters[2 * r][c] = matches!(ch, '▀' | '█');
+            letters[2 * r + 1][c] = matches!(ch, '▄' | '█');
         }
     }
-    (letters, plume)
+    letters
 }
 
 /// Columns of a large wordmark: every pixel is `2 * rows_per_pixel` columns wide.
@@ -103,25 +105,29 @@ pub fn big_width(rows_per_pixel: u16) -> u16 {
     WIDTH * 2 * rows_per_pixel
 }
 
-/// Rows of a large wordmark.
+/// Rows of a large wordmark: the plume row, then 4 pixel rows.
 pub fn big_height(rows_per_pixel: u16) -> u16 {
-    6 * rows_per_pixel
+    1 + 4 * rows_per_pixel
 }
 
 /// The same wordmark, larger: each pixel is a block of full-block cells (2 columns by 1 row, or
 /// 4 by 2), so the shape and the aspect ratio stay. For big windows.
 pub fn wordmark_big(theme: &Theme, tick: usize, rows_per_pixel: u16) -> Vec<Line<'static>> {
-    let (letters, plume_px) = pixels();
+    let letters = pixels();
     let cols = usize::from(2 * rows_per_pixel);
     let last = (WIDTH - 1) as f32;
-    let mut lines = vec![];
-    for p in 0..6 {
+    let mut lines = vec![Line::from(vec![
+        Span::raw(" ".repeat(PLUME_COL * cols + cols / 2)),
+        Span::styled(PLUME.to_string(), plume(theme)),
+        Span::raw(
+            " ".repeat(usize::from(big_width(rows_per_pixel)) - (PLUME_COL * cols + cols / 2) - 1),
+        ),
+    ])];
+    for (p, row_px) in letters.iter().enumerate() {
         let spans: Vec<Span<'static>> = (0..WIDTH as usize)
             .map(|c| {
-                if plume_px[p][c] {
-                    Span::styled("█".repeat(cols), plume(theme))
-                } else if letters[p][c] {
-                    let t = (c as f32 / last + (p - 2) as f32 / 3.0) / 2.0;
+                if row_px[c] {
+                    let t = (c as f32 / last + p as f32 / 3.0) / 2.0;
                     Span::styled("█".repeat(cols), letter(theme, t, c, tick))
                 } else {
                     Span::raw(" ".repeat(cols))
@@ -171,7 +177,7 @@ mod tests {
         for depth in [ColorDepth::True, ColorDepth::Ansi16, ColorDepth::None] {
             assert_eq!(
                 text(&wordmark(&theme(depth), 0)),
-                vec!["    ▀▄", "▀█▀ █▀▀ █▀█ ▀█▀ █▀▀", "▄█▄ █▄█ █▀▄ ▄█▄ ▄▄█"]
+                vec!["     ʅ", "▀█▀ █▀▀ █▀█ ▀█▀ █▀▀", "▄█▄ █▄█ █▀▄ ▄█▄ ▄▄█"]
             );
         }
     }
@@ -283,7 +289,7 @@ mod tests {
 
     #[test]
     fn the_large_wordmark_is_the_same_shape_at_two_sizes() {
-        let (letters, plume_px) = pixels();
+        let letters = pixels();
         for rpp in [1u16, 2] {
             let lines = wordmark_big(&moving(false), 0, rpp);
             assert_eq!(lines.len(), usize::from(big_height(rpp)));
@@ -293,19 +299,21 @@ mod tests {
                     .all(|r| r.chars().count() == usize::from(big_width(rpp))),
                 "{rows:?}"
             );
-            for p in 0..6 {
-                for c in 0..WIDTH as usize {
-                    let cell = rows[p * usize::from(rpp)]
+            for (p, row_px) in letters.iter().enumerate() {
+                for (c, &on) in row_px.iter().enumerate() {
+                    let cell = rows[1 + p * usize::from(rpp)]
                         .chars()
                         .nth(c * usize::from(2 * rpp))
                         .unwrap();
-                    assert_eq!(
-                        cell == '█',
-                        letters[p][c] || plume_px[p][c],
-                        "pixel {p},{c}"
-                    );
+                    assert_eq!(cell == '█', on, "pixel {p},{c}");
                 }
             }
+            let over_g = rows[0].chars().position(|ch| ch == PLUME).unwrap();
+            let g = 5 * usize::from(2 * rpp);
+            assert!(
+                (g..g + usize::from(2 * rpp)).contains(&over_g),
+                "the plume is over the G"
+            );
         }
     }
 
@@ -315,7 +323,11 @@ mod tests {
         let b = wordmark_big(&moving(true), 12, 1);
         assert_ne!(a, b);
         assert_eq!(text(&a), text(&b));
-        let plume_cell = a[0].spans.iter().find(|s| s.content.contains('█')).unwrap();
+        let plume_cell = a[0]
+            .spans
+            .iter()
+            .find(|s| s.content.contains(PLUME))
+            .unwrap();
         assert_eq!(fg_of(plume_cell), Some(Color::Rgb(0xff, 0x30, 0x38)));
     }
 }
