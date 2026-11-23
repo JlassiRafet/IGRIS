@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 mod action;
+mod apply;
 mod attached;
 mod check;
 mod detect_worker;
@@ -20,6 +21,7 @@ mod next_step;
 mod palette;
 mod pipeline;
 mod pipeline_screen;
+mod review;
 mod state;
 mod term;
 mod theme;
@@ -93,6 +95,7 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
     match s.screen {
         Screen::Check => check::draw(f, body, s, t, hits, s.overlay.is_none()),
         Screen::Pipeline => pipeline_screen::draw(f, body, s, t, hits, s.overlay.is_none()),
+        Screen::Review => review::draw(f, body, s, t, hits, s.overlay.is_none()),
         other => f.render_widget(
             Paragraph::new(format!("{}: not built yet.", other.title())),
             body,
@@ -236,6 +239,7 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let size = ratatui::crossterm::terminal::size()?;
     let mut state = State::new(size);
     state.repo = opts.repo.clone();
+    state.home = std::env::var_os("HOME").map(PathBuf::from);
     let mut hits = HitMap::default();
     let (tx, rx) = std::sync::mpsc::channel();
     state.detecting = true;
@@ -295,6 +299,11 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
                 });
                 state.detecting = true;
                 detect_worker::spawn_real(tx.clone());
+            }
+            Some(Effect::Write(change)) => {
+                let result =
+                    apply::apply(&change).map_err(|e| format!("{}: {e}", change.path.display()));
+                state.finish_apply(result);
             }
             Some(Effect::Copy(text)) => {
                 use std::io::Write;
