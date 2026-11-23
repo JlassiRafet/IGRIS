@@ -15,23 +15,138 @@
 <section class="hero">
 <p class="label">igris</p>
 <div class="wm" id="wm" role="img" aria-label="IGRIS"></div>
-<p class="tag">Agents build and review. The shell decides when it is done.</p>
 </section>
 
-<section class="scroll" aria-label="One task running through IGRIS">
-<div class="stage" id="stage">
-  <div class="bar"><span class="k">Task</span><span class="task" id="task">…</span><span class="chip" id="run">idle</span></div>
-  <div class="rail" id="rail" aria-hidden="true"></div>
-  <div class="panels">
-    <section class="panel" aria-labelledby="hD"><h2 id="hD">Decision <small>rules today · Laya or Jev later</small></h2><div id="decision"></div><p class="foot">Acts at confidence 0.85 or more; below that it asks you.</p></section>
-    <section class="panel" aria-labelledby="hL"><h2 id="hL">Session log</h2><div id="log"></div></section>
-    <section class="panel" aria-labelledby="hR"><h2 id="hR">Result</h2><div id="result"></div></section>
-  </div>
+<div class="wrap" id="wrap"><div class="scroll" id="scroll">
+<div class="stage" id="stage" role="img" aria-label="A terminal showing one task passing from you to Hermes, the decision layer, three Herdr panes and a report">
+<svg class="a" width="0" height="0" aria-hidden="true"><defs>
+<symbol id="i-her" viewBox="0 0 16 16"><path d="M2 3h12v1h-12zM1 4h2v1h-2zM13 4h2v1h-2zM1 5h2v1h-2zM13 5h2v1h-2zM1 6h2v1h-2zM4 6h2v1h-2zM7 6h2v1h-2zM10 6h2v1h-2zM13 6h2v1h-2zM1 7h2v1h-2zM4 7h2v1h-2zM7 7h2v1h-2zM10 7h2v1h-2zM13 7h2v1h-2zM1 8h2v1h-2zM13 8h2v1h-2zM1 9h2v1h-2zM13 9h2v1h-2zM2 10h12v1h-12zM10 11h3v1h-3zM10 12h2v1h-2zM10 13h1v1h-1z"/></symbol>
+<symbol id="i-jev" viewBox="0 0 16 16"><path d="M1 1h4v1h-4zM11 1h4v1h-4zM1 2h4v1h-4zM11 2h4v1h-4zM1 3h4v1h-4zM11 3h4v1h-4zM3 4h2v1h-2zM11 4h2v1h-2zM4 5h2v1h-2zM10 5h2v1h-2zM5 6h2v1h-2zM9 6h2v1h-2zM6 7h4v1h-4zM7 8h2v1h-2zM7 9h2v1h-2zM7 10h2v1h-2zM6 11h4v1h-4zM5 12h6v1h-6zM5 13h6v1h-6zM6 14h4v1h-4z"/></symbol>
+<symbol id="i-cdx" viewBox="0 0 16 16"><path d="M3 2h6v1h-6zM2 3h2v1h-2zM8 3h2v1h-2zM1 4h2v1h-2zM9 4h2v1h-2zM1 5h2v1h-2zM7 5h1v1h-1zM9 5h2v1h-2zM1 6h2v1h-2zM4 6h1v1h-1zM6 6h1v1h-1zM9 6h2v1h-2zM2 7h2v1h-2zM5 7h1v1h-1zM8 7h2v1h-2zM3 8h6v1h-6zM8 9h3v1h-3zM9 10h3v1h-3zM10 11h3v1h-3zM11 12h3v1h-3zM12 13h2v1h-2z"/></symbol>
+<symbol id="i-hrd" viewBox="0 0 16 16"><path d="M1 3h14v1h-14zM1 4h14v1h-14zM1 5h2v1h-2zM6 5h2v1h-2zM13 5h2v1h-2zM1 6h2v1h-2zM6 6h2v1h-2zM13 6h2v1h-2zM1 7h2v1h-2zM6 7h2v1h-2zM13 7h2v1h-2zM1 8h2v1h-2zM6 8h9v1h-9zM1 9h2v1h-2zM6 9h9v1h-9zM1 10h2v1h-2zM6 10h2v1h-2zM10 10h2v1h-2zM13 10h2v1h-2zM1 11h2v1h-2zM6 11h2v1h-2zM10 11h2v1h-2zM13 11h2v1h-2zM1 12h14v1h-14zM1 13h14v1h-14z"/></symbol>
+<symbol id="i-sh" viewBox="0 0 16 16"><path d="M2 5h2v1h-2zM3 6h2v1h-2zM4 7h2v1h-2zM5 8h2v1h-2zM4 9h2v1h-2zM3 10h2v1h-2zM2 11h2v1h-2zM8 11h6v1h-6zM8 12h6v1h-6z"/></symbol>
+<symbol id="i-ok" viewBox="0 0 16 16"><path d="M7 1h2v1h-2zM5 2h6v1h-6zM2 3h12v1h-12zM2 4h2v1h-2zM12 4h2v1h-2zM2 5h2v1h-2zM10 5h1v1h-1zM12 5h2v1h-2zM2 6h2v1h-2zM9 6h1v1h-1zM12 6h2v1h-2zM2 7h2v1h-2zM5 7h1v1h-1zM8 7h1v1h-1zM12 7h2v1h-2zM2 8h2v1h-2zM6 8h2v1h-2zM12 8h2v1h-2zM3 9h2v1h-2zM11 9h2v1h-2zM4 10h2v1h-2zM10 10h2v1h-2zM5 11h2v1h-2zM9 11h2v1h-2zM6 12h4v1h-4zM7 13h2v1h-2z"/></symbol>
+<!-- Simple Icons (CC0): Telegram, Claude, MiniMax -->
+<symbol id="i-tg" viewBox="0 0 24 24"><path id="d-tg"/></symbol>
+<symbol id="i-cla" viewBox="0 0 24 24"><path id="d-cla"/></symbol>
+<symbol id="i-mm" viewBox="0 0 24 24"><path id="d-mm"/></symbol>
+</defs></svg>
+
+<div class="a bar" style="left:0;top:0;width:1400px;height:30px">
+ <span class="a" style="left:14px;top:11px;width:8px;height:8px;background:#34454f"></span>
+ <span class="a" style="left:28px;top:11px;width:8px;height:8px;background:#34454f"></span>
+ <span class="a" style="left:42px;top:11px;width:8px;height:8px;background:#34454f"></span>
+ <span class="a d s" style="left:0;width:1400px;top:7px;text-align:center">~/app — herdr — 175x40</span>
 </div>
-</section>
-<p class="sr" id="live" aria-live="polite"></p>
+<div class="a" style="left:0;width:1400px;top:40px;text-align:center;font-weight:700;font-size:13px;letter-spacing:.06em">ONE TASK · <span style="color:var(--cla)">CLAUDE CODE</span> BUILDS · <span style="color:var(--cdx)">CODEX</span> REVIEWS · THE SHELL DECIDES</div>
+<div class="a" style="left:24px;top:64px;width:1352px;border-top:1px solid var(--line)"></div>
+<div class="a s" style="left:24px;top:72px;width:760px;display:flex;justify-content:space-between">
+ <span><span style="color:var(--you)">■</span> you</span><span><span style="color:var(--her)">■</span> hermes</span><span><span style="color:var(--jev)">■</span> decision</span><span><span style="color:var(--cla)">■</span> claude</span><span><span style="color:var(--cdx)">■</span> codex</span><span><span style="color:var(--hrd)">■</span> herdr</span><span><span style="color:var(--sh)">■</span> shell</span>
+</div>
+
+<svg class="a" id="wires" width="1400" height="624" style="left:0;top:0;pointer-events:none" fill="none" shape-rendering="crispEdges" aria-hidden="true">
+ <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 9 5 1 9z" fill="#7d8b94"/></marker></defs>
+ <g stroke="#3d505b" stroke-width="1" stroke-dasharray="2 4">
+  <path d="M174 212H206" marker-end="url(#ah)"/><path d="M424 212H456" marker-end="url(#ah)"/><path d="M696 212H744" marker-end="url(#ah)"/>
+  <path d="M1156 212H1202" marker-end="url(#ah)"/>
+  <path d="M820 300V312H930V302" marker-end="url(#ah)"/><path d="M946 300V320H790V302" marker-end="url(#ah)"/>
+  <path d="M990 300V328H1092V302" marker-end="url(#ah)"/><path d="M1124 300V338H760V302" marker-end="url(#ah)"/>
+ </g>
+ <g id="paths" stroke="none">
+  <path id="pYou" d="M174 212H208"/><path id="pYouB" d="M208 212H174"/>
+  <path id="pDec" d="M424 212H458"/>
+  <path id="pBld" d="M696 212H746"/>
+  <path id="pRev" d="M820 300V312H930V300"/><path id="pFix" d="M946 300V320H790V300"/>
+  <path id="pChk" d="M990 300V328H1092V300"/><path id="pFixS" d="M1124 300V338H760V300"/>
+  <path id="pRep" d="M1156 212H1204"/>
+ </g>
+ <g id="dots"></g>
+</svg>
+
+<div class="b" id="bYou" style="--c:var(--you);left:24px;top:170px;width:150px;height:84px;padding:8px 10px">
+ <div class="t"><svg class="ic"><use href="#i-tg"/></svg>YOU</div>
+ <div class="d s">telegram · terminal</div>
+ <div class="ell" id="youMsg" style="margin-top:6px">» …</div>
+</div>
+
+<div class="b" id="bHer" style="--c:var(--her);left:210px;top:92px;width:214px;height:316px">
+ <div class="a" style="left:15px;top:62px;bottom:20px;border-left:1px dashed var(--line)"></div>
+ <div class="a t" style="left:0;right:0;top:8px;text-align:center"><svg class="ic"><use href="#i-her"/></svg>HERMES</div>
+ <div class="a d s" style="left:0;right:0;top:26px;text-align:center"><svg class="ic mm"><use href="#i-mm"/></svg>minimax m3 · always on</div>
+ <div class="mk" id="m0" style="top:54px"><i class="cb"></i>new request</div>
+ <div class="a d s" style="left:26px;top:78px">reads your message and</div>
+ <div class="a d s" style="left:26px;top:94px">starts an igris run</div>
+ <div class="a d s" style="left:26px;top:122px">task:</div>
+ <div class="a s ell" id="hTask" style="left:26px;right:8px;top:138px;font-weight:700">» waiting</div>
+ <div class="mk" id="m1" style="top:166px"><i class="cb"></i>decide</div>
+ <div class="mk" id="m2" style="top:194px"><i class="cb"></i>dispatch</div>
+ <div class="a d s" style="left:26px;top:218px">herdr runs the agents;</div>
+ <div class="a d s" style="left:26px;top:234px">hermes never codes</div>
+ <div class="mk" id="m3" style="top:262px"><i class="cb"></i>verify in shell</div>
+ <div class="mk" id="m4" style="top:288px"><i class="cb"></i>report to you</div>
+</div>
+
+<div class="b" id="bDec" style="--c:var(--jev);left:460px;top:128px;width:236px;height:168px;padding:8px 10px">
+ <div class="t"><svg class="ic"><use href="#i-jev"/></svg>DECISION</div>
+ <div class="d s" style="margin-bottom:4px">rules today · jev or laya later</div>
+ <div class="row"><span>agent</span><span class="ell" id="v0">—</span><span class="bar"><i id="b0"></i></span><span id="p0" class="d">—</span></div>
+ <div class="row"><span>tier</span><span class="ell" id="v1">—</span><span class="bar"><i id="b1"></i></span><span id="p1" class="d">—</span></div>
+ <div class="row"><span>risk</span><span class="ell" id="v2">—</span><span class="bar"><i id="b2"></i></span><span id="p2" class="d">—</span></div>
+ <div class="row"><span>approval</span><span class="ell" id="v3">—</span><span class="bar"><i id="b3"></i></span><span id="p3" class="d">—</span></div>
+ <div class="s d" style="margin-top:6px">act at 0.85+, else ask you</div>
+</div>
+
+<div class="b" id="bHrd" style="--c:var(--hrd);left:732px;top:92px;width:434px;height:316px;border-style:dashed">
+ <div class="a t" style="left:12px;top:6px"><svg class="ic"><use href="#i-hrd"/></svg>HERDR <span class="d s" style="font-weight:400">one pane per agent</span></div>
+ <div class="a d s" style="left:12px;top:260px">workspaces</div>
+ <div class="a s" style="left:12px;top:278px"><span class="dot" id="sApp"></span>~/app <span class="d" style="margin-left:10px"><span class="dot"></span>~/pos</span></div>
+ <div class="a d s" style="left:222px;top:260px">agents</div>
+ <div class="a s" style="left:222px;top:278px"><span class="dot" id="sd0"></span>claude <span class="dot" id="sd1" style="margin-left:10px"></span>codex <span class="dot" id="sd2" style="margin-left:10px"></span>shell</div>
+</div>
+<div class="b pane" id="pn0" style="--c:var(--cla);left:748px;top:124px;width:128px;height:176px">
+ <div class="t ell"><svg class="ic"><use href="#i-cla"/></svg>claude code</div><div class="d ell">builds</div>
+ <div class="pbar"><span class="bar"><i id="pb0" style="background:var(--cla)"></i></span><span id="pp0">0%</span></div>
+ <div class="ell act" id="pa0">waiting</div>
+ <div class="st"><span class="dot" id="pd0"></span><span id="ps0" class="d">idle</span></div>
+</div>
+<div class="b pane" id="pn1" style="--c:var(--cdx);left:888px;top:124px;width:128px;height:176px">
+ <div class="t ell"><svg class="ic"><use href="#i-cdx"/></svg>codex</div><div class="d ell">reviews the diff</div>
+ <div class="pbar"><span class="bar"><i id="pb1" style="background:var(--cdx)"></i></span><span id="pp1">0%</span></div>
+ <div class="ell act" id="pa1">waiting</div>
+ <div class="st"><span class="dot" id="pd1"></span><span id="ps1" class="d">idle</span></div>
+</div>
+<div class="b pane" id="pn2" style="--c:var(--sh);left:1028px;top:124px;width:128px;height:176px">
+ <div class="t ell"><svg class="ic"><use href="#i-sh"/></svg>shell</div><div class="d ell">your checks</div>
+ <div class="pbar"><span class="bar"><i id="pb2" style="background:var(--sh)"></i></span><span id="pp2">0%</span></div>
+ <div class="ell act" id="pa2">waiting</div>
+ <div class="st"><span class="dot" id="pd2"></span><span id="ps2" class="d">idle</span></div>
+</div>
+
+<div class="b" id="bRep" style="--c:var(--her);left:1204px;top:146px;width:172px;height:132px;padding:8px 10px">
+ <div class="t"><svg class="ic"><use href="#i-ok"/></svg>REPORT</div>
+ <div class="d s">hermes → you</div>
+ <div id="repMsg" style="margin-top:6px;font-size:12px;line-height:16px">nothing to approve</div>
+</div>
+
+<div class="b log" style="--c:#34454f;left:24px;top:428px;width:1352px;height:138px;padding:12px 14px 0">
+ <span class="a d s" style="left:22px;top:-9px;background:var(--stage);padding:0 6px">session log</span>
+ <div id="log"></div>
+</div>
+<div class="a" style="left:24px;top:580px;width:1352px;height:36px">
+ <div class="ell"><span style="color:var(--her)">~/app $</span> <span id="cmd">igris run</span> <span class="cur"></span></div>
+ <div class="s d" style="margin-top:6px;display:flex;justify-content:space-between">
+  <span>hermes <span id="sH" style="color:var(--her)">[listening]</span></span>
+  <span>decision <span id="sJ" style="color:var(--jev)">[rules]</span></span>
+  <span>herdr <span id="sR" style="color:var(--hrd)">[3 panes]</span></span>
+  <span>codex <span id="sC" style="color:var(--cdx)">[idle]</span></span>
+  <span>tasks done <span id="hDone" style="color:var(--txt)">0</span></span>
+ </div>
+</div>
+</div></div></div>
+
+<div class="below"><span class="hex" id="hex" aria-hidden="true"></span><span class="cap" id="cap" aria-live="polite">Starting the team…</span></div>
 <noscript><p class="note">This page animates one task through IGRIS. It needs JavaScript.</p></noscript>
-<p class="note">Example tasks. The agents shown are the defaults: any agent Herdr supports can build or review. Marks are from <a href="https://simpleicons.org">Simple Icons</a> (CC0); the names belong to their owners.</p>
+<p class="note">Example tasks. The agents shown are the defaults: any agent Herdr supports can build or review. Marks are from <a href="https://simpleicons.org">Simple Icons</a> (CC0); names and marks belong to their owners.</p>
 </main>
 <script src="pipeline.js"></script>
 </body>
