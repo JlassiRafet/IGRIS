@@ -209,13 +209,23 @@ impl Config {
 
     /// The file `load_from` would read, or the list of places it looked.
     pub fn find(repo: &Path, path: Option<&Path>, home: Option<&Path>) -> Result<PathBuf, String> {
+        let user = home.map(crate::platform::user_config_file_here);
+        Self::find_in(repo, path, user.as_deref())
+    }
+
+    /// `find` with the user-level file given directly: the lookup order is the same on every platform.
+    pub fn find_in(
+        repo: &Path,
+        path: Option<&Path>,
+        user_file: Option<&Path>,
+    ) -> Result<PathBuf, String> {
         let mut tried: Vec<PathBuf> = vec![];
         if let Some(p) = path {
             tried.push(p.to_path_buf());
         } else {
             tried.push(repo.join("igris.toml"));
-            if let Some(h) = home {
-                tried.push(crate::platform::user_config_file_here(h));
+            if let Some(u) = user_file {
+                tried.push(u.to_path_buf());
             }
         }
         tried.iter().find(|p| p.is_file()).cloned().ok_or_else(|| {
