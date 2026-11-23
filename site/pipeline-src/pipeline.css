@@ -63,7 +63,7 @@ main{max-width:848px;margin:0 auto;padding:16px 24px 40px}
 
 /* the GIF and screenshots show the pipeline alone (?bare) */
 .bare .top,.bare .hero,.bare .note{display:none}
-.bare main{padding:0 0 0 0}
+.bare main{padding:8px}
 
 /* seek mode (?at=MS) draws one exact moment: nothing may be mid-transition */
 .still *{transition:none!important;animation:none!important}
