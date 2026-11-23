@@ -7,6 +7,7 @@
 mod check;
 mod doctor;
 mod merge;
+mod tui;
 
 use clap::{Parser, Subcommand};
 use igris_core::config::Config;
@@ -23,9 +24,16 @@ use std::process::ExitCode;
 /// in Herdr, and the shell decides when it is done.
 #[derive(Parser)]
 #[command(name = "igris", version)]
+#[command(args_conflicts_with_subcommands = true)]
 struct Cli {
+    /// With no command, `igris` opens the terminal app on this repository.
+    #[arg(long, default_value = ".")]
+    repo: PathBuf,
+    /// Do not capture the mouse (keeps your terminal's own text selection).
+    #[arg(long)]
+    no_mouse: bool,
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
@@ -149,8 +157,28 @@ fn dispatch(cmd: Cmd) -> Out {
     }
 }
 
+/// The app needs a terminal on both ends. Scripts get the usage and exit code 2, never a hang.
+fn app(repo: PathBuf, no_mouse: bool) -> ExitCode {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        eprintln!("igris: the terminal app needs a terminal; use a command from the list below.");
+        let _ = <Cli as clap::CommandFactory>::command().write_help(&mut std::io::stderr());
+        return ExitCode::from(2);
+    }
+    match tui::run(tui::Opts { repo, no_mouse }) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("igris: {e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 fn main() -> ExitCode {
-    let cmd = Cli::parse().cmd;
+    let cli = Cli::parse();
+    let Some(cmd) = cli.cmd else {
+        return app(cli.repo, cli.no_mouse);
+    };
     match dispatch(cmd) {
         Ok((v, code)) => {
             println!("{v}");

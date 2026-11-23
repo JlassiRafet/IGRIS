@@ -497,3 +497,14 @@ fn setup_command_is_gone() {
         .unwrap();
     assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
 }
+
+#[test]
+fn no_arguments_without_a_terminal_prints_usage_and_exits_2() {
+    let o = Command::new(env!("CARGO_BIN_EXE_igris"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+    assert!(stderr(&o).contains("Usage: igris"), "{}", stderr(&o));
+    assert!(o.stdout.is_empty(), "stdout stays free for JSON");
+}
