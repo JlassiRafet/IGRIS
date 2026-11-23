@@ -318,7 +318,7 @@ mod tests {
     fn a_long_path_keeps_its_end_and_never_exceeds_the_width() {
         assert_eq!(
             ellipsize_start("/very/long/path/igris.toml", 14, "…"),
-            "…ath/igris.toml"
+            "…th/igris.toml"
         );
         assert_eq!(ellipsize_start("/short", 14, "…"), "/short");
         assert_eq!(ellipsize_start("/a/b/c.toml", 0, "…"), "");
