@@ -18,6 +18,8 @@ mod input;
 mod keymap;
 mod next_step;
 mod palette;
+mod pipeline;
+mod pipeline_screen;
 mod state;
 mod term;
 mod theme;
@@ -90,6 +92,7 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
     let body = Rect::new(area.x, tab_y + 2, area.width, area.height - top - 5);
     match s.screen {
         Screen::Check => check::draw(f, body, s, t, hits, s.overlay.is_none()),
+        Screen::Pipeline => pipeline_screen::draw(f, body, s, t, hits, s.overlay.is_none()),
         other => f.render_widget(
             Paragraph::new(format!("{}: not built yet.", other.title())),
             body,
@@ -219,13 +222,12 @@ fn context(s: &State) -> Context {
         Some(Overlay::Fix(_)) => Context::List,
         // Both take typed text (the filter), so plain letters are not commands there.
         Some(Overlay::Palette | Overlay::Help) => Context::Input,
+        None if pipeline_screen::editing(s) => Context::Input,
         None => Context::List,
     }
 }
 
 pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
-    // The repository is used by the screens that arrive in later tasks.
-    let _ = &opts.repo;
     let mouse = !opts.no_mouse && std::env::var("IGRIS_NO_MOUSE").as_deref() != Ok("1");
     let theme = Theme::detect(&Env::from_process());
     let stop = stop_flag()?;
@@ -233,6 +235,7 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
     let size = ratatui::crossterm::terminal::size()?;
     let mut state = State::new(size);
+    state.repo = opts.repo.clone();
     let mut hits = HitMap::default();
     let (tx, rx) = std::sync::mpsc::channel();
     state.detecting = true;
@@ -251,7 +254,18 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
         }
         let action = match event::read()? {
             Event::Key(k) if k.kind != KeyEventKind::Release => {
-                key_to_action(context(&state), k).or_else(|| type_key(&mut state, k))
+                let ctx = context(&state);
+                let typed = key_to_action(ctx, k);
+                if typed.is_none() && state.overlay.is_none() && pipeline_screen::editing(&state) {
+                    pipeline_screen::edit_key(&mut state, k);
+                    None
+                } else {
+                    typed.or_else(|| type_key(&mut state, k))
+                }
+            }
+            Event::Paste(text) => {
+                pipeline_screen::paste(&mut state, &text);
+                None
             }
             Event::Mouse(m) => match m.kind {
                 MouseEventKind::Down(MouseButton::Left) => hits.at(m.column, m.row),

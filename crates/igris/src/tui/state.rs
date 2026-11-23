@@ -3,7 +3,10 @@ use super::action::Action;
 use super::check::CheckUi;
 use super::detect_worker::Msg;
 use super::fix::{Fix, INSTALL_HERDR_ARGV};
+use super::pipeline_screen::PipelineUi;
+use igris_detect::Snapshot;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
@@ -78,6 +81,11 @@ pub struct State {
     /// The palette's chosen row, or the help's scroll offset.
     pub cursor: usize,
     pub check: CheckUi,
+    pub pipeline: PipelineUi,
+    /// The last scan, kept for screens that need it (Pipeline's agent list).
+    pub snapshot: Option<Snapshot>,
+    /// The repository the app was opened on.
+    pub repo: PathBuf,
     /// The result of the last action, in words.
     pub toast: Option<String>,
     /// Counts loop turns, for the spinner.
@@ -89,6 +97,12 @@ impl State {
     pub fn apply(&mut self, m: Msg) {
         let Msg::Detected(snap) = m;
         self.check.set(&snap);
+        if self.pipeline.form.is_none() && self.pipeline.broken.is_none() {
+            // The form starts once, from the first scan; later scans never overwrite edits.
+            self.applied = self.pipeline.load(&self.repo, &snap);
+            super::pipeline_screen::refresh(self);
+        }
+        self.snapshot = Some(*snap);
         self.blocker = self.check.view.as_ref().and_then(super::check::blocker);
         self.detecting = false;
     }
@@ -107,6 +121,9 @@ impl State {
             query: String::new(),
             cursor: 0,
             check: CheckUi::default(),
+            pipeline: PipelineUi::default(),
+            snapshot: None,
+            repo: PathBuf::from("."),
             toast: None,
             tick: 0,
         }
@@ -189,6 +206,22 @@ pub fn update(s: &mut State, a: Action) -> Effect {
             if s.screen == Screen::Check =>
         {
             super::check::update(s, a)
+        }
+        Action::Up
+        | Action::Down
+        | Action::PageUp
+        | Action::PageDown
+        | Action::Home
+        | Action::End
+        | Action::NextField
+        | Action::PrevField
+        | Action::Toggle
+        | Action::Activate
+        | Action::Cancel
+        | Action::Select(_)
+            if s.screen == Screen::Pipeline =>
+        {
+            super::pipeline_screen::update(s, a)
         }
         _ => Effect::None,
     }

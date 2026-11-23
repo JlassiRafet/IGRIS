@@ -178,3 +178,60 @@ fn a_bad_risky_path_pattern_is_rejected_at_load() {
         .to_string();
     assert!(e.contains("policy.risky_paths") && e.contains("'['"), "{e}");
 }
+
+#[test]
+fn a_config_survives_a_trip_through_its_file_text() {
+    let mut c = Config::default();
+    c.checks.command = "cargo test".into();
+    c.agents.reviewer_args = Some(vec!["--flag".into()]);
+    c.herdr.machine = Some("box".into());
+    c.policy.risky_paths = vec!["a/**".into(), "{b,c}/*".into()];
+    let text = c.to_toml();
+    assert!(text.contains("threshold = 0.85\n"), "no f32 noise: {text}");
+    assert_eq!(Config::from_toml_str(&text).unwrap(), c);
+}
+
+#[test]
+fn the_default_config_round_trips_even_though_it_is_not_valid_yet() {
+    let d = Config::default();
+    assert_eq!(Config::from_toml_str(&d.to_toml()).unwrap(), d);
+    assert!(d.validate().is_err(), "checks.command is still required");
+    assert!(
+        !d.to_toml().contains("reviewer_args"),
+        "an implicit reviewer_args is not written"
+    );
+}
+
+#[test]
+fn from_toml_str_rejects_unknown_keys_like_load_does() {
+    let text = "[checks]\ncommand = \"t\"\nbogus = 1\n";
+    let from_str = Config::from_toml_str(text).unwrap_err().to_string();
+    let loaded = parse(text).unwrap_err().to_string();
+    assert!(from_str.contains("unknown field `bogus`"), "{from_str}");
+    assert!(loaded.contains("unknown field `bogus`"), "{loaded}");
+}
+
+#[test]
+fn problems_lists_every_issue_and_validate_reports_the_first() {
+    let mut c = Config::default();
+    c.agents.builder = "nope".into();
+    c.decision.threshold = 3.0;
+    let p = c.problems();
+    assert_eq!(p.len(), 3, "{p:?}");
+    assert!(p[0].starts_with("agents.builder"));
+    assert_eq!(c.validate().unwrap_err().to_string(), p[0]);
+    c.agents.builder = "claude".into();
+    c.decision.threshold = 0.5;
+    c.checks.command = "t".into();
+    assert!(c.problems().is_empty());
+}
+
+#[test]
+fn find_returns_the_file_or_the_places_it_looked() {
+    let repo = tmp("find");
+    let home = tmp("findhome");
+    let e = Config::find(&repo, None, Some(&home)).unwrap_err();
+    assert!(e.contains("igris.toml"), "{e}");
+    let f = write(&repo, "igris.toml", "[checks]\ncommand = \"t\"\n");
+    assert_eq!(Config::find(&repo, None, Some(&home)).unwrap(), f);
+}
