@@ -3,10 +3,13 @@ use super::action::Action;
 use super::apply::{Applied, Change, DiffLine, Target, plan_change};
 use super::hit::HitMap;
 use super::state::{Effect, State};
-use super::theme::{ColorDepth, Theme};
+use super::style::Role;
+use super::theme::{Glyphs, Theme};
+use super::widgets::{button, fit};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Modifier;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 use std::path::PathBuf;
 
@@ -75,19 +78,13 @@ pub fn refresh(s: &mut State) {
     s.review = r;
 }
 
-pub fn summary(c: &Change) -> String {
-    let (add, del) = c.diff.iter().fold((0, 0), |(a, d), l| match l {
+/// `(lines added, lines removed)` of a change.
+pub fn counts(c: &Change) -> (usize, usize) {
+    c.diff.iter().fold((0, 0), |(a, d), l| match l {
         DiffLine::Add(_) => (a + 1, d),
         DiffLine::Del(_) => (a, d + 1),
         DiffLine::Same(_) => (a, d),
-    });
-    match &c.existing {
-        None => format!("New file, {add} lines."),
-        Some(old) if *old == c.new => "No changes: the file already matches.".into(),
-        Some(_) => {
-            format!("{add} added, {del} removed. The old file is kept as a .bak next to it.")
-        }
-    }
+    })
 }
 
 pub fn update(s: &mut State, a: Action) -> Effect {
@@ -170,78 +167,158 @@ impl State {
 pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, clickable: bool) {
     let r = &s.review;
     let target = chosen(s);
+    let ascii = t.glyphs == Glyphs::Ascii;
+    let width = area.width as usize;
+    let dim = t.style(Role::Dim);
+    let bold = Modifier::BOLD;
+    let focus_mark = |i: usize| {
+        let m = match (r.focus == i, ascii) {
+            (false, _) => " ",
+            (true, false) => "▌",
+            (true, true) => ">",
+        };
+        Span::styled(m, t.style(Role::Bad))
+    };
+    let at = |row: u16| Rect::new(area.x, area.y + row, area.width, 1);
+
+    // Where the file goes: a two-way choice, then the full path.
+    f.render_widget(Paragraph::new(Line::styled("Write to", dim)), at(0));
+    let (on, off) = if ascii {
+        ("(*)", "( )")
+    } else {
+        ("(●)", "( )")
+    };
+    let option = |label: &str, chosen: bool| {
+        let style = if chosen {
+            t.style(Role::Text).add_modifier(bold)
+        } else {
+            dim
+        };
+        vec![
+            Span::styled(if chosen { on } else { off }, style),
+            Span::styled(format!(" {label}"), style),
+        ]
+    };
+    let mut choice = vec![focus_mark(0), Span::raw(" ")];
+    choice.extend(option("This repository", target == Target::Repo));
+    choice.push(Span::raw("   "));
+    choice.extend(option("Your user config", target == Target::UserConfig));
+    f.render_widget(Paragraph::new(Line::from(choice)), at(1));
     let path = target_path(s, target)
         .map(|p| p.display().to_string())
         .unwrap_or_default();
-    let mark = |i: usize| if r.focus == i { ">" } else { " " };
-    let head = format!(
-        "{} Write to: {}  {path}\n  (Enter or a click switches between this repository and your user config)",
-        mark(0),
-        target.title()
-    );
     f.render_widget(
-        Paragraph::new(head),
-        Rect::new(area.x, area.y, area.width, 2.min(area.height)),
+        Paragraph::new(Line::styled(
+            format!("  {}", fit(t, &path, width.saturating_sub(2))),
+            dim,
+        )),
+        at(2),
     );
     if clickable {
-        hits.add(Rect::new(area.x, area.y, area.width, 1), Action::Select(0));
+        for row in 0..3 {
+            hits.add(at(row), Action::Select(0));
+        }
     }
-    if area.height < 6 {
+    if area.height < 8 {
         return;
     }
-    let button = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
-    let body = Rect::new(area.x, area.y + 3, area.width, area.height - 5);
-    match &r.change {
+    let button_row = at(area.height - 1);
+    let body = Rect::new(area.x, area.y + 5, area.width, area.height - 7);
+    let (button, note) = match &r.change {
         Some(c) => {
-            f.render_widget(
-                Paragraph::new(summary(c)),
-                Rect::new(area.x, area.y + 2, area.width, 1),
-            );
-            let shown = c.diff.iter().skip(r.scroll).take(body.height as usize);
-            for (row, l) in shown.enumerate() {
-                let (prefix, text, color) = match l {
-                    DiffLine::Same(x) => ("  ", x, None),
-                    DiffLine::Add(x) => ("+ ", x, Some(Color::Green)),
-                    DiffLine::Del(x) => ("- ", x, Some(Color::Red)),
-                };
-                let style = match (color, t.depth) {
-                    (Some(c), d) if d != ColorDepth::None => Style::new().fg(c),
-                    _ => Style::new(),
-                };
-                let line = Rect::new(body.x, body.y + row as u16, body.width, 1);
-                f.render_widget(Paragraph::new(format!("{prefix}{text}")).style(style), line);
-            }
-            let label = if c.existing.as_deref() == Some(c.new.as_str()) {
-                "[ Nothing to apply ]"
+            let (add, del) = counts(c);
+            let same = c.existing.as_deref() == Some(c.new.as_str());
+            let sign = if ascii { "-" } else { "−" };
+            let summary = if same {
+                vec![Span::styled(
+                    format!(
+                        "{} No changes: the file already matches.",
+                        if ascii { "[x]" } else { "✓" }
+                    ),
+                    t.style(Role::Ok),
+                )]
+            } else if c.existing.is_none() {
+                vec![Span::styled(
+                    format!("New file, {add} lines."),
+                    t.style(Role::Info),
+                )]
             } else {
-                "[ Apply ]"
+                vec![
+                    Span::styled(format!("+{add} added"), t.style(Role::Ok)),
+                    Span::raw("   "),
+                    Span::styled(format!("{sign}{del} removed"), t.style(Role::Bad)),
+                    Span::styled("   The old file is kept as a .bak next to it.", dim),
+                ]
             };
-            f.render_widget(Paragraph::new(format!("{} {label}", mark(1))), button);
+            f.render_widget(Paragraph::new(Line::from(summary)), at(4));
+            for (row, l) in c
+                .diff
+                .iter()
+                .skip(r.scroll)
+                .take(body.height as usize)
+                .enumerate()
+            {
+                let (mark, text, style) = match l {
+                    DiffLine::Same(x) => (" ", x, dim),
+                    DiffLine::Add(x) => ("+", x, t.style(Role::Ok)),
+                    DiffLine::Del(x) => (if ascii { "-" } else { "−" }, x, t.style(Role::Bad)),
+                };
+                let line = Line::from(vec![
+                    Span::styled(mark, style),
+                    Span::raw(" "),
+                    Span::styled(fit(t, text, width.saturating_sub(2)), style),
+                ]);
+                f.render_widget(
+                    Paragraph::new(line),
+                    Rect::new(body.x, body.y + row as u16, body.width, 1),
+                );
+            }
+            if same {
+                (button(t, "Nothing to apply", false, r.focus == 1), "")
+            } else {
+                (
+                    button(t, "Apply", true, r.focus == 1),
+                    "Enter applies; Tab moves between the two controls",
+                )
+            }
         }
         None => {
-            let text = format!(
-                "Nothing to apply yet:\n{}",
-                r.problems
-                    .iter()
-                    .map(|p| format!("  ! {p}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            );
+            let mut lines = vec![Line::styled(
+                "Nothing to apply yet",
+                t.style(Role::Text).add_modifier(bold),
+            )];
+            lines.extend(r.problems.iter().map(|p| {
+                Line::styled(
+                    format!(
+                        "{} {}",
+                        if ascii { "[!]" } else { "●" },
+                        fit(t, p, width * 3)
+                    ),
+                    t.style(Role::Bad),
+                )
+            }));
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                "Fix this on the Pipeline screen (key 2).",
+                dim,
+            ));
             f.render_widget(
-                Paragraph::new(text).wrap(Wrap { trim: false }),
-                Rect::new(area.x, area.y + 2, area.width, area.height - 3),
+                Paragraph::new(lines).wrap(Wrap { trim: false }),
+                Rect::new(area.x, area.y + 4, area.width, area.height - 6),
             );
-            f.render_widget(
-                Paragraph::new(format!(
-                    "{} [ Apply ] (not available until this is fixed)",
-                    mark(1)
-                )),
-                button,
-            );
+            (
+                button(t, "Apply", false, r.focus == 1),
+                "not available until this is fixed",
+            )
         }
+    };
+    let mut row = vec![focus_mark(1), Span::raw(" "), button];
+    if !note.is_empty() {
+        row.push(Span::styled(format!("  {note}"), dim));
     }
+    f.render_widget(Paragraph::new(Line::from(row)), button_row);
     if clickable {
-        hits.add(button, Action::Select(1));
+        hits.add(button_row, Action::Select(1));
     }
 }
 
@@ -429,5 +506,121 @@ mod tests {
         s.finish_apply(Err("permission denied".into()));
         assert!(s.dirty && !s.applied, "still unsaved");
         assert!(s.toast.as_deref().unwrap().contains("Nothing was changed"));
+    }
+
+    fn render_with(s: &State, t: &Theme, w: u16, h: u16) -> (String, ratatui::buffer::Buffer) {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        let mut hits = HitMap::default();
+        term.draw(|f| draw(f, f.area(), s, t, &mut hits, true))
+            .unwrap();
+        let buf = term.backend().buffer().clone();
+        let text = (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        (text, buf)
+    }
+
+    fn truecolor() -> Theme {
+        Theme {
+            depth: crate::tui::theme::ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: false,
+        }
+    }
+
+    fn find(text: &str, needle: &str) -> (u16, u16) {
+        let (y, l) = text
+            .lines()
+            .enumerate()
+            .find(|(_, l)| l.contains(needle))
+            .unwrap_or_else(|| panic!("{needle}:\n{text}"));
+        (
+            l[..l.find(needle).unwrap()].chars().count() as u16,
+            y as u16,
+        )
+    }
+
+    #[test]
+    fn the_target_is_a_two_way_choice_that_swaps_when_you_pick_the_other() {
+        let mut s = on_review(Some("[checks]\ncommand = \"t\"\n"));
+        let (text, _) = render_with(&s, &truecolor(), 100, 24);
+        assert!(
+            text.contains("(●) This repository") && text.contains("( ) Your user config"),
+            "{text}"
+        );
+        app_update(&mut s, Action::Activate);
+        let (text, _) = render_with(&s, &truecolor(), 100, 24);
+        assert!(
+            text.contains("( ) This repository") && text.contains("(●) Your user config"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_summary_counts_added_and_removed_lines_and_the_diff_is_coloured_by_role() {
+        let s = on_review(Some("[checks]\ncommand = \"t\"\n"));
+        let (text, buf) = render_with(&s, &truecolor(), 100, 24);
+        assert!(text.contains("added") && text.contains("removed"), "{text}");
+        let (x, y) = find(&text, "+ [agents]");
+        assert_eq!(
+            buf[(x, y)].fg,
+            ratatui::style::Color::Rgb(0xbc, 0xfa, 0xf1),
+            "an added line is glow"
+        );
+        let (x, y) = find(&text, "+");
+        assert_eq!(buf[(x, y)].fg, ratatui::style::Color::Rgb(0xbc, 0xfa, 0xf1));
+        // Without colour the plus and minus signs still tell them apart.
+        let plain = Theme {
+            depth: crate::tui::theme::ColorDepth::None,
+            glyphs: Glyphs::Ascii,
+            motion: false,
+        };
+        let (text, buf) = render_with(&s, &plain, 100, 24);
+        assert!(text.contains("+ [agents]") && text.is_ascii(), "{text}");
+        let (x, y) = find(&text, "+ [agents]");
+        assert_eq!(buf[(x, y)].fg, ratatui::style::Color::Reset);
+    }
+
+    #[test]
+    fn apply_is_the_red_primary_button_only_when_there_is_something_to_apply() {
+        let s = on_review(Some("[checks]\ncommand = \"t\"\n"));
+        let (text, buf) = render_with(&s, &truecolor(), 100, 24);
+        let (x, y) = find(&text, "Apply");
+        assert_eq!(
+            buf[(x, y)].bg,
+            ratatui::style::Color::Rgb(0xff, 0x30, 0x38),
+            "the primary button is red"
+        );
+
+        // After applying, the file matches: the button says so and is no longer primary.
+        let mut s = s;
+        app_update(&mut s, Action::NextField);
+        let Effect::Write(change) = app_update(&mut s, Action::Activate) else {
+            panic!()
+        };
+        s.finish_apply(crate::tui::apply::apply(&change).map_err(|e| e.to_string()));
+        let (text, buf) = render_with(&s, &truecolor(), 100, 24);
+        let (x, y) = find(&text, "Nothing to apply");
+        assert_ne!(buf[(x, y)].bg, ratatui::style::Color::Rgb(0xff, 0x30, 0x38));
+        assert!(
+            text.contains("No changes: the file already matches."),
+            "{text}"
+        );
+
+        // With a problem there is no primary button, and the problem is listed.
+        let s = on_review(None);
+        let (text, buf) = render_with(&s, &truecolor(), 100, 24);
+        let (x, y) = find(&text, "Apply");
+        assert_ne!(buf[(x, y)].bg, ratatui::style::Color::Rgb(0xff, 0x30, 0x38));
+        assert!(
+            text.contains("Nothing to apply yet")
+                && text.contains("Fix this on the Pipeline screen (key 2)."),
+            "{text}"
+        );
     }
 }

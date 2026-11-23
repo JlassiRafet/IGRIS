@@ -1,7 +1,5 @@
 //! Small reusable pieces: shortening text by display width, framed panels, status chips and the
 //! progress bar. Every string from outside the binary is shortened here before it is drawn.
-// Status chips, the Link/Info/Optional/Primary roles and the buttons are used from tasks 3 to 5 of the polish plan.
-#![allow(dead_code)]
 
 use super::style::{ACCENT, GLOW, Role, rgb};
 use super::theme::{ColorDepth, Glyphs, Theme};
@@ -158,6 +156,36 @@ pub fn detail_strip<'a>(t: &Theme, lines: Vec<Line<'a>>) -> Paragraph<'a> {
         Glyphs::Ascii => block.border_set(ASCII_BORDER),
     };
     Paragraph::new(lines).wrap(Wrap { trim: true }).block(block)
+}
+
+/// Width of the status column at the right edge: glyph, space, word ("● needs a step").
+pub fn status_width(t: &Theme) -> usize {
+    if t.glyphs == Glyphs::Ascii { 16 } else { 14 }
+}
+
+/// `● needs a step`, right-aligned in the status column and coloured by its role.
+pub fn status_cell(t: &Theme, st: Status) -> Span<'static> {
+    let text = format!("{} {}", status_glyph(t, st), status_word(st));
+    let fill = status_width(t).saturating_sub(unicode_width::UnicodeWidthStr::width(text.as_str()));
+    Span::styled(" ".repeat(fill) + &text, t.style(status_role(st)))
+}
+
+/// A button. The primary one (the thing to do next) is red; the others are light-blue text in
+/// brackets. A focused one is also bold and underlined, so focus never relies on colour.
+pub fn button(t: &Theme, label: &str, primary: bool, focused: bool) -> Span<'static> {
+    let mut style = if primary {
+        t.style(Role::Primary)
+    } else {
+        t.style(Role::Link)
+    };
+    if focused {
+        style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+    }
+    if primary {
+        Span::styled(format!(" {label} "), style)
+    } else {
+        Span::styled(format!("[ {label} ]"), style)
+    }
 }
 
 /// A progress bar exactly `width` cells wide. `Some(fraction)` fills from the left; `None` is a

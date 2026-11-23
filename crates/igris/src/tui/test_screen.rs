@@ -2,12 +2,16 @@
 use super::action::Action;
 use super::hit::HitMap;
 use super::state::{Confirm, Effect, Overlay, State};
+use super::style::Role;
 use super::theme::{Glyphs, Theme};
+use super::widgets::{button, fit, pad, progress, status_cell, status_glyph, status_width};
+use crate::check::view::Status;
 use crate::doctor::Check;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::style::Modifier;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TestUi {
@@ -58,65 +62,139 @@ pub fn rerun(s: &mut State) -> Effect {
 }
 
 pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, clickable: bool) {
+    let width = area.width as usize;
     let ascii = t.glyphs == Glyphs::Ascii;
-    let mut lines: Vec<String> = vec![];
-    match &s.test.checks {
-        None => lines.push("Running the checks…".into()),
+    let dim = t.style(Role::Dim);
+    let bold = Modifier::BOLD;
+    let at = |row: u16| Rect::new(area.x, area.y + row, area.width, 1);
+    // The heading: a sweep while the checks run, then how many need a step.
+    let heading = match &s.test.checks {
+        None => {
+            let mut v = vec![Span::styled("Running the checks ", t.style(Role::Text))];
+            v.extend(progress(t, 14, None, s.tick).spans);
+            v
+        }
         Some(checks) => {
             let bad = checks.iter().filter(|c| !c.ok).count();
-            lines.push(if bad == 0 {
-                "All checks pass. This machine is ready to run a task.".into()
+            if bad == 0 {
+                vec![Span::styled(
+                    format!(
+                        "{} All checks pass. This machine is ready to run a task.",
+                        status_glyph(t, Status::Ready)
+                    ),
+                    t.style(Role::Ok),
+                )]
             } else {
-                format!("{bad} check(s) need a step:")
-            });
-            for c in checks {
-                let (glyph, word) = match (c.ok, ascii) {
-                    (true, false) => ("⬢", "ok"),
-                    (false, false) => ("⬡", "needs a step"),
-                    (true, true) => ("[x]", "ok"),
-                    (false, true) => ("[ ]", "needs a step"),
-                };
-                lines.push(format!("  {glyph} {:<9} {}  [{word}]", c.id, c.detail));
-                if !c.ok {
-                    lines.push(format!("      fix: {}", c.fix));
-                }
+                vec![
+                    Span::styled(
+                        format!("{} {bad} need a step", status_glyph(t, Status::NeedsStep)),
+                        t.style(Role::Bad),
+                    ),
+                    Span::styled(format!(" of {} checks", checks.len()), dim),
+                ]
+            }
+        }
+    };
+    f.render_widget(Paragraph::new(Line::from(heading)), at(0));
+
+    // The table: id, detail, status in one column at the right edge; a failing check says how to fix it.
+    let table_bottom = area.height.saturating_sub(5);
+    let mut row = 2u16;
+    if let Some(checks) = &s.test.checks {
+        let sw = status_width(t);
+        let detail_w = width.saturating_sub(2 + 10 + 1 + 1 + sw);
+        for c in checks {
+            if row >= table_bottom {
+                break;
+            }
+            let st = if c.ok {
+                Status::Ready
+            } else {
+                Status::NeedsStep
+            };
+            let line = Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    pad(t, c.id, 10),
+                    t.style(Role::Text)
+                        .add_modifier(if c.ok { Modifier::empty() } else { bold }),
+                ),
+                Span::raw(" "),
+                Span::styled(pad(t, &c.detail, detail_w), dim),
+                Span::raw(" "),
+                status_cell(t, st),
+            ]);
+            f.render_widget(Paragraph::new(line), at(row));
+            row += 1;
+            if !c.ok && row < table_bottom {
+                let fix = fit(t, &c.fix, width.saturating_sub(10 + 5));
+                let line = Line::from(vec![
+                    Span::raw("     "),
+                    Span::styled("fix: ", t.style(Role::Bad)),
+                    Span::styled(fix, dim),
+                ]);
+                f.render_widget(Paragraph::new(line), at(row));
+                row += 1;
             }
         }
     }
-    lines.push(String::new());
-    let rows = [
-        "Run the checks again",
-        "Run a sample task (uses your own agent subscriptions)",
-    ];
-    let first_button = lines.len() as u16;
-    for (i, r) in rows.iter().enumerate() {
-        let mark = if s.test.focus == i { ">" } else { " " };
-        let suffix = match i {
-            0 if s.test.running => "  (running)",
-            1 if s.test.sample_running => "  (running…)",
-            _ => "",
-        };
-        lines.push(format!("{mark} [ {r} ]{suffix}"));
-    }
-    match &s.test.sample {
-        Some(Ok(said)) => lines.extend([String::new(), format!("Sample task: {said}")]),
-        Some(Err(e)) => lines.extend([String::new(), format!("Sample task failed: {e}")]),
-        None => {}
-    }
-    f.render_widget(
-        Paragraph::new(lines.join("\n"))
-            .wrap(Wrap { trim: false })
-            .style(Style::new()),
-        area,
-    );
-    if clickable {
-        for i in 0..2u16 {
-            if first_button + i < area.height {
-                hits.add(
-                    Rect::new(area.x, area.y + first_button + i, area.width, 1),
-                    Action::Select(i as usize),
+
+    // The sample task's state or result, then the two buttons at the bottom.
+    let result_row = area.height.saturating_sub(4);
+    if s.test.sample_running {
+        let mut v = vec![Span::styled(
+            "Running the sample task ",
+            t.style(Role::Text),
+        )];
+        v.extend(progress(t, 14, None, s.tick).spans);
+        f.render_widget(Paragraph::new(Line::from(v)), at(result_row));
+    } else {
+        match &s.test.sample {
+            Some(Ok(said)) => {
+                let text = fit(t, &format!("Sample task: {said}"), width.saturating_sub(2));
+                let glyph = if ascii { "[x]" } else { "✓" };
+                f.render_widget(
+                    Paragraph::new(Line::styled(format!("{glyph} {text}"), t.style(Role::Ok))),
+                    at(result_row),
                 );
             }
+            Some(Err(e)) => {
+                let text = fit(
+                    t,
+                    &format!("Sample task failed: {e}"),
+                    width.saturating_sub(2),
+                );
+                let glyph = if ascii { "[!]" } else { "●" };
+                f.render_widget(
+                    Paragraph::new(Line::styled(format!("{glyph} {text}"), t.style(Role::Bad))),
+                    at(result_row),
+                );
+            }
+            None => {}
+        }
+    }
+    let labels = ["Run the checks again", "Run a sample task"];
+    for (i, label) in labels.iter().enumerate() {
+        let r = at(area.height.saturating_sub(2) + i as u16);
+        let mark = match (s.test.focus == i, ascii) {
+            (false, _) => " ",
+            (true, false) => "▌",
+            (true, true) => ">",
+        };
+        let mut spans = vec![
+            Span::styled(mark, t.style(Role::Bad)),
+            Span::raw(" "),
+            button(t, label, false, s.test.focus == i),
+        ];
+        if i == 1 {
+            spans.push(Span::styled("  uses your own agent subscriptions", dim));
+        }
+        if i == 0 && s.test.running {
+            spans.push(Span::styled("  running", dim));
+        }
+        f.render_widget(Paragraph::new(Line::from(spans)), r);
+        if clickable {
+            hits.add(r, Action::Select(i));
         }
     }
 }
@@ -209,7 +287,7 @@ mod tests {
             assert!(text.contains(c.id) && text.contains(&c.detail), "{text}");
         }
         assert!(
-            text.contains("fix: fix for herdr") && text.contains("1 check(s) need a step"),
+            text.contains("fix: fix for herdr") && text.contains("1 need a step"),
             "{text}"
         );
         assert!(!text.contains("fix: fix for config"));
@@ -306,6 +384,98 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    fn buf_of(s: &State, t: &Theme) -> (String, ratatui::buffer::Buffer) {
+        let mut term = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        let mut hits = HitMap::default();
+        term.draw(|f| draw(f, f.area(), s, t, &mut hits, true))
+            .unwrap();
+        let buf = term.backend().buffer().clone();
+        let text = (0..24u16)
+            .map(|y| {
+                (0..100u16)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        (text, buf)
+    }
+
+    #[test]
+    fn while_the_checks_run_a_sweep_moves_and_it_is_gone_when_they_finish() {
+        let t = Theme::detect(&Env::default());
+        let mut s = on_test();
+        s.test.running = true;
+        let (a, _) = buf_of(&s, &t);
+        s.tick = 7;
+        let (b, _) = buf_of(&s, &t);
+        assert!(a.contains("Running the checks") && a.contains('█'), "{a}");
+        assert_ne!(a, b, "the sweep moves");
+        s.apply(Msg::Checked(vec![check("config", true)]));
+        let (c, _) = buf_of(&s, &t);
+        assert!(
+            !c.contains("Running the checks") && c.contains("All checks pass."),
+            "{c}"
+        );
+    }
+
+    #[test]
+    fn the_sample_shows_a_sweep_while_it_runs_and_its_result_in_words() {
+        let t = Theme::detect(&Env::default());
+        let mut s = on_test();
+        s.test.sample_running = true;
+        let (text, _) = buf_of(&s, &t);
+        assert!(
+            text.contains("Running the sample task") && text.contains('█'),
+            "{text}"
+        );
+        s.apply(Msg::Sampled(Ok("done: all green".into())));
+        let (text, _) = buf_of(&s, &t);
+        assert!(
+            text.contains("✓ Sample task: done: all green")
+                && !text.contains("Running the sample task"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_table_keeps_one_status_column_and_both_buttons_are_secondary() {
+        let t = Theme {
+            depth: crate::tui::theme::ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: false,
+        };
+        let mut s = on_test();
+        s.apply(Msg::Checked(vec![
+            check("config", true),
+            check("herdr", false),
+            check("repo", true),
+        ]));
+        let (text, buf) = buf_of(&s, &t);
+        let ends: Vec<&str> = text
+            .lines()
+            .filter(|l| l.trim_end().ends_with("ready") || l.trim_end().ends_with("needs a step"))
+            .collect();
+        assert_eq!(ends.len(), 3, "{text}");
+        assert!(
+            ends.iter().all(|l| l.chars().count() == 100),
+            "one right-aligned column: {ends:?}"
+        );
+        for label in ["Run the checks again", "Run a sample task"] {
+            let (y, l) = text
+                .lines()
+                .enumerate()
+                .find(|(_, l)| l.contains(label))
+                .unwrap();
+            let x = l[..l.find(label).unwrap()].chars().count() as u16;
+            assert_ne!(
+                buf[(x, y as u16)].bg,
+                ratatui::style::Color::Rgb(0xff, 0x30, 0x38),
+                "{label} is not the primary button"
+            );
         }
     }
 }

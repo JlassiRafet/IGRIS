@@ -5,9 +5,7 @@ use super::hit::HitMap;
 use super::state::{Effect, FixDialog, Overlay, State};
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
-use super::widgets::{
-    chip, detail_strip, fit, pad, progress, status_glyph, status_role, status_word,
-};
+use super::widgets::{chip, detail_strip, fit, pad, progress, status_cell, status_width};
 use crate::check::view::{Status, View, build};
 use igris_detect::Snapshot;
 use ratatui::Frame;
@@ -15,7 +13,6 @@ use ratatui::layout::{Alignment, Rect};
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
-use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CheckUi {
@@ -121,17 +118,6 @@ fn activate(s: &mut State) -> Effect {
         None => {}
     }
     Effect::None
-}
-
-/// Width of the status column at the right edge: glyph, space, word ("● needs a step").
-fn status_width(t: &Theme) -> usize {
-    if t.glyphs == Glyphs::Ascii { 16 } else { 14 }
-}
-
-fn status_cell(t: &Theme, st: Status) -> Span<'static> {
-    let text = format!("{} {}", status_glyph(t, st), status_word(st));
-    let pad = status_width(t).saturating_sub(text.width());
-    Span::styled(" ".repeat(pad) + &text, t.style(status_role(st)))
 }
 
 fn marker(t: &Theme, selected: bool) -> Span<'static> {
