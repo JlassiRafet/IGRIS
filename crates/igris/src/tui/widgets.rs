@@ -64,6 +64,13 @@ pub fn fit(t: &Theme, s: &str, width: usize) -> String {
     }
 }
 
+/// `s` shortened to `width` columns and padded with spaces to exactly that width.
+pub fn pad(t: &Theme, s: &str, width: usize) -> String {
+    let f = fit(t, s, width);
+    let fill = width.saturating_sub(unicode_width::UnicodeWidthStr::width(f.as_str()));
+    f + &" ".repeat(fill)
+}
+
 /// A rounded frame with the title in the border (`+-|` on ASCII terminals) and one column of padding.
 pub fn panel<'a>(t: &Theme, title: &str, focused: bool) -> Block<'a> {
     let border_role = if focused {

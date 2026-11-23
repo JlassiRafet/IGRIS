@@ -5,7 +5,9 @@ use super::hit::HitMap;
 use super::state::{Effect, FixDialog, Overlay, State};
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
-use super::widgets::{chip, detail_strip, fit, progress, status_glyph, status_role, status_word};
+use super::widgets::{
+    chip, detail_strip, fit, pad, progress, status_glyph, status_role, status_word,
+};
 use crate::check::view::{Status, View, build};
 use igris_detect::Snapshot;
 use ratatui::Frame;
@@ -126,13 +128,6 @@ fn status_width(t: &Theme) -> usize {
     if t.glyphs == Glyphs::Ascii { 16 } else { 14 }
 }
 
-/// `s` shortened to `width` columns and padded with spaces to exactly that width.
-fn cell(t: &Theme, s: &str, width: usize) -> String {
-    let f = fit(t, s, width);
-    let pad = width.saturating_sub(f.width());
-    f + &" ".repeat(pad)
-}
-
 fn status_cell(t: &Theme, st: Status) -> Span<'static> {
     let text = format!("{} {}", status_glyph(t, st), status_word(st));
     let pad = status_width(t).saturating_sub(text.width());
@@ -182,11 +177,11 @@ fn item_line(
                 Span::styled(fold, t.style(Role::Link)),
                 Span::raw(" "),
                 Span::styled(
-                    cell(t, group.title, title_w),
+                    pad(t, group.title, title_w),
                     text.add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" "),
-                Span::styled(cell(t, &group.summary, summary_w), dim),
+                Span::styled(pad(t, &group.summary, summary_w), dim),
                 Span::raw(" "),
                 status_cell(t, group.status),
             ])
@@ -198,9 +193,9 @@ fn item_line(
             Line::from(vec![
                 marker(t, selected),
                 Span::raw("    "),
-                Span::styled(cell(t, &row.name, name_w), text),
+                Span::styled(pad(t, &row.name, name_w), text),
                 Span::raw(" "),
-                Span::styled(cell(t, &row.detail, detail_w), dim),
+                Span::styled(pad(t, &row.detail, detail_w), dim),
                 Span::raw(" "),
                 status_cell(t, row.status),
             ])
