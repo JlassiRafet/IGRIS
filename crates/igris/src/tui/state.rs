@@ -1,5 +1,6 @@
 //! The whole app state, and the one function that changes it.
 use super::action::Action;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
@@ -52,6 +53,17 @@ pub struct State {
     pub dirty: bool,
     pub detecting: bool,
     pub size: (u16, u16),
+    /// What blocks running tasks, in words, from the Check screen (None when nothing does).
+    pub blocker: Option<String>,
+    /// `checks.command` is set in the form.
+    pub command_set: bool,
+    /// An `igris.toml` that matches the form exists on disk.
+    pub applied: bool,
+    pub tested: bool,
+    /// What is typed in the help filter or the palette.
+    pub query: String,
+    /// The palette's chosen row, or the help's scroll offset.
+    pub cursor: usize,
 }
 
 impl State {
@@ -62,6 +74,12 @@ impl State {
             dirty: false,
             detecting: false,
             size,
+            blocker: None,
+            command_set: false,
+            applied: false,
+            tested: false,
+            query: String::new(),
+            cursor: 0,
         }
     }
 }
@@ -114,7 +132,53 @@ pub fn update(s: &mut State, a: Action) -> Effect {
 
 fn open(s: &mut State, o: Overlay) -> Effect {
     s.overlay = Some(o);
+    s.query.clear();
+    s.cursor = 0;
     Effect::None
+}
+
+/// Keys typed into the help filter or the palette. Returns an action when one is chosen.
+pub fn type_key(s: &mut State, key: KeyEvent) -> Option<Action> {
+    let palette = match s.overlay {
+        Some(Overlay::Palette) => true,
+        Some(Overlay::Help) => false,
+        _ => return None,
+    };
+    let last = if palette {
+        super::palette::entries(&s.query).len().saturating_sub(1)
+    } else {
+        super::help::lines(&s.query).len().saturating_sub(1)
+    };
+    match key.code {
+        KeyCode::Esc => return Some(Action::Cancel),
+        KeyCode::Backspace => {
+            s.query.pop();
+            s.cursor = 0;
+        }
+        KeyCode::Up => s.cursor = s.cursor.saturating_sub(1),
+        KeyCode::Down => s.cursor = (s.cursor + 1).min(last),
+        KeyCode::PageUp => s.cursor = s.cursor.saturating_sub(10),
+        KeyCode::PageDown => s.cursor = (s.cursor + 10).min(last),
+        KeyCode::Home => s.cursor = 0,
+        KeyCode::End => s.cursor = last,
+        KeyCode::Enter if palette => {
+            let chosen = super::palette::entries(&s.query).get(s.cursor).map(|e| e.0);
+            if chosen.is_some() {
+                s.overlay = None;
+            }
+            return chosen;
+        }
+        KeyCode::Char(c)
+            if !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+        {
+            s.query.push(c);
+            s.cursor = 0;
+        }
+        _ => {}
+    }
+    None
 }
 
 #[cfg(test)]
@@ -193,5 +257,72 @@ mod tests {
         assert_eq!(update(&mut s, Action::Rescan), Effect::Rescan);
         assert!(s.detecting);
         assert_eq!(update(&mut s, Action::Rescan), Effect::None);
+    }
+
+    #[test]
+    fn opening_help_or_the_palette_starts_with_an_empty_filter() {
+        let mut s = state();
+        update(&mut s, Action::Palette);
+        type_key(
+            &mut s,
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+        );
+        assert_eq!(s.query, "r");
+        update(&mut s, Action::Cancel);
+        update(&mut s, Action::Help);
+        assert_eq!((s.query.as_str(), s.cursor), ("", 0));
+    }
+
+    #[test]
+    fn a_click_inside_an_overlay_keeps_it_open() {
+        let mut s = state();
+        update(&mut s, Action::Help);
+        assert_eq!(update(&mut s, Action::Stay), Effect::None);
+        assert_eq!(s.overlay, Some(Overlay::Help));
+    }
+
+    #[test]
+    fn the_palette_runs_the_chosen_action() {
+        let mut s = state();
+        update(&mut s, Action::Palette);
+        for c in "rescan".chars() {
+            assert_eq!(
+                type_key(&mut s, KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)),
+                None
+            );
+        }
+        let chosen = type_key(&mut s, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(chosen, Some(Action::Rescan));
+        assert_eq!(s.overlay, None, "closed before the action runs");
+        assert_eq!(update(&mut s, Action::Rescan), Effect::Rescan);
+    }
+
+    #[test]
+    fn enter_with_no_match_keeps_the_palette_open_and_esc_closes_it() {
+        let mut s = state();
+        update(&mut s, Action::Palette);
+        type_key(
+            &mut s,
+            KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE),
+        );
+        assert_eq!(
+            type_key(&mut s, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(s.overlay, Some(Overlay::Palette));
+        assert_eq!(
+            type_key(&mut s, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Some(Action::Cancel)
+        );
+    }
+
+    #[test]
+    fn the_help_scroll_stays_inside_the_text() {
+        let mut s = state();
+        update(&mut s, Action::Help);
+        for _ in 0..500 {
+            type_key(&mut s, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+        assert_eq!(s.cursor, crate::tui::help::lines("").len() - 1);
     }
 }

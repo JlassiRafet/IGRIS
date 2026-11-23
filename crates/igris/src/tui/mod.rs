@@ -5,9 +5,13 @@
 #![allow(dead_code)]
 
 mod action;
+mod footer;
 mod header;
+mod help;
 mod hit;
 mod keymap;
+mod next_step;
+mod palette;
 mod state;
 mod term;
 mod theme;
@@ -23,7 +27,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
-use state::{Effect, Overlay, Screen, State, update};
+use state::{Effect, Overlay, Screen, State, type_key, update};
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -62,7 +66,9 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
     for screen in Screen::ALL {
         let label = format!(" {} ", screen.title());
         let width = label.chars().count() as u16;
-        hits.add(Rect::new(x, tab_y, width, 1), Action::Goto(screen));
+        if s.overlay.is_none() {
+            hits.add(Rect::new(x, tab_y, width, 1), Action::Goto(screen));
+        }
         let style = if screen == s.screen {
             t.accent()
         } else {
@@ -75,29 +81,77 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
         Paragraph::new(Line::from(tabs)),
         Rect::new(area.x, tab_y, area.width, 1),
     );
-    let body = Rect::new(area.x, tab_y + 2, area.width, area.height - top - 3);
+    let body = Rect::new(area.x, tab_y + 2, area.width, area.height - top - 4);
     f.render_widget(
         Paragraph::new(format!("{}: not built yet.", s.screen.title())),
         body,
     );
-    let foot = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
-    f.render_widget(Paragraph::new("q quit"), foot);
+    let next = Rect::new(area.x, area.y + area.height - 2, area.width, 1);
+    f.render_widget(
+        Paragraph::new(next_step::text(&next_step::next_step(s))),
+        next,
+    );
     if let Some(o) = &s.overlay {
-        let w = 44.min(area.width);
-        let r = Rect::new(
-            area.x + (area.width - w) / 2,
-            area.y + area.height / 2 - 2,
-            w,
-            5,
-        );
-        let text = match o {
-            Overlay::Help => "Help is coming. Esc closes.",
-            Overlay::Palette => "The palette is coming. Esc closes.",
-            Overlay::Confirm(_) => "Quit and discard changes? y / n",
-        };
-        f.render_widget(Clear, r);
-        f.render_widget(Paragraph::new(text).block(Block::bordered()), r);
+        draw_overlay(f, area, o, s, hits);
     }
+    let foot = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
+    footer::draw_footer(f, foot, context(s), hits);
+}
+
+/// A centred box. A click outside it closes the overlay; a click inside keeps it open.
+fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, hits: &mut HitMap) {
+    let (title, lines, w, h): (&str, Vec<Line>, u16, u16) = match o {
+        Overlay::Help => (
+            "Help",
+            help::lines(&s.query),
+            76,
+            area.height.saturating_sub(4),
+        ),
+        Overlay::Palette => {
+            let rows = palette::entries(&s.query);
+            let mut lines = vec![Line::from(format!("> {}_", s.query))];
+            lines.extend(rows.iter().enumerate().map(|(i, (_, name))| {
+                Line::from(format!("{} {name}", if i == s.cursor { ">" } else { " " }))
+            }));
+            if rows.is_empty() {
+                lines.push(Line::from("  nothing matches"));
+            }
+            (
+                "Quick actions",
+                lines,
+                50,
+                (rows.len() as u16 + 4).min(area.height),
+            )
+        }
+        Overlay::Confirm(_) => (
+            "Discard changes?",
+            vec![Line::from("You have unsaved changes. Quit anyway? (y / n)")],
+            56,
+            5,
+        ),
+    };
+    let w = w.min(area.width);
+    let h = h.min(area.height).max(3);
+    let r = Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + (area.height - h) / 2,
+        w,
+        h,
+    );
+    hits.add(area, Action::Cancel);
+    hits.add(r, Action::Stay);
+    f.render_widget(Clear, r);
+    let scroll = if matches!(o, Overlay::Help) {
+        s.cursor as u16
+    } else {
+        0
+    };
+    f.render_widget(
+        Paragraph::new(lines)
+            .scroll((scroll, 0))
+            .block(Block::bordered().title(title)),
+        r,
+    );
 }
 
 /// SIGINT, SIGTERM and SIGHUP set this flag; the loop sees it and returns, so `TermGuard` drops.
@@ -116,8 +170,8 @@ fn stop_flag() -> std::io::Result<Arc<AtomicBool>> {
 fn context(s: &State) -> Context {
     match s.overlay {
         Some(Overlay::Confirm(_)) => Context::Dialog,
-        Some(Overlay::Palette) => Context::Input,
-        Some(Overlay::Help) => Context::Global,
+        // Both take typed text (the filter), so plain letters are not commands there.
+        Some(Overlay::Palette | Overlay::Help) => Context::Input,
         None => Context::List,
     }
 }
@@ -142,7 +196,9 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
             continue;
         }
         let action = match event::read()? {
-            Event::Key(k) if k.kind != KeyEventKind::Release => key_to_action(context(&state), k),
+            Event::Key(k) if k.kind != KeyEventKind::Release => {
+                key_to_action(context(&state), k).or_else(|| type_key(&mut state, k))
+            }
             Event::Mouse(m) => match m.kind {
                 MouseEventKind::Down(MouseButton::Left) => hits.at(m.column, m.row),
                 MouseEventKind::ScrollUp => Some(Action::Up),
@@ -214,6 +270,46 @@ mod tests {
         assert_eq!(
             hits.at(col, row),
             Some(Action::Goto(state::Screen::Pipeline))
+        );
+    }
+
+    #[test]
+    fn the_next_step_and_the_key_hints_are_on_screen_and_clickable() {
+        let (text, hits) = render(100, 30, &State::new((100, 30)));
+        assert!(text.contains("Next: set the check command"), "{text}");
+        let last = text.lines().last().unwrap();
+        assert!(last.contains("q quit") && last.contains("? help"), "{last}");
+        let col = last.find("? help").unwrap() as u16;
+        assert_eq!(hits.at(col, 29), Some(Action::Help));
+    }
+
+    #[test]
+    fn help_is_a_box_that_closes_when_you_click_outside_it() {
+        let mut s = State::new((100, 30));
+        update(&mut s, Action::Help);
+        let (text, hits) = render(100, 30, &s);
+        assert!(
+            text.contains("How setup works") && text.contains("Keys"),
+            "{text}"
+        );
+        assert_eq!(hits.at(0, 0), Some(Action::Cancel), "outside");
+        assert_eq!(hits.at(50, 15), Some(Action::Stay), "inside");
+        let tab = text.lines().position(|l| l.contains("Pipeline")).unwrap() as u16;
+        assert_ne!(
+            hits.at(12, tab),
+            Some(Action::Goto(Screen::Pipeline)),
+            "the tabs are not clickable behind it"
+        );
+    }
+
+    #[test]
+    fn the_palette_lists_actions_and_marks_the_chosen_row() {
+        let mut s = State::new((100, 30));
+        update(&mut s, Action::Palette);
+        let (text, _) = render(100, 30, &s);
+        assert!(
+            text.contains("> _") && text.contains("> Go to Check"),
+            "{text}"
         );
     }
 }

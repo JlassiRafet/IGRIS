@@ -57,8 +57,8 @@ const fn b(scope: Scope, code: KeyCode, mods: KeyModifiers, action: Action) -> B
 }
 
 pub const BINDINGS: &[Binding] = &[
-    b(Scope::Always, KeyCode::Char('c'), CTRL, Action::Quit),
     b(Scope::Anywhere, KeyCode::Char('q'), NONE, Action::Quit),
+    b(Scope::Always, KeyCode::Char('c'), CTRL, Action::Quit),
     b(Scope::Anywhere, KeyCode::Char('?'), NONE, Action::Help),
     b(Scope::Anywhere, KeyCode::F(1), NONE, Action::Help),
     b(Scope::Anywhere, KeyCode::Char('/'), NONE, Action::Palette),
@@ -119,8 +119,42 @@ pub const BINDINGS: &[Binding] = &[
     b(Scope::Dialog, KeyCode::Esc, NONE, Action::Cancel),
 ];
 
-/// Actions that have no key, only a click. Empty on purpose: every action has a key.
-pub const MOUSE_ONLY: &[Action] = &[];
+/// Actions that have no key, only a click.
+pub const MOUSE_ONLY: &[Action] = &[Action::Stay];
+
+/// How a key is written in the help and the footer.
+pub fn key_label(code: KeyCode, mods: KeyModifiers) -> String {
+    let base = match code {
+        KeyCode::Char(' ') => "Space".to_string(),
+        KeyCode::Char(c) => c.to_string(),
+        KeyCode::Enter => "Enter".into(),
+        KeyCode::Esc => "Esc".into(),
+        KeyCode::Tab => "Tab".into(),
+        KeyCode::BackTab => "Shift+Tab".into(),
+        KeyCode::Up => "↑".into(),
+        KeyCode::Down => "↓".into(),
+        KeyCode::Home => "Home".into(),
+        KeyCode::End => "End".into(),
+        KeyCode::PageUp => "PgUp".into(),
+        KeyCode::PageDown => "PgDn".into(),
+        KeyCode::F(n) => format!("F{n}"),
+        _ => "?".into(),
+    };
+    if mods.contains(KeyModifiers::CONTROL) {
+        format!("Ctrl+{}", base.to_uppercase())
+    } else {
+        base
+    }
+}
+
+/// Every key bound to an action, in table order.
+pub fn keys_for(action: Action) -> Vec<String> {
+    BINDINGS
+        .iter()
+        .filter(|b| b.action == action)
+        .map(|b| key_label(b.code, b.mods))
+        .collect()
+}
 
 /// Some terminals add SHIFT to `?` or send `K` for Ctrl+Shift+K; match them like the plain key.
 fn normalise(key: KeyEvent) -> (KeyCode, KeyModifiers) {
