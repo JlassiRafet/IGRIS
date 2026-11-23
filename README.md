@@ -65,6 +65,20 @@ One task, start to finish. You ask in a chat app, or run `igris run` yourself. I
 
 The example is a rate-limiting task: Codex asks for one change, Claude Code makes it, the checks pass, and merging waits for you.
 
+## Run a task
+
+```sh
+igris run --task "fix the failing cart test"
+```
+
+IGRIS answers its four questions, starts the builder in a Herdr pane in its own git worktree, has the reviewer read the diff, then runs your check command. The result is one JSON document, and the exit code says where it ended: `0` done, `3` not done (it needs your yes, or an agent is waiting on a question), `1` failed. When it is done, `igris merge <id>` merges it.
+
+The first time an agent works in a new folder it asks you a question inside its Herdr pane, for example whether you trust the folder. IGRIS reports the task as `blocked`: answer in Herdr, then run `igris continue <id>`.
+
+## Chat with it (optional)
+
+[Hermes](https://hermes-agent.nousresearch.com) can take your requests from a chat app such as Telegram and run them through IGRIS. Copy [`examples/hermes/igris/SKILL.md`](examples/hermes/igris/SKILL.md) to `~/.hermes/skills/igris/SKILL.md`. It tells Hermes how to call `igris run`, what the exit codes mean, and to ask you before anything risky or before a merge. Hermes needs a model with a context window of at least 64,000 tokens that can call tools reliably; a 3B local model answered chat in our tests but did not call tools.
+
 ## Headless
 
 Every check has a command, for scripts and CI. Results are JSON on stdout, and the exit code says what happened.
