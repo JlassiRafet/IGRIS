@@ -17,19 +17,12 @@ pub fn footer_hints(ctx: Context) -> Vec<(String, Action)> {
             (Action::Help, "help"),
             (Action::Quit, "quit"),
         ],
-        Context::Form => &[
-            (Action::NextField, "next"),
-            (Action::Activate, "edit"),
-            (Action::Palette, "filter"),
-            (Action::Help, "help"),
-            (Action::Quit, "quit"),
-        ],
         Context::Dialog => &[
             (Action::Yes, "yes"),
             (Action::No, "no"),
             (Action::Cancel, "cancel"),
         ],
-        Context::Input | Context::Global => &[(Action::Cancel, "close")],
+        Context::Input => &[(Action::Cancel, "close")],
     };
     spec.iter()
         .map(|(a, verb)| {
@@ -69,13 +62,7 @@ mod tests {
 
     #[test]
     fn every_hint_names_a_real_key_for_its_action() {
-        for ctx in [
-            Context::List,
-            Context::Form,
-            Context::Dialog,
-            Context::Input,
-            Context::Global,
-        ] {
+        for ctx in [Context::List, Context::Dialog, Context::Input] {
             for (text, action) in footer_hints(ctx) {
                 let key = text.split(' ').next().unwrap();
                 assert!(keys_for(action).iter().any(|k| k == key), "{ctx:?}: {text}");

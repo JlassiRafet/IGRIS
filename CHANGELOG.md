@@ -5,13 +5,14 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 ## [Unreleased]
 
 ### Removed
-- The web setup app (`igris setup`, its 127.0.0.1 server and pages). It never shipped in a release. A terminal app replaces it (`igris` with no arguments, coming in later changes).
+- The web setup app (`igris setup`, its 127.0.0.1 server and pages). It never shipped in a release. A terminal app replaces it (see Added).
 
 ### Changed
 - The Pages Home is rebuilt in the style of the owner's reference: a white grid page, a big bold headline, numbered sections and a floating Index pill with the scroll percentage. The pipeline animation moves to `/pipeline/`. The docs take the same red and fonts. Fonts are self-hosted (Inter, JetBrains Mono); the site loads nothing from outside.
 - `igris merge` names the files that block removing the worktree and says what to do. `scripts/smoke.sh` takes `SMOKE_AGENTS` to pick agents and models.
 
 ### Added
+- `igris` with no arguments opens a terminal app (keyboard and mouse): Check what this machine has and fix gaps (a tool's own login, the documented Herdr install after a yes), edit `igris.toml` in a Pipeline form with live validation, Review the exact change and Apply it (the old file is kept as `.bak`), then Test with the doctor's checks and an optional sample task. Without a terminal it prints the usage and exits 2.
 - The IGRIS logo set in `assets/logo/`: smooth SVGs (original colours, full colour for dark and light backgrounds, one colour, avatar), PNG exports, a favicon, and a script that rebuilds them from the original artwork. The app and the site now use the logo as their tab icon.
 - `igris doctor --json`: one JSON document with the machine (CPU, RAM, GPU, disk), Herdr, the 24 agent kinds and their login state, Hermes, Laya, whether a Jev key is set, and local model servers. New `igris-detect` crate. Secrets, emails and account names never appear in it.
 - The orchestrator (`igris-core`): a Herdr wrapper, `igris.toml` loader, rules-based decisions with an append-only decision log, and the build, review and check loop with saved state and resume.

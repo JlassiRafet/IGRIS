@@ -357,8 +357,14 @@ fn step(edit: Edit, key: KeyEvent) -> (Option<Edit>, Option<Edit>) {
             _ => (Some(Edit::Num(f, n)), None),
         },
         Edit::Pick(f, mut p) => match key.code {
-            KeyCode::Enter if p.current().is_some_and(|i| i.enabled) => {
-                (None, Some(Edit::Pick(f, p)))
+            KeyCode::Enter => {
+                // A "Soon" item cannot be chosen: the picker stays open.
+                let at = p.index;
+                if p.choose(at) {
+                    (None, Some(Edit::Pick(f, p)))
+                } else {
+                    (Some(Edit::Pick(f, p)), None)
+                }
             }
             KeyCode::Esc => (None, None),
             _ => {
