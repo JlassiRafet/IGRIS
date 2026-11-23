@@ -2,7 +2,23 @@
 
 IGRIS runs a loop of AI tools for you. You send a request from any chat app; Hermes, your assistant, asks a decision model (Jev or Laya) which agent and model fit, hands the work to coding agents in Herdr (one builds, one reviews), runs the tests in the shell, and reports back. Anything risky waits for your yes.
 
-**Status: early.** No release to install yet; build it from source (`cargo build --release`).
+**Status: early.** Pre-releases are on the [Releases](https://github.com/JlassiRafet/IGRIS/releases) page.
+
+## Install
+
+No Rust needed. Each command downloads the archive for your machine from the Release, checks its SHA-256 against `SHA256SUMS`, and puts `igris` in a folder of your own (no administrator rights). Then run `igris`.
+
+```sh
+# macOS and Linux (pre-release: put IGRIS_VERSION=v0.1.0-rc1 before sh)
+curl -fsSL https://raw.githubusercontent.com/JlassiRafet/IGRIS/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell; pre-release: first run  $env:IGRIS_VERSION = "v0.1.0-rc1")
+irm https://raw.githubusercontent.com/JlassiRafet/IGRIS/main/scripts/install.ps1 | iex
+```
+
+With Rust installed, from source: `cargo install --git https://github.com/JlassiRafet/IGRIS igris`.
 
 ## Quick start
 

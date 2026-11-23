@@ -1,0 +1,62 @@
+name: Release
+# A tag `v*` builds the five platform archives and a SHA256SUMS file and attaches them to a GitHub
+# Release marked as a pre-release (the owner promotes it by hand). A manual run only builds and keeps
+# the archives as workflow artifacts: no release is made.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: x86_64-unknown-linux-gnu, os: ubuntu-22.04, ext: tar.gz}
+          - {target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, ext: tar.gz}
+          - {target: aarch64-apple-darwin, os: macos-latest, ext: tar.gz}
+          - {target: x86_64-apple-darwin, os: macos-latest, ext: tar.gz}
+          - {target: x86_64-pc-windows-msvc, os: windows-latest, ext: zip}
+    runs-on: ${{ matrix.os }}
+    defaults: {run: {shell: bash}}
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v0.0.0-{0}', github.run_number) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: (rustup toolchain install 2>/dev/null || rustup show) && rustup target add "${{ matrix.target }}" && cargo --version
+      - run: cargo build --release --locked --target "${{ matrix.target }}" -p igris
+      - name: Package
+        run: |
+          asset="igris-${TAG}-${{ matrix.target }}.${{ matrix.ext }}"
+          bin="target/${{ matrix.target }}/release/igris"
+          mkdir -p dist stage
+          if [ "${{ matrix.ext }}" = zip ]; then
+            cp "${bin}.exe" stage/igris.exe
+            (cd stage && 7z a -tzip "../dist/${asset}" igris.exe)
+          else
+            cp "$bin" stage/igris
+            tar -czf "dist/${asset}" -C stage igris
+          fi
+          (cd dist && if command -v sha256sum >/dev/null; then sha256sum "$asset"; else shasum -a 256 "$asset"; fi) > "dist/${asset}.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: {name: "igris-${{ matrix.target }}", path: dist/*}
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: {path: dist, merge-multiple: true}
+      - name: SHA256SUMS and the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          cd dist
+          cat ./*.sha256 | sed 's/ \*/  /' > SHA256SUMS
+          rm ./*.sha256
+          cat SHA256SUMS
+          gh release create "$TAG" --repo "$REPO" --prerelease --title "$TAG" --generate-notes ./*

@@ -17,6 +17,12 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --no-fail-fast
+      # The installers, against a local fixture release.
+      - if: runner.os != 'Windows'
+        run: sh scripts/test-install.sh
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-install.ps1 -Binary target/debug/igris.exe
       # The terminal app in a real (detached) terminal: keys, mouse, help, resize, quit. Linux only.
       - if: runner.os == 'Linux'
         run: sudo apt-get install -y tmux && cargo build && scripts/tui-e2e.sh
