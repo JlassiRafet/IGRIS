@@ -5,6 +5,22 @@ use std::sync::mpsc::Sender;
 #[derive(Debug)]
 pub enum Msg {
     Detected(Box<Snapshot>),
+    /// The doctor's checks finished.
+    Checked(Vec<crate::doctor::Check>),
+    /// The sample task finished: what it ended with, or why it could not run.
+    Sampled(Result<String, String>),
+}
+
+pub fn spawn_checks(tx: Sender<Msg>, repo: std::path::PathBuf) {
+    std::thread::spawn(move || {
+        let _ = tx.send(Msg::Checked(crate::doctor::checks(&repo, None)));
+    });
+}
+
+pub fn spawn_sample(tx: Sender<Msg>, repo: std::path::PathBuf) {
+    std::thread::spawn(move || {
+        let _ = tx.send(Msg::Sampled(super::sample::run_sample_in(&repo)));
+    });
 }
 
 /// Run `probe` off the UI thread and send its result. A closed channel (the app has quit) is fine.
@@ -38,7 +54,9 @@ mod tests {
             "the caller got control back before the probe finished"
         );
         gate_tx.send(()).unwrap();
-        let Msg::Detected(s) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let Msg::Detected(s) = rx.recv_timeout(Duration::from_secs(5)).unwrap() else {
+            panic!()
+        };
         assert!(s.herdr.found);
     }
 }
