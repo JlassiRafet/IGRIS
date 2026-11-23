@@ -11,7 +11,7 @@ igris            # opens the terminal app: check this machine, fix gaps, set up 
 igris doctor     # the same checks, headless (add --json for a machine-readable report)
 ```
 
-The app works by keyboard and mouse at the same time. `?` shows every key; `q` quits. It never stores a login or a key, and it only runs fixed commands (a tool's own login, the documented Herdr installer after you say yes). A font with Braille and block characters looks best.
+IGRIS itself sends nothing anywhere: no telemetry, no analytics, no network library in the build. It stores no logins or keys. The app works by keyboard and mouse at the same time. `?` shows every key; `q` quits. It never stores a login or a key, and it only runs fixed commands (a tool's own login, the documented Herdr installer after you say yes). A font with Braille and block characters looks best.
 
  The plan and the live demo are on the site: <https://jlassirafet.github.io/IGRIS/>
 
