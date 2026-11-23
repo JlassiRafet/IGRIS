@@ -7,7 +7,8 @@ Needs tmux, chromium (or google-chrome) and Pillow. It runs `igris` in a detache
 throwaway git repo in /tmp/igris-demo, captures the screens with their colours and renders them with the
 font in site/src/assets/fonts:
 
-    splash.png, check.png, pipeline.png, review.png, test.png   one screenshot per screen
+    wordmark.png                                                 the IGRIS wordmark (README header)
+    check.png, pipeline.png, review.png, test.png                one screenshot per screen
     igris.gif                                                    the app in use, recorded live
     how-it-runs.gif                                              the pipeline page, one task start to finish
 
@@ -15,7 +16,7 @@ Nothing outside /tmp/igris-demo, a temporary HOME and preview/ is written.
 
 --scrub FILE  lines `old=>new` applied to the captured text (the replacement is padded or cut to the same
               width). Use it to hide facts about your own machine, such as the hardware on the Check screen.
---only NAME   build one of: screens, igris, pipeline.
+--only NAME   build one of: wordmark, screens, igris, pipeline.
 """
 import argparse, html, os, re, shutil, subprocess, sys, tempfile, threading, time
 from concurrent.futures import ThreadPoolExecutor
@@ -177,9 +178,6 @@ def demo_repo():
 
 def walk_through(t, git, repo, record=None):
     """The same session for the screenshots and the GIF: Check, set the check command, Review, Apply, Test."""
-    t.wait("ʅ", 10)
-    if record:
-        record("splash")
     t.wait("optional"); time.sleep(1.2)
     if record:
         record("check")
@@ -199,6 +197,36 @@ def walk_through(t, git, repo, record=None):
     t.wait("All checks pass", 20); time.sleep(2.2)
     if record:
         record("test")
+
+
+def wordmark(out, chrome):
+    """The block-pixel wordmark with its plume, on a transparent background: the README's logo."""
+    rows = ["▀█▀ █▀▀ █▀█ ▀█▀ █▀▀", "▄█▄ █▄█ █▀▄ ▄█▄ ▄▄█"]
+    glow, acc = (0xbc, 0xfa, 0xf1), (0x08, 0x79, 0xf3)
+    cells = []
+    for r in range(4):
+        for c in range(19):
+            on = rows[r // 2][c] in ("▀█" if r % 2 == 0 else "▄█")
+            col = "rgb(%d,%d,%d)" % tuple(round(g + (a - g) * ((c / 18 + r / 3) / 2)) for g, a in zip(glow, acc))
+            cells.append(f'<i style="background:{col if on else "none"}"></i>')
+    page = f"""<!doctype html><meta charset=utf-8><style>
+html,body{{margin:0;background:transparent}}
+#w{{--px:24px;position:relative;display:inline-grid;grid-template-columns:repeat(19,var(--px));grid-auto-rows:var(--px);margin:60px 30px 30px}}
+#w i{{display:block;transform:scale(1.04)}}
+#w b{{position:absolute;left:calc(5.5*var(--px));top:calc(-2.6*var(--px));transform:translateX(-50%);color:#ff3038;font:700 calc(2*var(--px))/1 'DejaVu Sans Mono',monospace}}
+</style><div id=w>{''.join(cells)}<b>ʅ</b></div>"""
+    png = out / "wordmark.png"
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "page.html"
+        src.write_text(page, encoding="utf-8")
+        sh(chrome, *CHROME, f"--user-data-dir={d}/profile", "--default-background-color=00000000",
+           "--force-device-scale-factor=2", "--window-size=700,330", f"--screenshot={png}", src.as_uri())
+    from PIL import Image
+    im = Image.open(png).convert("RGBA")
+    pad = 20
+    l, t, r, b = im.getchannel("A").getbbox()
+    im.crop((max(0, l - pad), max(0, t - pad), min(im.width, r + pad), min(im.height, b + pad))).save(png, optimize=True)
+    print("wrote", png)
 
 
 def screens(binary, out, scrub, chrome):
@@ -288,7 +316,7 @@ def main():
     ap.add_argument("--bin", default=str(ROOT / "target/debug/igris"))
     ap.add_argument("--scrub")
     ap.add_argument("--out", default=str(ROOT / "preview"))
-    ap.add_argument("--only", choices=["screens", "igris", "pipeline"])
+    ap.add_argument("--only", choices=["wordmark", "screens", "igris", "pipeline"])
     a = ap.parse_args()
     chrome = shutil.which("chromium") or shutil.which("google-chrome") or sys.exit("chromium not found")
     scrub = []
@@ -296,6 +324,8 @@ def main():
         scrub = [tuple(l.split("=>", 1)) for l in Path(a.scrub).read_text().splitlines() if "=>" in l]
     out = Path(a.out)
     out.mkdir(exist_ok=True)
+    if a.only in (None, "wordmark"):
+        wordmark(out, chrome)
     if a.only in (None, "screens"):
         screens(a.bin, out, scrub, chrome)
     if a.only in (None, "igris"):

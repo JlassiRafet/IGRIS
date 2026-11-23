@@ -1,8 +1,12 @@
-<p align="center"><img src="preview/splash.png" alt="IGRIS in a terminal: the wordmark, a tagline and a scan of this machine"></p>
+<p align="center"><img src="preview/wordmark.png" alt="IGRIS" width="440"></p>
+
+<p align="center"><b>Build · Review · Verify</b><br>AI coding agents on your own machine.</p>
+
+<p align="center"><img src="preview/igris.gif" alt="IGRIS in use: the scan, the check list, the check command typed in, the config as a diff, then every check passing"></p>
 
 IGRIS sets up a small team of AI coding tools on your own machine and keeps them honest. One agent builds, another reviews, and a test command you choose decides when the work is done. Anything risky waits for your yes.
 
-You run it from a terminal, with the keyboard, the mouse, or both. It checks what you already have, helps you fix what is missing, writes one small config file, and tests that the whole pipeline works before it touches your code. It sends nothing anywhere and keeps no logins or keys.
+You run it from a terminal, with the keyboard, the mouse, or both. It checks what you already have, helps you fix what is missing, writes one small config file, and tests that the whole pipeline works before it touches your code.
 
 ## Get started
 
@@ -28,8 +32,6 @@ You run it from a terminal, with the keyboard, the mouse, or both. It checks wha
    ```
 
 `IGRIS_VERSION` is only needed while IGRIS has pre-releases and no stable one. With Rust installed you can build it instead: `cargo install --git https://github.com/JlassiRafet/IGRIS igris`.
-
-![IGRIS in use: the scan, the check list, the check command typed in, the config as a diff, then every check passing](preview/igris.gif)
 
 ## Checking your machine
 
