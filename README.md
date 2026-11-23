@@ -77,7 +77,19 @@ The first time an agent works in a new folder it asks you a question inside its 
 
 ## Chat with it (optional)
 
-[Hermes](https://hermes-agent.nousresearch.com) can take your requests from a chat app such as Telegram and run them through IGRIS. Copy [`examples/hermes/igris/SKILL.md`](examples/hermes/igris/SKILL.md) to `~/.hermes/skills/igris/SKILL.md`. It tells Hermes how to call `igris run`, what the exit codes mean, and to ask you before anything risky or before a merge. Hermes needs a model with a context window of at least 64,000 tokens that can call tools reliably; a 3B local model answered chat in our tests but did not call tools.
+[Hermes](https://hermes-agent.nousresearch.com) can take your requests from a chat app such as Telegram and run them through IGRIS. Copy [`examples/hermes/igris/SKILL.md`](examples/hermes/igris/SKILL.md) to `~/.hermes/skills/igris/SKILL.md`. It tells Hermes how to call `igris run`, what the exit codes mean, and to ask you before anything risky or before a merge.
+
+Hermes needs a model with a context window of at least 64,000 tokens that can call tools. To keep everything on your machine, use a local one with [Ollama](https://ollama.com):
+
+```sh
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+OLLAMA_CONTEXT_LENGTH=65536 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q4_0 ollama serve
+hermes config set model.provider custom
+hermes config set model.base_url http://127.0.0.1:11434/v1
+hermes config set model.default qwen3:4b-instruct-2507-q4_K_M
+```
+
+We ran the whole chain this way on an 8-core laptop with 4 GB of GPU memory: Hermes started the task, IGRIS reported it blocked on a trust prompt, and after the answer in Herdr, Hermes continued it and merged it. A 4B model needs the exact command in the request (`run igris run --repo … --task "…"`); a 3B model answered chat but did not call tools. A larger model follows the skill more reliably.
 
 ## Headless
 
