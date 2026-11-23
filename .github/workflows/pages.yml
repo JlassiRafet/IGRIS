@@ -1,8 +1,8 @@
 name: Pages
+# Frozen: the site is not published until it is ready. Pages is switched off for the repository, so a
+# run of this workflow fails at the deploy step. Turn Pages back on (Source: GitHub Actions), then
+# restore the push trigger: `push: {branches: [main], paths: ["site/**", ".github/workflows/pages.yml"]}`.
 on:
-  push:
-    branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 permissions: {contents: read, pages: write, id-token: write}
 concurrency: {group: pages, cancel-in-progress: false}

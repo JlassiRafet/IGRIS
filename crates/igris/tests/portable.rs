@@ -12,7 +12,10 @@ fn version_prints_name_and_version() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "igris 0.0.0\n");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("igris {}\n", env!("CARGO_PKG_VERSION"))
+    );
 }
 
 #[test]
