@@ -2,9 +2,10 @@
 use super::action::Action;
 use super::hit::HitMap;
 use super::keymap::{Context, keys_for};
+use super::style::Role;
+use super::theme::Theme;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
@@ -37,8 +38,9 @@ pub fn footer_hints(ctx: Context) -> Vec<(String, Action)> {
         .collect()
 }
 
-/// Draw the hints on one row and register each as a clickable area.
-pub fn draw_footer(f: &mut Frame, row: Rect, ctx: Context, hits: &mut HitMap) {
+/// Draw the hints on one row and register each as a clickable area. The key is light blue and the
+/// word dim; a hint that does not fit is left out, never wrapped.
+pub fn draw_footer(f: &mut Frame, row: Rect, ctx: Context, t: &Theme, hits: &mut HitMap) {
     let mut x = row.x;
     let mut spans = Vec::new();
     for (text, action) in footer_hints(ctx) {
@@ -47,7 +49,9 @@ pub fn draw_footer(f: &mut Frame, row: Rect, ctx: Context, hits: &mut HitMap) {
             break;
         }
         hits.add(Rect::new(x, row.y, width, 1), action);
-        spans.push(Span::styled(text, Style::new()));
+        let (key, verb) = text.split_once(' ').unwrap_or((text.as_str(), ""));
+        spans.push(Span::styled(key.to_string(), t.style(Role::Key)));
+        spans.push(Span::styled(format!(" {verb}"), t.style(Role::Dim)));
         spans.push(Span::raw("   "));
         x += width + 3;
     }
@@ -58,6 +62,7 @@ pub fn draw_footer(f: &mut Frame, row: Rect, ctx: Context, hits: &mut HitMap) {
 mod tests {
     use super::*;
     use crate::tui::keymap::BINDINGS;
+    use crate::tui::theme::Env;
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
@@ -75,8 +80,16 @@ mod tests {
     fn drawing_the_footer_registers_one_clickable_area_per_hint() {
         let mut term = Terminal::new(TestBackend::new(80, 3)).unwrap();
         let mut hits = HitMap::default();
-        term.draw(|f| draw_footer(f, Rect::new(0, 2, 80, 1), Context::List, &mut hits))
-            .unwrap();
+        term.draw(|f| {
+            draw_footer(
+                f,
+                Rect::new(0, 2, 80, 1),
+                Context::List,
+                &Theme::detect(&Env::default()),
+                &mut hits,
+            )
+        })
+        .unwrap();
         let mut x = 0u16;
         for (text, action) in footer_hints(Context::List) {
             assert_eq!(hits.at(x, 2), Some(action), "first cell of {text}");

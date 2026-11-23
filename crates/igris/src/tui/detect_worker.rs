@@ -4,6 +4,8 @@ use std::sync::mpsc::Sender;
 
 #[derive(Debug)]
 pub enum Msg {
+    /// The scan is at `(done, total)` and about to probe the named thing.
+    Progress(usize, usize, &'static str),
     Detected(Box<Snapshot>),
     /// The doctor's checks finished.
     Checked(Vec<crate::doctor::Check>),
@@ -24,15 +26,29 @@ pub fn spawn_sample(tx: Sender<Msg>, repo: std::path::PathBuf) {
 }
 
 /// Run `probe` off the UI thread and send its result. A closed channel (the app has quit) is fine.
-pub fn spawn<F: FnOnce() -> Snapshot + Send + 'static>(tx: Sender<Msg>, probe: F) {
+/// `probe` gets a callback for progress reports; each becomes a `Msg::Progress`.
+pub fn spawn<F>(tx: Sender<Msg>, probe: F)
+where
+    F: FnOnce(&mut dyn FnMut(usize, usize, &'static str)) -> Snapshot + Send + 'static,
+{
     std::thread::spawn(move || {
-        let _ = tx.send(Msg::Detected(Box::new(probe())));
+        let progress_tx = tx.clone();
+        let snap = probe(&mut |done, total, what| {
+            let _ = progress_tx.send(Msg::Progress(done, total, what));
+        });
+        let _ = tx.send(Msg::Detected(Box::new(snap)));
     });
 }
 
 /// The real probe: this machine, as `igris doctor --json` sees it.
 pub fn spawn_real(tx: Sender<Msg>) {
-    spawn(tx, || igris_detect::detect(&igris_detect::RealHost::new()));
+    spawn(tx, |progress| {
+        igris_detect::detect_with_progress(
+            &igris_detect::RealHost::new(),
+            &igris_detect::Options::default(),
+            progress,
+        )
+    });
 }
 
 #[cfg(test)]
@@ -45,7 +61,7 @@ mod tests {
     fn the_snapshot_arrives_by_channel_without_blocking_the_caller() {
         let (tx, rx) = std::sync::mpsc::channel();
         let (gate_tx, gate_rx) = std::sync::mpsc::channel::<()>();
-        spawn(tx, move || {
+        spawn(tx, move |_| {
             gate_rx.recv().unwrap();
             real()
         });
@@ -58,5 +74,25 @@ mod tests {
             panic!()
         };
         assert!(s.herdr.found);
+    }
+
+    #[test]
+    fn progress_reports_arrive_in_order_before_the_snapshot() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        spawn(tx, |progress| {
+            progress(0, 6, "machine");
+            progress(3, 6, "hermes");
+            real()
+        });
+        let got: Vec<Msg> = std::iter::from_fn(|| rx.recv_timeout(Duration::from_secs(5)).ok())
+            .take(3)
+            .collect();
+        assert!(
+            matches!(got[0], Msg::Progress(0, 6, "machine")),
+            "{:?}",
+            got[0]
+        );
+        assert!(matches!(got[1], Msg::Progress(3, 6, "hermes")));
+        assert!(matches!(got[2], Msg::Detected(_)));
     }
 }

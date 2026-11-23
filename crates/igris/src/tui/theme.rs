@@ -74,17 +74,6 @@ impl Theme {
             motion,
         }
     }
-
-    /// The one accent: the plume's red, or plain bold-underline when colour is off.
-    pub fn accent(&self) -> ratatui::style::Style {
-        use ratatui::style::{Color, Modifier, Style};
-        let base = Style::new().add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
-        match self.depth {
-            ColorDepth::True => base.fg(Color::Rgb(0xff, 0x30, 0x38)),
-            ColorDepth::Ansi16 => base.fg(Color::Red),
-            ColorDepth::None => base,
-        }
-    }
 }
 
 #[cfg(test)]

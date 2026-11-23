@@ -94,6 +94,10 @@ pub struct State {
     pub snapshot: Option<Snapshot>,
     /// The repository the app was opened on.
     pub repo: PathBuf,
+    /// The first scan, while it runs: probes done, total, and the one that is next.
+    pub scan: Option<(usize, usize, &'static str)>,
+    /// Where the pointer last was (a mouse-move event), for the hover highlight.
+    pub hover: Option<(u16, u16)>,
     /// The result of the last action, in words.
     pub toast: Option<String>,
     /// Counts loop turns, for the spinner.
@@ -104,6 +108,10 @@ impl State {
     /// Take in a message from a background worker.
     pub fn apply(&mut self, m: Msg) {
         let snap = match m {
+            Msg::Progress(done, total, what) => {
+                self.scan = Some((done, total, what));
+                return;
+            }
             Msg::Detected(snap) => snap,
             Msg::Checked(list) => {
                 self.test.checks = Some(list);
@@ -117,6 +125,7 @@ impl State {
                 return;
             }
         };
+        self.scan = None;
         self.check.set(&snap);
         if self.pipeline.form.is_none() && self.pipeline.broken.is_none() {
             // The form starts once, from the first scan; later scans never overwrite edits.
@@ -148,6 +157,8 @@ impl State {
             home: None,
             snapshot: None,
             repo: PathBuf::from("."),
+            scan: None,
+            hover: None,
             toast: None,
             tick: 0,
         }

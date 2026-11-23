@@ -1,70 +1,166 @@
-//! The top of every screen: the wordmark when there is room, one line when there is not.
+//! The top band: the wordmark at rest on the left, what IGRIS is and the privacy line on the right.
+//! When the window is short or the terminal is not UTF-8 it is one plain row.
+use super::style::Role;
 use super::theme::{Glyphs, Theme};
 use super::wordmark::{WIDTH, wordmark};
-use ratatui::style::Style;
+use ratatui::Frame;
+use ratatui::layout::{Alignment, Rect};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 
-pub const TAGLINE: &str = "Agents build and review. The shell decides when it is done.";
-const TALL: u16 = 28;
+pub const TAGLINE: [&str; 2] = [
+    "Agents build and review.",
+    "The shell decides when it is done.",
+];
+const FULL_META_WIDTH: u16 = 90;
 
-pub fn header(theme: &Theme, width: u16, height: u16, tick: usize) -> Vec<Line<'static>> {
-    // Block characters need a UTF-8 terminal; otherwise (or when short) one plain line.
-    if height >= TALL && width >= WIDTH && theme.glyphs == Glyphs::Unicode {
-        let mut lines = wordmark(theme, tick);
-        lines.push(Line::from(TAGLINE));
-        return lines;
+fn sep(t: &Theme) -> &'static str {
+    if t.glyphs == Glyphs::Ascii {
+        " - "
+    } else {
+        " · "
     }
-    vec![Line::from(vec![
-        Span::styled("IGRIS", Style::new().bold()),
-        Span::raw(format!(" {}", env!("CARGO_PKG_VERSION"))),
-    ])]
+}
+
+/// What IGRIS promises, short enough for the window. The claim is checked in the design doc.
+pub fn meta(t: &Theme, width: u16) -> String {
+    let s = sep(t);
+    if width >= FULL_META_WIDTH {
+        format!("local{s}no telemetry{s}no secrets stored")
+    } else {
+        format!("private{s}local")
+    }
+}
+
+pub fn draw_band(f: &mut Frame, band: Rect, t: &Theme, tick: usize, big: bool) {
+    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let dim = t.style(Role::Dim);
+    if big && band.width > WIDTH + 24 {
+        f.render_widget(
+            Paragraph::new(wordmark(t, tick)),
+            Rect::new(band.x, band.y, WIDTH, band.height.min(4)),
+        );
+        let right = Rect::new(
+            band.x + WIDTH + 1,
+            band.y,
+            band.width - WIDTH - 1,
+            band.height,
+        );
+        let lines = vec![
+            Line::styled(TAGLINE[0], dim),
+            Line::styled(TAGLINE[1], dim),
+            Line::raw(""),
+            Line::from(vec![
+                Span::styled(meta(t, band.width), dim),
+                Span::styled(format!("{}{version}", sep(t)), dim),
+            ]),
+        ];
+        f.render_widget(Paragraph::new(lines).alignment(Alignment::Right), right);
+    } else {
+        let left = Line::from(vec![
+            Span::styled("IGRIS", t.style(Role::Text).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {version}"), dim),
+        ]);
+        f.render_widget(Paragraph::new(left), band);
+        f.render_widget(
+            Paragraph::new(Line::styled(meta(t, band.width), dim)).alignment(Alignment::Right),
+            band,
+        );
+    }
+    // Only the first row is used when the band is one row tall.
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tui::theme::ColorDepth;
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn theme(glyphs: Glyphs) -> Theme {
         Theme {
-            motion: false,
             depth: ColorDepth::None,
             glyphs,
+            motion: false,
         }
     }
 
-    fn flat(l: &Line) -> String {
-        l.spans.iter().map(|s| s.content.as_ref()).collect()
+    fn draw(
+        t: &Theme,
+        w: u16,
+        h: u16,
+        big: bool,
+        tick: usize,
+    ) -> (Vec<String>, Terminal<TestBackend>) {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| draw_band(f, f.area(), t, tick, big)).unwrap();
+        let b = term.backend().buffer().clone();
+        let rows = (0..h)
+            .map(|y| (0..w).map(|x| b[(x, y)].symbol().to_string()).collect())
+            .collect();
+        (rows, term)
     }
 
     #[test]
-    fn a_tall_window_gets_the_wordmark_and_the_tagline() {
-        let h = header(&theme(Glyphs::Unicode), 100, 28, 0);
-        assert_eq!(h.len(), 4);
-        assert_eq!(flat(&h[1]), "▀█▀ █▀▀ █▀█ ▀█▀ █▀▀");
-        assert_eq!(flat(&h[3]), TAGLINE);
-    }
-
-    #[test]
-    fn a_short_window_gets_one_line_with_the_version() {
-        let h = header(&theme(Glyphs::Unicode), 100, 24, 0);
-        assert_eq!(h.len(), 1);
-        let line = flat(&h[0]);
+    fn the_tall_band_has_the_wordmark_on_the_left_and_the_promise_on_the_right() {
+        let (rows, _) = draw(&theme(Glyphs::Unicode), 98, 4, true, 0);
+        assert!(rows[1].starts_with("▀█▀ █▀▀ █▀█ ▀█▀ █▀▀"), "{rows:?}");
         assert!(
-            line.contains("IGRIS") && line.contains(env!("CARGO_PKG_VERSION")),
-            "{line}"
+            rows[0].trim_end().ends_with(TAGLINE[0]) && rows[1].trim_end().ends_with(TAGLINE[1]),
+            "{rows:?}"
+        );
+        let last = rows[3].trim_end();
+        assert!(
+            last.contains("local · no telemetry · no secrets stored")
+                && last.ends_with(env!("CARGO_PKG_VERSION")),
+            "{last}"
         );
     }
 
     #[test]
-    fn a_narrow_window_never_gets_a_wordmark_that_does_not_fit() {
-        assert_eq!(header(&theme(Glyphs::Unicode), WIDTH - 1, 40, 0).len(), 1);
+    fn the_short_band_is_one_row_with_the_name_the_version_and_the_promise() {
+        let (rows, _) = draw(&theme(Glyphs::Unicode), 98, 1, false, 0);
+        assert!(
+            rows[0].starts_with(&format!("IGRIS v{}", env!("CARGO_PKG_VERSION"))),
+            "{rows:?}"
+        );
+        assert!(
+            rows[0].trim_end().ends_with("no secrets stored"),
+            "{rows:?}"
+        );
     }
 
     #[test]
-    fn ascii_terminals_get_plain_ascii() {
-        let h = header(&theme(Glyphs::Ascii), 100, 40, 0);
-        assert_eq!(h.len(), 1);
-        assert!(flat(&h[0]).is_ascii(), "{}", flat(&h[0]));
+    fn a_narrow_window_gets_the_short_promise() {
+        let (rows, _) = draw(&theme(Glyphs::Unicode), 78, 1, false, 0);
+        assert!(
+            rows[0].trim_end().ends_with("private · local") && !rows[0].contains("telemetry"),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn an_ascii_terminal_gets_only_ascii() {
+        let (rows, _) = draw(&theme(Glyphs::Ascii), 98, 1, false, 0);
+        assert!(rows[0].is_ascii(), "{rows:?}");
+    }
+
+    #[test]
+    fn the_sheen_moves_in_the_band_only_when_motion_is_on() {
+        let on = Theme {
+            depth: ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: true,
+        };
+        let off = Theme {
+            motion: false,
+            ..on
+        };
+        let (_, a) = draw(&on, 98, 4, true, 0);
+        let (_, b) = draw(&on, 98, 4, true, 12);
+        assert_ne!(a.backend().buffer(), b.backend().buffer());
+        let (_, c) = draw(&off, 98, 4, true, 0);
+        let (_, d) = draw(&off, 98, 4, true, 12);
+        assert_eq!(c.backend().buffer(), d.backend().buffer());
     }
 }

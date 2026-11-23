@@ -14,13 +14,17 @@ impl HitMap {
         self.0.push((area, action));
     }
 
-    /// The topmost area under the pointer: the one added last.
-    pub fn at(&self, x: u16, y: u16) -> Option<Action> {
+    /// The topmost area under the pointer, with its action: the one added last.
+    pub fn rect_at(&self, x: u16, y: u16) -> Option<(Rect, Action)> {
         self.0
             .iter()
             .rev()
             .find(|(r, _)| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
-            .map(|(_, a)| *a)
+            .copied()
+    }
+
+    pub fn at(&self, x: u16, y: u16) -> Option<Action> {
+        self.rect_at(x, y).map(|(_, a)| a)
     }
 }
 

@@ -12,13 +12,16 @@ mod footer;
 mod form;
 mod header;
 mod help;
+mod hero;
 mod hit;
 mod input;
 mod keymap;
+mod layout;
 mod next_step;
 mod palette;
 mod pipeline;
 mod pipeline_screen;
+mod rail;
 mod review;
 mod sample;
 mod state;
@@ -35,9 +38,8 @@ use keymap::{Context, key_to_action};
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{self, Event, KeyEventKind, MouseButton, MouseEventKind};
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Clear, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 use state::{Effect, Overlay, Screen, State, type_key, update};
 use std::error::Error;
@@ -66,58 +68,94 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
         f.render_widget(Paragraph::new(msg).wrap(Wrap { trim: true }), area);
         return;
     }
-    let head = header::header(t, area.width, area.height, s.tick);
-    let top = head.len() as u16;
-    f.render_widget(
-        Paragraph::new(head),
-        Rect::new(area.x, area.y, area.width, top),
-    );
-    let tab_y = area.y + top;
-    let mut x = area.x;
-    let mut tabs = Vec::new();
-    for screen in Screen::ALL {
-        let label = format!(" {} ", screen.title());
-        let width = label.chars().count() as u16;
-        if s.overlay.is_none() {
-            hits.add(Rect::new(x, tab_y, width, 1), Action::Goto(screen));
-        }
-        let style = if screen == s.screen {
-            t.accent()
+    let big = area.height >= layout::TALL_HEIGHT && t.glyphs == theme::Glyphs::Unicode;
+    let a = layout::compute(area, big);
+    let clickable = s.overlay.is_none();
+    if s.screen == Screen::Check && s.check.view.is_none() {
+        // The first scan is running: the brand, centred, with real progress.
+        hero::draw(f, area, s, t);
+    } else {
+        header::draw_band(f, a.band, t, s.tick, big);
+        let rule = if t.glyphs == theme::Glyphs::Ascii {
+            "-"
         } else {
-            Style::new()
+            "─"
         };
-        tabs.push(Span::styled(label, style));
-        x += width;
+        f.render_widget(
+            Paragraph::new(Line::styled(
+                rule.repeat(a.rule.width as usize),
+                t.style(style::Role::Border),
+            )),
+            a.rule,
+        );
+        if let Some(rail) = a.rail {
+            rail::draw_rail(f, rail, s, t, hits, clickable);
+        }
+        if let Some(strip) = a.strip {
+            rail::draw_strip(f, strip, s, t, hits, clickable);
+        }
+        let block = widgets::panel(t, s.screen.title(), clickable);
+        let body = block.inner(a.panel);
+        f.render_widget(block, a.panel);
+        match s.screen {
+            Screen::Check => check::draw(f, body, s, t, hits, clickable),
+            Screen::Pipeline => pipeline_screen::draw(f, body, s, t, hits, clickable),
+            Screen::Review => review::draw(f, body, s, t, hits, clickable),
+            Screen::Test => test_screen::draw(f, body, s, t, hits, clickable),
+        }
+        if let Some(msg) = &s.toast {
+            let text = widgets::fit(t, msg, a.toast.width as usize);
+            f.render_widget(Paragraph::new(text), a.toast);
+        }
+        draw_next(f, a.next, s, t);
     }
-    f.render_widget(
-        Paragraph::new(Line::from(tabs)),
-        Rect::new(area.x, tab_y, area.width, 1),
-    );
-    let body = Rect::new(area.x, tab_y + 2, area.width, area.height - top - 5);
-    match s.screen {
-        Screen::Check => check::draw(f, body, s, t, hits, s.overlay.is_none()),
-        Screen::Pipeline => pipeline_screen::draw(f, body, s, t, hits, s.overlay.is_none()),
-        Screen::Review => review::draw(f, body, s, t, hits, s.overlay.is_none()),
-        Screen::Test => test_screen::draw(f, body, s, t, hits, s.overlay.is_none()),
-    }
-    if let Some(msg) = &s.toast {
-        let row = Rect::new(area.x, area.y + area.height - 3, area.width, 1);
-        f.render_widget(Paragraph::new(msg.as_str()), row);
-    }
-    let next = Rect::new(area.x, area.y + area.height - 2, area.width, 1);
-    f.render_widget(
-        Paragraph::new(next_step::text(&next_step::next_step(s))),
-        next,
-    );
     if let Some(o) = &s.overlay {
-        draw_overlay(f, area, o, s, hits);
+        draw_overlay(f, area, o, s, t, hits);
     }
-    let foot = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
-    footer::draw_footer(f, foot, context(s), hits);
+    footer::draw_footer(f, a.footer, context(s), t, hits);
+    // Hover: tint the item under the pointer, but never a backdrop or an inert area.
+    let hovered = s
+        .hover
+        .and_then(|(x, y)| hits.rect_at(x, y))
+        .filter(|(_, action)| !matches!(action, Action::Cancel | Action::Stay));
+    if let Some((rect, _)) = hovered {
+        f.buffer_mut().set_style(rect, t.style(style::Role::Hover));
+    }
+}
+
+/// `▶ Next  <what to do now>`: the one instruction, in its own row above the key hints.
+fn draw_next(f: &mut Frame, row: Rect, s: &State, t: &Theme) {
+    let step = next_step::next_step(s);
+    let done = matches!(step, next_step::Step::Done);
+    let arrow = if t.glyphs == theme::Glyphs::Ascii {
+        ">"
+    } else {
+        "▶"
+    };
+    let lead = if done {
+        String::new()
+    } else {
+        format!("{arrow} Next  ")
+    };
+    let room = (row.width as usize).saturating_sub(lead.chars().count());
+    let text = widgets::fit(t, &next_step::sentence(&step), room);
+    let spans = if done {
+        vec![Span::styled(text, t.style(style::Role::Ok))]
+    } else {
+        vec![
+            Span::styled(
+                lead,
+                t.style(style::Role::Bad)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ),
+            Span::styled(text, t.style(style::Role::Text)),
+        ]
+    };
+    f.render_widget(Paragraph::new(Line::from(spans)), row);
 }
 
 /// A centred box. A click outside it closes the overlay; a click inside keeps it open.
-fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, hits: &mut HitMap) {
+fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hits: &mut HitMap) {
     let (title, lines, w, h): (&str, Vec<Line>, u16, u16) = match o {
         Overlay::Help => (
             "Help",
@@ -211,7 +249,7 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, hits: &mut Hi
     f.render_widget(
         Paragraph::new(lines)
             .scroll((scroll, 0))
-            .block(Block::bordered().title(title)),
+            .block(widgets::panel(t, title, true)),
         r,
     );
 }
@@ -285,6 +323,10 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
                 MouseEventKind::Down(MouseButton::Left) => hits.at(m.column, m.row),
                 MouseEventKind::ScrollUp => Some(Action::Up),
                 MouseEventKind::ScrollDown => Some(Action::Down),
+                MouseEventKind::Moved => {
+                    state.hover = Some((m.column, m.row));
+                    None
+                }
                 _ => None,
             },
             Event::Resize(w, h) => {
@@ -364,41 +406,91 @@ mod tests {
         assert_eq!(hits.at(1, 0), None);
     }
 
-    #[test]
-    fn exactly_80x24_draws_the_tabs_and_they_are_clickable() {
-        let (text, hits) = render(80, 24, &State::new((80, 24)));
-        assert!(
-            text.contains("Check")
-                && text.contains("Pipeline")
-                && text.contains("Review")
-                && text.contains("Test")
-        );
-        let row = text.lines().position(|l| l.contains("Pipeline")).unwrap() as u16;
-        let col = text
+    /// A state after the first scan, with the app opened on a repository without an igris.toml.
+    fn scanned(size: (u16, u16)) -> State {
+        let mut s = State::new(size);
+        s.repo = std::env::temp_dir().join("igris-mod-none");
+        s.apply(detect_worker::Msg::Detected(Box::new(
+            crate::check::view::tests::real(),
+        )));
+        s
+    }
+
+    fn row_of(text: &str, needle: &str) -> (u16, u16) {
+        let (y, line) = text
             .lines()
-            .nth(row as usize)
-            .unwrap()
-            .find("Pipeline")
-            .unwrap() as u16;
-        assert_eq!(
-            hits.at(col, row),
-            Some(Action::Goto(state::Screen::Pipeline))
+            .enumerate()
+            .find(|(_, l)| l.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} not on screen:\n{text}"));
+        (
+            line[..line.find(needle).unwrap()].chars().count() as u16,
+            y as u16,
+        )
+    }
+
+    #[test]
+    fn at_80x24_the_steps_are_a_strip_and_each_one_is_clickable() {
+        let (text, hits) = render(80, 24, &scanned((80, 24)));
+        for label in ["Check", "Pipeline", "Review", "Test"] {
+            assert!(text.contains(label), "{label}:\n{text}");
+        }
+        let (x, y) = row_of(&text, "Pipeline");
+        assert_eq!(hits.at(x, y), Some(Action::Goto(Screen::Pipeline)));
+        assert!(text.lines().all(|l| l.chars().count() <= 80));
+    }
+
+    #[test]
+    fn at_100x30_the_steps_are_a_rail_beside_the_panel() {
+        let (text, hits) = render(100, 30, &scanned((100, 30)));
+        let (x, y) = row_of(&text, "Review");
+        assert!(x < 22, "the rail is on the left: {x}");
+        assert_eq!(hits.at(x, y), Some(Action::Goto(Screen::Review)));
+        assert!(
+            text.contains("╭") && text.contains(" Check "),
+            "the panel is framed and titled:\n{text}"
+        );
+        assert!(
+            text.contains("local · no telemetry · no secrets stored"),
+            "{text}"
         );
     }
 
     #[test]
     fn the_next_step_and_the_key_hints_are_on_screen_and_clickable() {
-        let (text, hits) = render(100, 30, &State::new((100, 30)));
-        assert!(text.contains("Next: set the check command"), "{text}");
+        let (text, hits) = render(100, 30, &scanned((100, 30)));
+        assert!(text.contains("▶ Next  Set the check command"), "{text}");
         let last = text.lines().last().unwrap();
         assert!(last.contains("q quit") && last.contains("? help"), "{last}");
-        let col = last.find("? help").unwrap() as u16;
+        let (col, _) = row_of(&text, "? help");
         assert_eq!(hits.at(col, 29), Some(Action::Help));
     }
 
     #[test]
-    fn help_is_a_box_that_closes_when_you_click_outside_it() {
+    fn before_the_first_scan_the_screen_is_the_centred_hero_with_key_hints() {
         let mut s = State::new((100, 30));
+        s.scan = Some((2, 6, "agents"));
+        let (text, hits) = render(100, 30, &s);
+        assert!(
+            text.contains("Scanning this machine · agents") && !text.contains("╭"),
+            "{text}"
+        );
+        let (col, _) = row_of(&text, "q quit");
+        assert_eq!(
+            hits.at(col, 29),
+            Some(Action::Quit),
+            "the hints work during the scan"
+        );
+        s.screen = Screen::Pipeline;
+        let (text, _) = render(100, 30, &s);
+        assert!(
+            text.contains("╭") && !text.contains("Scanning this machine"),
+            "other screens use the work layout"
+        );
+    }
+
+    #[test]
+    fn help_is_a_box_that_closes_when_you_click_outside_it() {
+        let mut s = scanned((100, 30));
         update(&mut s, Action::Help);
         let (text, hits) = render(100, 30, &s);
         assert!(
@@ -407,17 +499,70 @@ mod tests {
         );
         assert_eq!(hits.at(0, 0), Some(Action::Cancel), "outside");
         assert_eq!(hits.at(50, 15), Some(Action::Stay), "inside");
-        let tab = text.lines().position(|l| l.contains("Pipeline")).unwrap() as u16;
+        let (x, y) = row_of(&text, "Pipeline");
         assert_ne!(
-            hits.at(12, tab),
+            hits.at(x, y),
             Some(Action::Goto(Screen::Pipeline)),
-            "the tabs are not clickable behind it"
+            "the steps are not clickable behind it"
         );
     }
 
     #[test]
+    fn hover_tints_the_item_under_the_pointer_and_never_a_backdrop() {
+        let t = Theme {
+            depth: theme::ColorDepth::True,
+            glyphs: theme::Glyphs::Unicode,
+            motion: false,
+        };
+        let bg = |s: &State, x: u16, y: u16| {
+            let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+            let mut hits = HitMap::default();
+            term.draw(|f| draw(f, s, &t, &mut hits)).unwrap();
+            term.backend().buffer()[(x, y)].bg
+        };
+        let mut s = scanned((100, 30));
+        let (text, _) = render(100, 30, &s);
+        let (x, y) = row_of(&text, "Review");
+        assert_eq!(
+            bg(&s, x, y),
+            ratatui::style::Color::Reset,
+            "no pointer, no tint"
+        );
+        s.hover = Some((x, y));
+        assert_eq!(bg(&s, x, y), ratatui::style::Color::Rgb(0x16, 0x22, 0x2b));
+        update(&mut s, Action::Help);
+        s.hover = Some((0, 0)); // over the backdrop of the help overlay
+        assert_eq!(
+            bg(&s, 0, 0),
+            ratatui::style::Color::Reset,
+            "a backdrop never highlights"
+        );
+    }
+
+    #[test]
+    fn resizing_across_the_rail_width_keeps_the_screen_and_the_open_overlay() {
+        let mut s = scanned((100, 30));
+        update(&mut s, Action::Goto(Screen::Pipeline));
+        update(&mut s, Action::Help);
+        let (wide, _) = render(100, 30, &s);
+        let (narrow, _) = render(90, 30, &s);
+        assert!(wide.contains("How setup works") && narrow.contains("How setup works"));
+        assert_eq!(
+            (s.screen, s.overlay.clone()),
+            (Screen::Pipeline, Some(Overlay::Help))
+        );
+        for (w, h) in [(80, 24), (79, 23), (99, 29), (100, 30), (101, 31)] {
+            let (text, _) = render(w, h, &s);
+            assert!(
+                text.lines().all(|l| l.chars().count() <= w as usize),
+                "{w}x{h}"
+            );
+        }
+    }
+
+    #[test]
     fn the_palette_lists_actions_and_marks_the_chosen_row() {
-        let mut s = State::new((100, 30));
+        let mut s = scanned((100, 30));
         update(&mut s, Action::Palette);
         let (text, _) = render(100, 30, &s);
         assert!(

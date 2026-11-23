@@ -1,6 +1,6 @@
 //! Small reusable pieces: shortening text by display width, framed panels, status chips and the
 //! progress bar. Every string from outside the binary is shortened here before it is drawn.
-// The screens adopt these in the next tasks of the polish plan (2 to 5).
+// Status chips, the Link/Info/Optional/Primary roles and the buttons are used from tasks 3 to 5 of the polish plan.
 #![allow(dead_code)]
 
 use super::style::{ACCENT, GLOW, Role, rgb};
