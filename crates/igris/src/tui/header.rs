@@ -1,4 +1,4 @@
-//! The top band: the wordmark at rest on the left, what IGRIS is and the privacy line on the right.
+//! The top band: the wordmark at rest on the left, what IGRIS does and its promise on the right.
 //! When the window is short or the terminal is not UTF-8 it is one plain row.
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
@@ -6,13 +6,9 @@ use super::wordmark::{WIDTH, wordmark};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::Modifier;
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 
-pub const TAGLINE: [&str; 2] = [
-    "Agents build and review.",
-    "The shell decides when it is done.",
-];
 const FULL_META_WIDTH: u16 = 90;
 
 fn sep(t: &Theme) -> &'static str {
@@ -23,18 +19,19 @@ fn sep(t: &Theme) -> &'static str {
     }
 }
 
-/// What IGRIS promises, short enough for the window. The claim is checked in the design doc.
-pub fn meta(t: &Theme, width: u16) -> String {
+/// What IGRIS does, and what it promises, as keywords. The promise is shorter in a narrow window.
+/// It holds: no telemetry (no network library in the build) and no stored logins or keys.
+pub fn lines(t: &Theme, width: u16) -> [String; 2] {
     let s = sep(t);
-    if width >= FULL_META_WIDTH {
-        format!("local{s}no telemetry{s}no secrets stored")
+    let promise = if width >= FULL_META_WIDTH {
+        format!("Local{s}No telemetry{s}No stored keys")
     } else {
-        format!("private{s}local")
-    }
+        format!("Local{s}No telemetry")
+    };
+    [format!("Build{s}Review{s}Verify"), promise]
 }
 
 pub fn draw_band(f: &mut Frame, band: Rect, t: &Theme, tick: usize, big: bool) {
-    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
     let dim = t.style(Role::Dim);
     if big && band.width > WIDTH + 24 {
         f.render_widget(
@@ -47,24 +44,15 @@ pub fn draw_band(f: &mut Frame, band: Rect, t: &Theme, tick: usize, big: bool) {
             band.width - WIDTH - 1,
             band.height,
         );
-        let lines = vec![
-            Line::styled(TAGLINE[0], dim),
-            Line::styled(TAGLINE[1], dim),
-            Line::raw(""),
-            Line::from(vec![
-                Span::styled(meta(t, band.width), dim),
-                Span::styled(format!("{}{version}", sep(t)), dim),
-            ]),
-        ];
+        let [what, promise] = lines(t, band.width);
+        let lines = vec![Line::styled(what, dim), Line::styled(promise, dim)];
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Right), right);
     } else {
-        let left = Line::from(vec![
-            Span::styled("IGRIS", t.style(Role::Text).add_modifier(Modifier::BOLD)),
-            Span::styled(format!(" {version}"), dim),
-        ]);
+        let left = Line::styled("IGRIS", t.style(Role::Text).add_modifier(Modifier::BOLD));
         f.render_widget(Paragraph::new(left), band);
+        let [_, promise] = lines(t, band.width);
         f.render_widget(
-            Paragraph::new(Line::styled(meta(t, band.width), dim)).alignment(Alignment::Right),
+            Paragraph::new(Line::styled(promise, dim)).alignment(Alignment::Right),
             band,
         );
     }
@@ -106,35 +94,34 @@ mod tests {
         let (rows, _) = draw(&theme(Glyphs::Unicode), 98, 4, true, 0);
         assert!(rows[1].starts_with("▀█▀ █▀▀ █▀█ ▀█▀ █▀▀"), "{rows:?}");
         assert!(
-            rows[0].trim_end().ends_with(TAGLINE[0]) && rows[1].trim_end().ends_with(TAGLINE[1]),
+            rows[0].trim_end().ends_with("Build · Review · Verify"),
             "{rows:?}"
         );
-        let last = rows[3].trim_end();
         assert!(
-            last.contains("local · no telemetry · no secrets stored")
-                && last.ends_with(env!("CARGO_PKG_VERSION")),
-            "{last}"
+            rows[1]
+                .trim_end()
+                .ends_with("Local · No telemetry · No stored keys"),
+            "{rows:?}"
+        );
+        assert!(
+            !rows.concat().contains(env!("CARGO_PKG_VERSION")),
+            "the band does not show a version: {rows:?}"
         );
     }
 
     #[test]
-    fn the_short_band_is_one_row_with_the_name_the_version_and_the_promise() {
+    fn the_short_band_is_one_row_with_the_name_and_the_promise() {
         let (rows, _) = draw(&theme(Glyphs::Unicode), 98, 1, false, 0);
-        assert!(
-            rows[0].starts_with(&format!("IGRIS v{}", env!("CARGO_PKG_VERSION"))),
-            "{rows:?}"
-        );
-        assert!(
-            rows[0].trim_end().ends_with("no secrets stored"),
-            "{rows:?}"
-        );
+        assert!(rows[0].starts_with("IGRIS "), "{rows:?}");
+        assert!(!rows[0].contains(env!("CARGO_PKG_VERSION")), "{rows:?}");
+        assert!(rows[0].trim_end().ends_with("No stored keys"), "{rows:?}");
     }
 
     #[test]
     fn a_narrow_window_gets_the_short_promise() {
         let (rows, _) = draw(&theme(Glyphs::Unicode), 78, 1, false, 0);
         assert!(
-            rows[0].trim_end().ends_with("private · local") && !rows[0].contains("telemetry"),
+            rows[0].trim_end().ends_with("Local · No telemetry") && !rows[0].contains("keys"),
             "{rows:?}"
         );
     }
