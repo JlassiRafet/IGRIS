@@ -44,7 +44,10 @@ fn kind_of(name: &str) -> &str {
 
 /// `group` is the view group the row sits in; only the Build group's rows have fixes here.
 pub fn fixes_for(group: &str, row: &Row) -> Vec<Fix> {
-    if row.status != Status::NeedsStep || group != "build" {
+    // A found agent whose login cannot be read is shown as info; it can still be logged in from here.
+    let login_unknown =
+        row.status == Status::Info && LOGIN.iter().any(|(k, _)| *k == kind_of(&row.name));
+    if group != "build" || !(row.status == Status::NeedsStep || login_unknown) {
         return vec![];
     }
     match row.name.as_str() {
@@ -159,6 +162,23 @@ mod tests {
             INSTALL_HERDR_ARGV,
             ["sh", "-c", "curl -fsSL https://herdr.dev/install.sh | sh"]
         );
+    }
+
+    #[test]
+    fn an_agent_whose_login_cannot_be_read_can_still_be_logged_in_from_here() {
+        let f = fixes_for(
+            "build",
+            &row("Claude Code", "Found · login state unknown", Status::Info),
+        );
+        assert_eq!(f[0], Fix::Login(&["claude", "auth", "login"]));
+        assert!(
+            fixes_for(
+                "build",
+                &row("pi", "Found · login state unknown", Status::Info)
+            )
+            .is_empty()
+        );
+        assert!(fixes_for("build", &row("Codex", "Logged in", Status::Ready)).is_empty());
     }
 
     #[test]
