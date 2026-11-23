@@ -9,8 +9,6 @@ html{background:var(--bg)}
 body{margin:0;background:var(--bg);color:#c9ced3;font:14px/1.5 var(--mono);overflow-x:clip}
 a{color:#539fdf}a:focus-visible{outline:2px solid var(--red);outline-offset:3px}
 main{max-width:848px;margin:0 auto;padding:16px 24px 40px}
-.top nav{display:flex;justify-content:flex-end;gap:20px;font-size:13px}
-.top a{color:var(--dim);text-decoration:none}.top a:hover{color:var(--txt)}
 
 /* header: a small word, then the wordmark (the terminal app's, decoded in pipeline.js) */
 .hero{text-align:center;padding:24px 0 34px}
@@ -59,11 +57,6 @@ main{max-width:848px;margin:0 auto;padding:16px 24px 40px}
 /* under the pipeline: the dot that follows the part that is working */
 .below{display:flex;gap:10px;align-items:center;margin-top:14px}
 .cap{font-size:15px;color:#c9ced3;min-height:44px}
-.note{margin:18px 0 0;font-size:12px;color:var(--dim)}
-
-/* the GIF and screenshots show the pipeline alone (?bare) */
-.bare .top,.bare .hero,.bare .note{display:none}
-.bare main{padding:8px}
 
 /* seek mode (?at=MS) draws one exact moment: nothing may be mid-transition */
 .still *{transition:none!important;animation:none!important}

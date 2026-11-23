@@ -8,7 +8,6 @@
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-if (params.has('bare')) document.body.classList.add('bare');
 const at = params.has('at') ? Number(params.get('at')) : null; // seek mode: run to this moment, then stop
 if (at !== null) document.documentElement.classList.add('still');
 
