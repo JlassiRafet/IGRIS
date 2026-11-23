@@ -63,10 +63,10 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme) {
             Rect::new(area.x, area.y + y0, area.width, 1),
         );
     }
-    for (i, text) in super::header::TAGLINE.iter().enumerate() {
+    for (i, text) in super::header::lines(t, area.width).into_iter().enumerate() {
         let r = Rect::new(area.x, area.y + y0 + wh + 1 + i as u16, area.width, 1);
         f.render_widget(
-            Paragraph::new(Line::styled(*text, t.style(Role::Dim))).alignment(Alignment::Center),
+            Paragraph::new(Line::styled(text, t.style(Role::Dim))).alignment(Alignment::Center),
             r,
         );
     }

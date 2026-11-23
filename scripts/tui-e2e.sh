@@ -38,7 +38,7 @@ wait_for "▀█▀ █▀▀ █▀█" 10   # the wordmark
 wait_for "Pipeline" 5       # the tab strip
 wait_for "optional" 60          # the scan finished: the count chips are on screen
 echo "ok  wordmark, tabs, scan"
-wait_for "no telemetry" 5   # the privacy line in the top band
+wait_for "No telemetry" 5   # the promise in the top band
 wait_for "Setup" 5          # the step rail and its progress
 echo "ok  the privacy line and the step rail"
 
@@ -69,6 +69,18 @@ echo "ok  under 100 columns the rail becomes a strip, and back"
 
 tmux send-keys -t "$S" q;   wait_for "EXIT=0" 5
 echo "ok  q exits with code 0"
+
+# Closing the terminal must end igris. It once kept running at about 45% CPU on a dead terminal.
+HUP_REPO=$(mktemp -d)
+git -C "$HUP_REPO" init -q -b main
+tmux new-session -d -s "$S-hup" -x 100 -y 30 "env HOME=$HOME_DIR COLORTERM=truecolor '$BIN' --repo '$HUP_REPO'; sleep 30"
+for _ in $(seq 1 100); do tmux capture-pane -t "$S-hup" -p | grep -q "Pipeline" && break; sleep 0.1; done
+tmux kill-session -t "$S-hup"
+ended=0
+for _ in $(seq 1 30); do pgrep -f -- "--repo $HUP_REPO" >/dev/null || { ended=1; break; }; sleep 0.1; done
+if [ "$ended" != 1 ]; then pkill -f -- "--repo $HUP_REPO" || true; rm -rf "$HUP_REPO"; echo "FAIL: igris kept running after its terminal closed"; exit 1; fi
+rm -rf "$HUP_REPO"
+echo "ok  closing the terminal ends igris"
 
 # Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
 distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1
