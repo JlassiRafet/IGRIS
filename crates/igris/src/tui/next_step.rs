@@ -33,13 +33,20 @@ pub fn next_step(s: &State) -> Step {
     }
 }
 
-pub fn text(step: &Step) -> String {
+fn capital(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or(String::new(), |f| {
+        f.to_uppercase().collect::<String>() + c.as_str()
+    })
+}
+
+/// The sentence after the "Next" marker; for `Done` the whole closing line.
+pub fn sentence(step: &Step) -> String {
     match step {
-        Step::FixBlocker(what) => format!("Next: {what}"),
-        Step::SetCheckCommand => "Next: set the check command (key 2, Pipeline)".into(),
-        Step::ReviewAndApply => "Next: review and apply the change (key 3, Review)".into(),
-        Step::FixCheck(what) => format!("Next: {what}"),
-        Step::RunTest => "Next: run the test (key 4, Test)".into(),
+        Step::FixBlocker(what) | Step::FixCheck(what) => capital(what),
+        Step::SetCheckCommand => "Set the check command (key 2, Pipeline)".into(),
+        Step::ReviewAndApply => "Review and apply the change (key 3, Review)".into(),
+        Step::RunTest => "Run the test (key 4, Test)".into(),
         Step::Done => "Setup is done. Run a task: igris run --task \"...\"".into(),
     }
 }
@@ -94,8 +101,8 @@ mod tests {
             Step::FixCheck("fix the clean check (key 4): commit or stash them".into())
         );
         assert_eq!(
-            text(&step),
-            "Next: fix the clean check (key 4): commit or stash them"
+            sentence(&step),
+            "Fix the clean check (key 4): commit or stash them"
         );
         s.test.checks.as_mut().unwrap()[1].ok = true;
         assert_eq!(next_step(&s), Step::Done);
@@ -103,8 +110,12 @@ mod tests {
 
     #[test]
     fn each_step_reads_as_a_sentence() {
-        assert_eq!(text(&Step::FixBlocker("log in".into())), "Next: log in");
-        assert!(text(&Step::Done).starts_with("Setup is done."));
-        assert!(text(&Step::RunTest).contains("key 4"));
+        assert_eq!(sentence(&Step::FixBlocker("log in".into())), "Log in");
+        assert!(sentence(&Step::Done).starts_with("Setup is done."));
+        assert!(sentence(&Step::RunTest).contains("key 4"));
+        assert_eq!(
+            sentence(&Step::SetCheckCommand),
+            "Set the check command (key 2, Pipeline)"
+        );
     }
 }

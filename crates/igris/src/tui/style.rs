@@ -1,6 +1,6 @@
 //! The colour roles of the IGRIS palette. Screens ask for a role, never for a colour, so truecolor,
 //! 16 colours and no colour all stay in step. Colour supports the hierarchy and never carries it.
-// The screens adopt these in the next tasks of the polish plan (2 to 5).
+// Status chips, the Link/Info/Optional/Primary roles and the buttons are used from tasks 3 to 5 of the polish plan.
 #![allow(dead_code)]
 
 use super::theme::{ColorDepth, Theme};

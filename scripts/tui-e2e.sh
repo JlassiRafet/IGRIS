@@ -48,10 +48,10 @@ tmux send-keys -t "$S" ']'; wait_for "Write to:" 5
 tmux send-keys -t "$S" '[';  wait_for "agents.builder" 5
 echo "ok  ] and [ change screen"
 
-# Mouse. Row 5 is the tab strip (the wordmark takes rows 1-4 at this height).
-click 20 5; wait_for "Write to:" 5              # the Review tab
-click 27 5; wait_for "Run the checks again" 5   # the Test tab
-click 3 5;  wait_for "ready ·" 5                # the Check tab (columns 1-7)
+# Mouse. At 100x30 the steps are a rail: rows 6 to 9 (the wordmark band takes rows 1 to 4, then a rule).
+click 10 8; wait_for "Write to:" 5              # Review
+click 10 9; wait_for "Run the checks again" 5   # Test
+click 10 6; wait_for "ready ·" 5                # Check
 echo "ok  click on a tab switches screen"
 tmux send-keys -t "$S" 2; wait_for "agents.builder" 5
 wheel_down 20 12; wait_for "> agents.reviewer" 5
