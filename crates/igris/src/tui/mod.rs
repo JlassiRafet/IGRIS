@@ -460,10 +460,7 @@ mod tests {
             text.contains("╭") && text.contains(" Check "),
             "the panel is framed and titled:\n{text}"
         );
-        assert!(
-            text.contains("Local · No telemetry · No stored keys"),
-            "{text}"
-        );
+        assert!(text.contains("Runs on your machine"), "{text}");
     }
 
     #[test]
