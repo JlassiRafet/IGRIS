@@ -51,8 +51,8 @@ fn letter(theme: &Theme, t: f32, col: usize, tick: usize) -> Style {
 
 fn plume(theme: &Theme) -> Style {
     match theme.depth {
-        ColorDepth::True => Style::new().fg(rgb(RED)),
-        ColorDepth::Ansi16 => Style::new().fg(Color::Red),
+        ColorDepth::True => Style::new().fg(rgb(RED)).bold(),
+        ColorDepth::Ansi16 => Style::new().fg(Color::Red).bold(),
         ColorDepth::None => Style::new(),
     }
 }
