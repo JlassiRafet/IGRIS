@@ -423,4 +423,65 @@ mod tests {
             "{text}"
         );
     }
+
+    /// Names and values come from other programs (model servers, `claude auth status`, a hand-edited
+    /// igris.toml). A terminal escape sequence in one must never reach the terminal as an escape.
+    #[test]
+    fn escape_sequences_in_outside_text_never_reach_the_screen() {
+        use crate::check::view::tests::real;
+        let evil = "x\x1b]52;c;aGk=\x07\x1b[2Jy";
+        let mut snap = real();
+        snap.local_llm[0].name = evil.into();
+        snap.local_llm[0].up = true;
+        snap.local_llm[0].models = vec![evil.into()];
+        snap.hermes.found = true;
+        snap.hermes.provider = Some(evil.into());
+        snap.agents[0].kind = evil.into();
+        let mut s = State::new((100, 30));
+        s.repo = std::env::temp_dir().join("igris-evil-none");
+        s.apply(detect_worker::Msg::Detected(Box::new(snap)));
+        s.pipeline.form.as_mut().unwrap().command = input::Input::new(evil);
+        s.toast = Some(evil.into());
+        let mut screens = vec![];
+        for screen in Screen::ALL {
+            s.screen = screen;
+            screens.push(s.clone());
+        }
+        // The Check screen with every group open, and with a fix dialog on each row.
+        let mut open = s.clone();
+        open.screen = Screen::Check;
+        open.check.open = vec![true; open.check.open.len()];
+        screens.push(open.clone());
+        for i in 0..open.check.items().len() {
+            let mut d = open.clone();
+            d.check.sel = i;
+            update(&mut d, Action::Activate);
+            screens.push(d);
+        }
+        let mut shown = String::new();
+        for st in screens {
+            let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+            let mut hits = HitMap::default();
+            let t = Theme::detect(&Env::default());
+            term.draw(|f| draw(f, &st, &t, &mut hits)).unwrap();
+            let buf = term.backend().buffer().clone();
+            for y in 0..30u16 {
+                for x in 0..100u16 {
+                    let sym = buf[(x, y)].symbol();
+                    shown.push_str(sym);
+                    assert!(
+                        !sym.chars().any(char::is_control),
+                        "{:?} on {:?} at {x},{y}",
+                        sym,
+                        st.screen
+                    );
+                }
+            }
+        }
+        // The text was drawn (it is not simply missing), minus its control characters.
+        assert!(
+            shown.contains("52;c;aGk="),
+            "hostile text was not rendered at all"
+        );
+    }
 }
