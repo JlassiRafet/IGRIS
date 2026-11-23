@@ -146,13 +146,19 @@ impl State {
                 self.pipeline.path = Some(done.path.clone());
                 self.dirty = false;
                 self.applied = true;
+                // A file inside the repository makes it dirty, and runs refuse a dirty repository.
+                let commit = if done.path.starts_with(&self.repo) {
+                    " Commit it before you run a task."
+                } else {
+                    ""
+                };
                 self.toast = Some(match done.backup {
                     Some(b) => format!(
-                        "Wrote {}. The old file is kept as {}.",
+                        "Wrote {}.{commit} The old file is kept as {}; do not commit that copy.",
                         done.path.display(),
                         b.display()
                     ),
-                    None => format!("Wrote {}.", done.path.display()),
+                    None => format!("Wrote {}.{commit}", done.path.display()),
                 });
             }
             Err(e) => self.toast = Some(format!("Could not write: {e}. Nothing was changed.")),
@@ -343,7 +349,11 @@ mod tests {
             "the old file is kept"
         );
         assert_eq!(next_step(&s), Step::RunTest);
-        assert!(s.toast.as_deref().unwrap().contains("igris.toml.bak"));
+        let toast = s.toast.as_deref().unwrap();
+        assert!(
+            toast.contains("igris.toml.bak") && toast.contains("Commit it before you run a task"),
+            "{toast}"
+        );
         assert_eq!(
             app_update(&mut s, Action::Activate),
             Effect::None,
