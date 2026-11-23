@@ -478,13 +478,13 @@ pub fn build(s: &Snapshot) -> View {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use igris_detect::{
         Agent, Decision, Gpu, HerdrInfo, Hermes, Jev, Laya, LocalLlm, Login, Machine, Snapshot,
     };
 
-    fn agent(kind: &str, found: bool, login: Login, method: Option<&str>) -> Agent {
+    pub(crate) fn agent(kind: &str, found: bool, login: Login, method: Option<&str>) -> Agent {
         Agent {
             kind: kind.into(),
             found,
@@ -504,7 +504,7 @@ mod tests {
     }
 
     /// This machine, as `igris doctor --json` reported it on 2026-11-19.
-    fn real() -> Snapshot {
+    pub(crate) fn real() -> Snapshot {
         Snapshot {
             machine: Machine {
                 os: "linux".into(),

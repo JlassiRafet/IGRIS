@@ -25,6 +25,8 @@ pub enum Action {
     No,
     /// A click inside an overlay: keeps it open. Mouse only.
     Stay,
+    /// A click on an item of the screen or of a dialog: focus it and activate it. Mouse only.
+    Select(usize),
 }
 
 impl Action {
@@ -53,6 +55,7 @@ impl Action {
         Action::Yes,
         Action::No,
         Action::Stay,
+        Action::Select(0),
     ];
 
     /// The words the help, the palette and the footer use for this action.
@@ -78,7 +81,7 @@ impl Action {
             Action::Cancel => "Close, cancel or go back",
             Action::Yes => "Yes",
             Action::No => "No",
-            Action::Stay => "",
+            Action::Stay | Action::Select(_) => "",
         }
         .to_string()
     }

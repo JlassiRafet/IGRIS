@@ -5,6 +5,10 @@
 #![allow(dead_code)]
 
 mod action;
+mod attached;
+mod check;
+mod detect_worker;
+mod fix;
 mod footer;
 mod header;
 mod help;
@@ -81,11 +85,18 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
         Paragraph::new(Line::from(tabs)),
         Rect::new(area.x, tab_y, area.width, 1),
     );
-    let body = Rect::new(area.x, tab_y + 2, area.width, area.height - top - 4);
-    f.render_widget(
-        Paragraph::new(format!("{}: not built yet.", s.screen.title())),
-        body,
-    );
+    let body = Rect::new(area.x, tab_y + 2, area.width, area.height - top - 5);
+    match s.screen {
+        Screen::Check => check::draw(f, body, s, t, hits, s.overlay.is_none()),
+        other => f.render_widget(
+            Paragraph::new(format!("{}: not built yet.", other.title())),
+            body,
+        ),
+    }
+    if let Some(msg) = &s.toast {
+        let row = Rect::new(area.x, area.y + area.height - 3, area.width, 1);
+        f.render_widget(Paragraph::new(msg.as_str()), row);
+    }
     let next = Rect::new(area.x, area.y + area.height - 2, area.width, 1);
     f.render_widget(
         Paragraph::new(next_step::text(&next_step::next_step(s))),
@@ -123,12 +134,37 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, hits: &mut Hi
                 (rows.len() as u16 + 4).min(area.height),
             )
         }
-        Overlay::Confirm(_) => (
+        Overlay::Confirm(state::Confirm::Discard) => (
             "Discard changes?",
             vec![Line::from("You have unsaved changes. Quit anyway? (y / n)")],
             56,
             5,
         ),
+        Overlay::Confirm(state::Confirm::Install) => (
+            "Install Herdr?",
+            vec![
+                Line::from("This runs on your terminal:"),
+                Line::from(format!("  {}", fix::INSTALL_HERDR.0)),
+                Line::from(format!("Source: {}", fix::INSTALL_HERDR.1)),
+                Line::from("Run it? (y / n)"),
+            ],
+            72,
+            8,
+        ),
+        Overlay::Fix(d) => {
+            let mut lines = vec![Line::from(d.detail.clone()), Line::from("")];
+            lines.extend(d.fixes.iter().enumerate().map(|(i, x)| {
+                Line::from(format!(
+                    "{} {}. {}",
+                    if i == s.cursor { ">" } else { " " },
+                    i + 1,
+                    x.label()
+                ))
+            }));
+            lines.push(Line::from(""));
+            lines.push(Line::from("Enter runs the chosen one. Esc closes."));
+            (d.title.as_str(), lines, 88, d.fixes.len() as u16 + 6)
+        }
     };
     let w = w.min(area.width);
     let h = h.min(area.height).max(3);
@@ -140,6 +176,14 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, hits: &mut Hi
     );
     hits.add(area, Action::Cancel);
     hits.add(r, Action::Stay);
+    if let Overlay::Fix(d) = o {
+        for i in 0..d.fixes.len() {
+            hits.add(
+                Rect::new(r.x + 1, r.y + 3 + i as u16, r.width.saturating_sub(2), 1),
+                Action::Select(i),
+            );
+        }
+    }
     f.render_widget(Clear, r);
     let scroll = if matches!(o, Overlay::Help) {
         s.cursor as u16
@@ -170,6 +214,7 @@ fn stop_flag() -> std::io::Result<Arc<AtomicBool>> {
 fn context(s: &State) -> Context {
     match s.overlay {
         Some(Overlay::Confirm(_)) => Context::Dialog,
+        Some(Overlay::Fix(_)) => Context::List,
         // Both take typed text (the filter), so plain letters are not commands there.
         Some(Overlay::Palette | Overlay::Help) => Context::Input,
         None => Context::List,
@@ -187,7 +232,14 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let size = ratatui::crossterm::terminal::size()?;
     let mut state = State::new(size);
     let mut hits = HitMap::default();
+    let (tx, rx) = std::sync::mpsc::channel();
+    state.detecting = true;
+    detect_worker::spawn_real(tx.clone());
     loop {
+        while let Ok(m) = rx.try_recv() {
+            state.apply(m);
+        }
+        state.tick = state.tick.wrapping_add(1);
         terminal.draw(|f| draw(f, &state, &theme, &mut hits))?;
         if stop.load(Ordering::Relaxed) {
             return Ok(());
@@ -211,10 +263,34 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
             }
             _ => None,
         };
+        if action.is_some() {
+            state.toast = None;
+        }
         match action.map(|a| update(&mut state, a)) {
             Some(Effect::Quit) => return Ok(()),
-            // The detection worker arrives with the Check screen.
-            Some(Effect::Rescan) => state.detecting = false,
+            Some(Effect::Rescan) => detect_worker::spawn_real(tx.clone()),
+            Some(Effect::RunAttached(argv)) => {
+                let result = attached::run_attached(argv, mouse);
+                terminal.clear()?; // the screen was the child's meanwhile
+                state.toast = Some(match result {
+                    Ok(st) if st.success() => format!("{} finished. Scanning again.", argv[0]),
+                    Ok(st) => format!("{} ended with {st}. Scanning again.", argv[0]),
+                    Err(e) => format!("Could not start {}: {e}", argv[0]),
+                });
+                state.detecting = true;
+                detect_worker::spawn_real(tx.clone());
+            }
+            Some(Effect::Copy(text)) => {
+                use std::io::Write;
+                let mut out = std::io::stdout();
+                let _ = out
+                    .write_all(fix::osc52(&text).as_bytes())
+                    .and_then(|_| out.flush());
+                // Not every terminal allows OSC 52, so the command is also in words.
+                state.toast = Some(format!(
+                    "Copied: {text}  (if your terminal blocks copying, run it yourself)"
+                ));
+            }
             _ => {}
         }
     }

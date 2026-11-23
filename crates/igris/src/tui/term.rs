@@ -19,6 +19,23 @@ pub fn restore(out: &mut impl Write) -> io::Result<()> {
     )
 }
 
+/// Hand the terminal to a child process: the shell's own state, not ours.
+pub fn suspend() -> io::Result<()> {
+    restore(&mut io::stdout())?;
+    disable_raw_mode()
+}
+
+/// Take the terminal back after `suspend`.
+pub fn resume(mouse: bool) -> io::Result<()> {
+    enable_raw_mode()?;
+    let mut out = io::stdout();
+    execute!(out, EnterAlternateScreen, EnableBracketedPaste)?;
+    if mouse {
+        execute!(out, EnableMouseCapture)?;
+    }
+    Ok(())
+}
+
 /// Enters raw mode and the alternate screen; restores both when dropped.
 pub struct TermGuard;
 
