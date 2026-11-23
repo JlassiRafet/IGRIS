@@ -12,6 +12,7 @@ The first pre-release: the terminal app, the orchestrator and `igris doctor`, wi
 - The web setup app (`igris setup`, its 127.0.0.1 server and pages). It never shipped in a release. A terminal app replaces it (see Added).
 
 ### Changed
+- The README follows the torlink layout: the wordmark logo, a GIF of IGRIS in use, one section per screen with a screenshot, and a GIF of a task through the pipeline, all in `preview/` and rebuilt from the real app by `scripts/preview.py`.
 - The GitHub Pages site is frozen until it is ready: Pages is off, the deploy workflow runs only by hand, and the crate homepage is the repository. The site source stays in `site/`.
 - The top band says what IGRIS does and where it runs in a few words: `Build · Review · Verify` and `Runs on your machine`. The version is no longer in the band; `igris --version` has it.
 - The pipeline page (`/pipeline/`) is redesigned and keeps its terminal look, top to bottom: You and Hermes (optional), then an IGRIS group holding the decision (agent, tier, risk, needs_approval) and the three Herdr panes (Claude Code builds, Codex reviews, your shell checks), then the report. Fixed-size boxes, no window frame, the real Claude Code, Codex, Hermes, Jev (TypeSafe AI), Telegram and MiniMax logos in one solid colour each, a soft glow in each tool's own colour while it works, and a tail of pixels carrying the task along the wires. Four example tasks follow the real rules (exit 3 for a risky task, 2 review rounds, 2 fix rounds). With reduced motion it shows one finished task. No hover boxes.
