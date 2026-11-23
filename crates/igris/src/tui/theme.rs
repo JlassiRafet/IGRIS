@@ -18,6 +18,8 @@ pub enum Glyphs {
 pub struct Env {
     pub colorterm: Option<String>,
     pub no_color: bool,
+    /// `IGRIS_NO_MOTION` is set: nothing animates.
+    pub no_motion: bool,
     pub term: Option<String>,
     pub lang: Option<String>,
 }
@@ -29,6 +31,7 @@ impl Env {
             colorterm: var("COLORTERM"),
             // no-color.org: any non-empty value turns colour off.
             no_color: var("NO_COLOR").is_some(),
+            no_motion: var("IGRIS_NO_MOTION").is_some(),
             term: var("TERM"),
             lang: var("LC_ALL")
                 .or_else(|| var("LC_CTYPE"))
@@ -41,6 +44,8 @@ impl Env {
 pub struct Theme {
     pub depth: ColorDepth,
     pub glyphs: Glyphs,
+    /// Decorative animation (the wordmark sheen) is on: truecolor and not switched off.
+    pub motion: bool,
 }
 
 impl Theme {
@@ -62,7 +67,12 @@ impl Theme {
         } else {
             Glyphs::Unicode
         };
-        Theme { depth, glyphs }
+        let motion = depth == ColorDepth::True && !env.no_motion;
+        Theme {
+            depth,
+            glyphs,
+            motion,
+        }
     }
 
     /// The one accent: the plume's red, or plain bold-underline when colour is off.
@@ -85,6 +95,7 @@ mod tests {
         Env {
             colorterm: colorterm.map(Into::into),
             no_color,
+            no_motion: false,
             term: term.map(Into::into),
             lang: lang.map(Into::into),
         }
