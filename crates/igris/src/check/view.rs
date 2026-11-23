@@ -3,10 +3,8 @@
 
 use igris_detect::LocalLlm;
 use igris_detect::{Agent, Decision, Hermes, Login, Machine, Snapshot};
-use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Ready,
     NeedsStep,
@@ -15,28 +13,28 @@ pub enum Status {
     Info,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Row {
     pub name: String,
     pub detail: String,
     pub status: Status,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Fact {
     pub label: &'static str,
     pub value: String,
 }
 
 /// The folded part of a group: more rows, or small labels such as the ports that were checked.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct More {
     pub title: String,
     pub rows: Vec<Row>,
     pub chips: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Group {
     pub id: &'static str,
     pub title: &'static str,
@@ -50,14 +48,14 @@ pub struct Group {
     pub more: Option<More>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Counts {
     pub ready: usize,
     pub needs_step: usize,
     pub optional: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct View {
     pub lead: String,
     pub counts: Counts,
@@ -776,18 +774,6 @@ mod tests {
             )
         );
         assert_eq!(row(group(&v, "build"), "Herdr").status, Status::NeedsStep);
-    }
-
-    #[test]
-    fn markup_in_names_stays_text() {
-        let mut s = real();
-        s.hermes.found = true;
-        s.hermes.provider = Some("<img src=x onerror=alert(1)>".into());
-        let json = serde_json::to_string(&build(&s)).unwrap();
-        assert!(
-            json.contains("<img src=x onerror=alert(1)>"),
-            "kept as plain text for textContent"
-        );
     }
 
     /// A lead that says "not ready" must come with a row to act on and a count to match.
