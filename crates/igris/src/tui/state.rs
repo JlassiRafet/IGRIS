@@ -1,5 +1,8 @@
 //! The whole app state, and the one function that changes it.
 use super::action::Action;
+use super::check::CheckUi;
+use super::detect_worker::Msg;
+use super::fix::{Fix, INSTALL_HERDR_ARGV};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,16 +39,26 @@ impl Screen {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Confirm {
     Discard,
+    Install,
+}
+
+/// What a row that needs a step offers, kept whole so a rescan cannot change it under the dialog.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FixDialog {
+    pub title: String,
+    pub detail: String,
+    pub fixes: Vec<Fix>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Overlay {
     Help,
     Palette,
+    Fix(FixDialog),
     Confirm(Confirm),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct State {
     pub screen: Screen,
     pub overlay: Option<Overlay>,
@@ -64,9 +77,22 @@ pub struct State {
     pub query: String,
     /// The palette's chosen row, or the help's scroll offset.
     pub cursor: usize,
+    pub check: CheckUi,
+    /// The result of the last action, in words.
+    pub toast: Option<String>,
+    /// Counts loop turns, for the spinner.
+    pub tick: usize,
 }
 
 impl State {
+    /// Take in a message from a background worker.
+    pub fn apply(&mut self, m: Msg) {
+        let Msg::Detected(snap) = m;
+        self.check.set(&snap);
+        self.blocker = self.check.view.as_ref().and_then(super::check::blocker);
+        self.detecting = false;
+    }
+
     pub fn new(size: (u16, u16)) -> State {
         State {
             screen: Screen::Check,
@@ -80,6 +106,9 @@ impl State {
             tested: false,
             query: String::new(),
             cursor: 0,
+            check: CheckUi::default(),
+            toast: None,
+            tick: 0,
         }
     }
 }
@@ -90,6 +119,10 @@ pub enum Effect {
     None,
     Quit,
     Rescan,
+    /// Run this fixed command on the user's terminal, then rescan.
+    RunAttached(&'static [&'static str]),
+    /// Put this text on the clipboard.
+    Copy(String),
 }
 
 pub fn update(s: &mut State, a: Action) -> Effect {
@@ -102,10 +135,28 @@ pub fn update(s: &mut State, a: Action) -> Effect {
         }
         Action::Quit => Effect::Quit,
         Action::Yes if s.overlay == discard => Effect::Quit,
+        Action::Yes if s.overlay == Some(Overlay::Confirm(Confirm::Install)) => {
+            s.overlay = None;
+            Effect::RunAttached(INSTALL_HERDR_ARGV)
+        }
         Action::No | Action::Cancel if s.overlay.is_some() => {
             s.overlay = None;
             Effect::None
         }
+        Action::Up | Action::Down if matches!(s.overlay, Some(Overlay::Fix(_))) => {
+            let Some(Overlay::Fix(d)) = &s.overlay else {
+                return Effect::None;
+            };
+            let last = d.fixes.len().saturating_sub(1);
+            s.cursor = if a == Action::Up {
+                s.cursor.saturating_sub(1)
+            } else {
+                (s.cursor + 1).min(last)
+            };
+            Effect::None
+        }
+        Action::Activate if matches!(s.overlay, Some(Overlay::Fix(_))) => choose(s, s.cursor),
+        Action::Select(i) if matches!(s.overlay, Some(Overlay::Fix(_))) => choose(s, i),
         // An open overlay is modal: only the answers above and Quit get through.
         _ if s.overlay.is_some() => Effect::None,
         Action::Help => open(s, Overlay::Help),
@@ -126,7 +177,50 @@ pub fn update(s: &mut State, a: Action) -> Effect {
             s.detecting = true;
             Effect::Rescan
         }
+        Action::Up
+        | Action::Down
+        | Action::PageUp
+        | Action::PageDown
+        | Action::Home
+        | Action::End
+        | Action::Toggle
+        | Action::Activate
+        | Action::Select(_)
+            if s.screen == Screen::Check =>
+        {
+            super::check::update(s, a)
+        }
         _ => Effect::None,
+    }
+}
+
+/// Do the chosen fix of the open fix dialog.
+fn choose(s: &mut State, i: usize) -> Effect {
+    let Some(Overlay::Fix(d)) = s.overlay.clone() else {
+        return Effect::None;
+    };
+    let Some(fix) = d.fixes.get(i).cloned() else {
+        return Effect::None;
+    };
+    match fix {
+        Fix::Login(argv) => {
+            s.overlay = None;
+            Effect::RunAttached(argv)
+        }
+        // Never run on the first press: show the command and ask.
+        Fix::Install { .. } => {
+            s.overlay = Some(Overlay::Confirm(Confirm::Install));
+            Effect::None
+        }
+        Fix::Docs(url) => {
+            s.overlay = None;
+            s.toast = Some(format!("Docs: {url}"));
+            Effect::None
+        }
+        Fix::Copy(text) => {
+            s.overlay = None;
+            Effect::Copy(text)
+        }
     }
 }
 

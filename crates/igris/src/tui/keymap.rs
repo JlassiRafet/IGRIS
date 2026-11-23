@@ -120,7 +120,7 @@ pub const BINDINGS: &[Binding] = &[
 ];
 
 /// Actions that have no key, only a click.
-pub const MOUSE_ONLY: &[Action] = &[Action::Stay];
+pub const MOUSE_ONLY: &[Action] = &[Action::Stay, Action::Select(0)];
 
 /// How a key is written in the help and the footer.
 pub fn key_label(code: KeyCode, mods: KeyModifiers) -> String {
