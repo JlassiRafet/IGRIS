@@ -22,8 +22,10 @@ mod palette;
 mod pipeline;
 mod pipeline_screen;
 mod review;
+mod sample;
 mod state;
 mod term;
+mod test_screen;
 mod theme;
 mod wordmark;
 
@@ -96,10 +98,7 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
         Screen::Check => check::draw(f, body, s, t, hits, s.overlay.is_none()),
         Screen::Pipeline => pipeline_screen::draw(f, body, s, t, hits, s.overlay.is_none()),
         Screen::Review => review::draw(f, body, s, t, hits, s.overlay.is_none()),
-        other => f.render_widget(
-            Paragraph::new(format!("{}: not built yet.", other.title())),
-            body,
-        ),
+        Screen::Test => test_screen::draw(f, body, s, t, hits, s.overlay.is_none()),
     }
     if let Some(msg) = &s.toast {
         let row = Rect::new(area.x, area.y + area.height - 3, area.width, 1);
@@ -147,6 +146,17 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, hits: &mut Hi
             vec![Line::from("You have unsaved changes. Quit anyway? (y / n)")],
             56,
             5,
+        ),
+        Overlay::Confirm(state::Confirm::SampleTask) => (
+            "Run a sample task?",
+            vec![
+                Line::from("This starts your builder and reviewer agents on a throwaway"),
+                Line::from("repository, so it uses your own agent subscriptions or keys."),
+                Line::from("Your repository is not touched; the throwaway one is deleted after."),
+                Line::from("Run it? (y / n)"),
+            ],
+            72,
+            8,
         ),
         Overlay::Confirm(state::Confirm::Install) => (
             "Install Herdr?",
@@ -300,6 +310,8 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
                 state.detecting = true;
                 detect_worker::spawn_real(tx.clone());
             }
+            Some(Effect::RunChecks) => detect_worker::spawn_checks(tx.clone(), state.repo.clone()),
+            Some(Effect::RunSample) => detect_worker::spawn_sample(tx.clone(), state.repo.clone()),
             Some(Effect::Write(change)) => {
                 let result =
                     apply::apply(&change).map_err(|e| format!("{}: {e}", change.path.display()));

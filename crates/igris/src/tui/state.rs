@@ -6,6 +6,7 @@ use super::detect_worker::Msg;
 use super::fix::{Fix, INSTALL_HERDR_ARGV};
 use super::pipeline_screen::PipelineUi;
 use super::review::ReviewUi;
+use super::test_screen::TestUi;
 use igris_detect::Snapshot;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
@@ -45,6 +46,7 @@ impl Screen {
 pub enum Confirm {
     Discard,
     Install,
+    SampleTask,
 }
 
 /// What a row that needs a step offers, kept whole so a rescan cannot change it under the dialog.
@@ -85,6 +87,7 @@ pub struct State {
     pub check: CheckUi,
     pub pipeline: PipelineUi,
     pub review: ReviewUi,
+    pub test: TestUi,
     /// The user's home directory, for the user-level config target.
     pub home: Option<PathBuf>,
     /// The last scan, kept for screens that need it (Pipeline's agent list).
@@ -100,7 +103,20 @@ pub struct State {
 impl State {
     /// Take in a message from a background worker.
     pub fn apply(&mut self, m: Msg) {
-        let Msg::Detected(snap) = m;
+        let snap = match m {
+            Msg::Detected(snap) => snap,
+            Msg::Checked(list) => {
+                self.test.checks = Some(list);
+                self.test.running = false;
+                return;
+            }
+            Msg::Sampled(r) => {
+                self.test.sample_running = false;
+                self.tested = r.is_ok();
+                self.test.sample = Some(r);
+                return;
+            }
+        };
         self.check.set(&snap);
         if self.pipeline.form.is_none() && self.pipeline.broken.is_none() {
             // The form starts once, from the first scan; later scans never overwrite edits.
@@ -128,6 +144,7 @@ impl State {
             check: CheckUi::default(),
             pipeline: PipelineUi::default(),
             review: ReviewUi::default(),
+            test: TestUi::default(),
             home: None,
             snapshot: None,
             repo: PathBuf::from("."),
@@ -149,12 +166,21 @@ pub enum Effect {
     Copy(String),
     /// Write this change to disk (the loop does the I/O and reports back).
     Write(Change),
+    /// Run the doctor's checks on a worker thread.
+    RunChecks,
+    /// Run the sample task on a worker thread.
+    RunSample,
 }
 
 pub fn update(s: &mut State, a: Action) -> Effect {
-    let effect = update_inner(s, a);
+    let before = s.screen;
+    let mut effect = update_inner(s, a);
     if s.screen == Screen::Review {
         super::review::refresh(s);
+    }
+    // Opening the Test screen runs the checks, so what it shows is always fresh.
+    if s.screen == Screen::Test && before != Screen::Test && effect == Effect::None {
+        effect = super::test_screen::rerun(s);
     }
     effect
 }
@@ -169,6 +195,12 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
         }
         Action::Quit => Effect::Quit,
         Action::Yes if s.overlay == discard => Effect::Quit,
+        Action::Yes if s.overlay == Some(Overlay::Confirm(Confirm::SampleTask)) => {
+            s.overlay = None;
+            s.test.sample_running = true;
+            s.test.sample = None;
+            Effect::RunSample
+        }
         Action::Yes if s.overlay == Some(Overlay::Confirm(Confirm::Install)) => {
             s.overlay = None;
             Effect::RunAttached(INSTALL_HERDR_ARGV)
@@ -254,6 +286,19 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
             if s.screen == Screen::Review =>
         {
             super::review::update(s, a)
+        }
+        Action::Up
+        | Action::Down
+        | Action::Home
+        | Action::End
+        | Action::NextField
+        | Action::PrevField
+        | Action::Toggle
+        | Action::Activate
+        | Action::Select(_)
+            if s.screen == Screen::Test =>
+        {
+            super::test_screen::update(s, a)
         }
         _ => Effect::None,
     }

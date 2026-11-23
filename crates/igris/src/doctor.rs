@@ -7,11 +7,12 @@ use igris_core::herdr::Herdr;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
-struct Check {
-    id: &'static str,
-    ok: bool,
-    detail: String,
-    fix: String,
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Check {
+    pub(crate) id: &'static str,
+    pub(crate) ok: bool,
+    pub(crate) detail: String,
+    pub(crate) fix: String,
 }
 
 fn ok(id: &'static str, detail: impl Into<String>) -> Check {
@@ -51,7 +52,7 @@ fn which(name: &str) -> Option<PathBuf> {
         .find(|p| is_executable(p))
 }
 
-fn checks(repo: &Path, config: Option<&Path>) -> Vec<Check> {
+pub(crate) fn checks(repo: &Path, config: Option<&Path>) -> Vec<Check> {
     let top = git::toplevel(repo);
     let root = top.clone().unwrap_or_else(|_| repo.to_path_buf());
     let cfg = Config::load(&root, config);
