@@ -19,14 +19,13 @@ fn sep(t: &Theme) -> &'static str {
     }
 }
 
-/// What IGRIS does, and what it promises, as keywords. The promise is shorter in a narrow window.
-/// It holds: no telemetry (no network library in the build) and no stored logins or keys.
+/// What IGRIS does, and where it runs, in a few words. The second line is one word in a narrow window.
 pub fn lines(t: &Theme, width: u16) -> [String; 2] {
     let s = sep(t);
     let promise = if width >= FULL_META_WIDTH {
-        format!("Local{s}No telemetry{s}No stored keys")
+        "Runs on your machine".to_string()
     } else {
-        format!("Local{s}No telemetry")
+        "Local".to_string()
     };
     [format!("Build{s}Review{s}Verify"), promise]
 }
@@ -98,9 +97,7 @@ mod tests {
             "{rows:?}"
         );
         assert!(
-            rows[1]
-                .trim_end()
-                .ends_with("Local · No telemetry · No stored keys"),
+            rows[1].trim_end().ends_with("Runs on your machine"),
             "{rows:?}"
         );
         assert!(
@@ -114,14 +111,17 @@ mod tests {
         let (rows, _) = draw(&theme(Glyphs::Unicode), 98, 1, false, 0);
         assert!(rows[0].starts_with("IGRIS "), "{rows:?}");
         assert!(!rows[0].contains(env!("CARGO_PKG_VERSION")), "{rows:?}");
-        assert!(rows[0].trim_end().ends_with("No stored keys"), "{rows:?}");
+        assert!(
+            rows[0].trim_end().ends_with("Runs on your machine"),
+            "{rows:?}"
+        );
     }
 
     #[test]
     fn a_narrow_window_gets_the_short_promise() {
         let (rows, _) = draw(&theme(Glyphs::Unicode), 78, 1, false, 0);
         assert!(
-            rows[0].trim_end().ends_with("Local · No telemetry") && !rows[0].contains("keys"),
+            rows[0].trim_end().ends_with("Local") && !rows[0].contains("machine"),
             "{rows:?}"
         );
     }
