@@ -439,6 +439,7 @@ mod tests {
         assert!(s.toast.as_deref().unwrap().contains("Nothing to apply"));
     }
 
+    #[cfg(unix)] // asserts the Unix config path; platform.rs tests the Windows one
     #[test]
     fn the_target_switches_between_the_repository_and_the_user_config() {
         let mut s = on_review(Some("[checks]\ncommand = \"t\"\n"));

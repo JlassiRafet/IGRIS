@@ -264,6 +264,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // asserts the Unix config path; platform.rs tests the Windows one
     #[test]
     fn the_user_config_folder_is_created_when_missing() {
         let home = tmp("home");
