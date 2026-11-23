@@ -2,7 +2,18 @@
 
 IGRIS runs a loop of AI tools for you. You send a request from any chat app; Hermes, your assistant, asks a decision model (Jev or Laya) which agent and model fit, hands the work to coding agents in Herdr (one builds, one reviews), runs the tests in the shell, and reports back. Anything risky waits for your yes.
 
-**Status: early.** Nothing to install yet. The plan and the live demo are on the site: <https://jlassirafet.github.io/IGRIS/>
+**Status: early.** No release to install yet; build it from source (`cargo build --release`).
+
+## Quick start
+
+```sh
+igris            # opens the terminal app: check this machine, fix gaps, set up the pipeline, test it
+igris doctor     # the same checks, headless (add --json for a machine-readable report)
+```
+
+The app works by keyboard and mouse at the same time. `?` shows every key; `q` quits. It never stores a login or a key, and it only runs fixed commands (a tool's own login, the documented Herdr installer after you say yes). A font with Braille and block characters looks best.
+
+ The plan and the live demo are on the site: <https://jlassirafet.github.io/IGRIS/>
 
 ## What you bring
 

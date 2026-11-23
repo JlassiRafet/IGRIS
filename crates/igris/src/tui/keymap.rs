@@ -5,10 +5,8 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Context {
-    /// Nothing focused (an overlay such as Help is open).
-    Global,
+    /// A screen or dialog list: letters are commands.
     List,
-    Form,
     /// A text field has focus: plain letters are text.
     Input,
     Dialog,
@@ -29,9 +27,7 @@ impl Scope {
     fn covers(self, ctx: Context) -> bool {
         match self {
             Scope::Always => true,
-            Scope::Anywhere | Scope::Browse => {
-                matches!(ctx, Context::Global | Context::List | Context::Form)
-            }
+            Scope::Anywhere | Scope::Browse => ctx == Context::List,
             Scope::Dialog => ctx == Context::Dialog,
         }
     }
@@ -120,6 +116,7 @@ pub const BINDINGS: &[Binding] = &[
 ];
 
 /// Actions that have no key, only a click.
+#[cfg(test)]
 pub const MOUSE_ONLY: &[Action] = &[Action::Stay, Action::Select(0)];
 
 /// How a key is written in the help and the footer.
@@ -189,11 +186,8 @@ mod tests {
 
     #[test]
     fn the_documented_keys() {
-        assert_eq!(key_to_action(Context::Global, k('?')), Some(Action::Help));
-        assert_eq!(
-            key_to_action(Context::Global, k('/')),
-            Some(Action::Palette)
-        );
+        assert_eq!(key_to_action(Context::List, k('?')), Some(Action::Help));
+        assert_eq!(key_to_action(Context::List, k('/')), Some(Action::Palette));
         assert_eq!(
             key_to_action(Context::List, KeyEvent::new(KeyCode::Char('k'), CTRL)),
             Some(Action::Palette),
@@ -201,12 +195,12 @@ mod tests {
         );
         assert_eq!(key_to_action(Context::List, k('k')), Some(Action::Up));
         assert_eq!(
-            key_to_action(Context::Global, k('2')),
+            key_to_action(Context::List, k('2')),
             Some(Action::Goto(Screen::Pipeline))
         );
-        assert_eq!(key_to_action(Context::Global, k('q')), Some(Action::Quit));
+        assert_eq!(key_to_action(Context::List, k('q')), Some(Action::Quit));
         assert_eq!(
-            key_to_action(Context::Global, KeyEvent::new(KeyCode::Char('c'), CTRL)),
+            key_to_action(Context::List, KeyEvent::new(KeyCode::Char('c'), CTRL)),
             Some(Action::Quit)
         );
     }
@@ -215,17 +209,17 @@ mod tests {
     fn terminals_that_report_shift_still_match() {
         let shifted_question = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::SHIFT);
         assert_eq!(
-            key_to_action(Context::Global, shifted_question),
+            key_to_action(Context::List, shifted_question),
             Some(Action::Help)
         );
         let shift_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
         assert_eq!(
-            key_to_action(Context::Form, shift_tab),
+            key_to_action(Context::List, shift_tab),
             Some(Action::PrevField)
         );
         let upper_ctrl_k = KeyEvent::new(KeyCode::Char('K'), CTRL | KeyModifiers::SHIFT);
         assert_eq!(
-            key_to_action(Context::Global, upper_ctrl_k),
+            key_to_action(Context::List, upper_ctrl_k),
             Some(Action::Palette)
         );
     }
@@ -265,13 +259,7 @@ mod tests {
 
     #[test]
     fn no_two_bindings_share_a_key_in_one_context() {
-        for ctx in [
-            Context::Global,
-            Context::List,
-            Context::Form,
-            Context::Input,
-            Context::Dialog,
-        ] {
+        for ctx in [Context::List, Context::Input, Context::Dialog] {
             let mut seen: Vec<(KeyCode, KeyModifiers)> = Vec::new();
             for b in BINDINGS.iter().filter(|b| b.scope.covers(ctx)) {
                 let id = (b.code, b.mods);

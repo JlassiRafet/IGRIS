@@ -68,11 +68,6 @@ pub fn sample_task_with<R>(
 }
 
 /// The real thing: the user's own agents, the user's own config, one tiny task.
-pub fn run_sample() -> Result<String, String> {
-    let repo = std::env::current_dir().map_err(|e| e.to_string())?;
-    run_sample_in(&repo)
-}
-
 pub fn run_sample_in(repo: &Path) -> Result<String, String> {
     let cfg = Config::load(repo, None).map_err(|e| e.to_string())?;
     sample_task_with(&std::env::temp_dir(), &cfg, |scratch, cfg| {

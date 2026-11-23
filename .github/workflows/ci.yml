@@ -15,6 +15,9 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      # The terminal app in a real (detached) terminal: keys, mouse, help, resize, quit. Linux only.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y tmux && cargo build && scripts/tui-e2e.sh
   deny:
     runs-on: ubuntu-latest
     steps:

@@ -57,13 +57,6 @@ pub fn rerun(s: &mut State) -> Effect {
     Effect::RunChecks
 }
 
-pub fn passed(s: &State) -> bool {
-    s.test
-        .checks
-        .as_ref()
-        .is_some_and(|c| c.iter().all(|c| c.ok))
-}
-
 pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, clickable: bool) {
     let ascii = t.glyphs == Glyphs::Ascii;
     let mut lines: Vec<String> = vec![];
@@ -282,7 +275,6 @@ mod tests {
         s.applied = true;
         assert_eq!(next_step(&s), Step::RunTest);
         s.apply(Msg::Checked(vec![check("config", true)]));
-        assert!(passed(&s));
         s.apply(Msg::Sampled(Ok("done".into())));
         assert_eq!(next_step(&s), Step::Done);
     }

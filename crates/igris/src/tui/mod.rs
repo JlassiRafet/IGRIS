@@ -1,8 +1,6 @@
 //! The terminal app: `igris` with no arguments.
 //!
 //! Keys and mouse clicks both become an `Action`; `state::update` is the only place state changes.
-// Later tasks use what this task defines (more screens, overlays and effects).
-#![allow(dead_code)]
 
 mod action;
 mod apply;

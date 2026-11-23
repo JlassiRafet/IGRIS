@@ -18,6 +18,7 @@ cargo test
 cargo deny check
 ```
 
+- The terminal app (`crates/igris/src/tui/`) is tested at three levels: pure state and key tests, render tests on ratatui's `TestBackend`, and `scripts/tui-e2e.sh`, which drives the real binary in a detached tmux session (`cargo build && scripts/tui-e2e.sh`; needs `tmux`).
 - A bug fix starts with a test that fails without the fix.
 - New dependencies are pinned to an exact version (`=x.y.z`) and must pass `cargo deny`.
 - Never commit secrets, `.env` files, or personal paths.
