@@ -1,9 +1,11 @@
 //! The whole app state, and the one function that changes it.
 use super::action::Action;
+use super::apply::Change;
 use super::check::CheckUi;
 use super::detect_worker::Msg;
 use super::fix::{Fix, INSTALL_HERDR_ARGV};
 use super::pipeline_screen::PipelineUi;
+use super::review::ReviewUi;
 use igris_detect::Snapshot;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
@@ -82,6 +84,9 @@ pub struct State {
     pub cursor: usize,
     pub check: CheckUi,
     pub pipeline: PipelineUi,
+    pub review: ReviewUi,
+    /// The user's home directory, for the user-level config target.
+    pub home: Option<PathBuf>,
     /// The last scan, kept for screens that need it (Pipeline's agent list).
     pub snapshot: Option<Snapshot>,
     /// The repository the app was opened on.
@@ -122,6 +127,8 @@ impl State {
             cursor: 0,
             check: CheckUi::default(),
             pipeline: PipelineUi::default(),
+            review: ReviewUi::default(),
+            home: None,
             snapshot: None,
             repo: PathBuf::from("."),
             toast: None,
@@ -140,9 +147,19 @@ pub enum Effect {
     RunAttached(&'static [&'static str]),
     /// Put this text on the clipboard.
     Copy(String),
+    /// Write this change to disk (the loop does the I/O and reports back).
+    Write(Change),
 }
 
 pub fn update(s: &mut State, a: Action) -> Effect {
+    let effect = update_inner(s, a);
+    if s.screen == Screen::Review {
+        super::review::refresh(s);
+    }
+    effect
+}
+
+fn update_inner(s: &mut State, a: Action) -> Effect {
     let discard = Some(Overlay::Confirm(Confirm::Discard));
     match a {
         Action::Quit if s.overlay == discard => Effect::Quit,
@@ -222,6 +239,21 @@ pub fn update(s: &mut State, a: Action) -> Effect {
             if s.screen == Screen::Pipeline =>
         {
             super::pipeline_screen::update(s, a)
+        }
+        Action::Up
+        | Action::Down
+        | Action::PageUp
+        | Action::PageDown
+        | Action::Home
+        | Action::End
+        | Action::NextField
+        | Action::PrevField
+        | Action::Toggle
+        | Action::Activate
+        | Action::Select(_)
+            if s.screen == Screen::Review =>
+        {
+            super::review::update(s, a)
         }
         _ => Effect::None,
     }
