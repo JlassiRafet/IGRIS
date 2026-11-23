@@ -38,7 +38,7 @@ wait_for "▀█▀ █▀▀ █▀█" 10   # the wordmark
 wait_for "Pipeline" 5       # the tab strip
 wait_for "optional" 60          # the scan finished: the count chips are on screen
 echo "ok  wordmark, tabs, scan"
-wait_for "No telemetry" 5   # the promise in the top band
+wait_for "Runs on your machine" 5   # the second line of the top band
 wait_for "Setup" 5          # the step rail and its progress
 echo "ok  the privacy line and the step rail"
 

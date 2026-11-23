@@ -17,8 +17,8 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "=4.6.7", features = ["derive"] }
-igris-core = { version = "0.0.0", path = "../igris-core" }
-igris-detect = { version = "0.0.0", path = "../igris-detect" }
+igris-core = { version = "0.1.0-rc1", path = "../igris-core" }
+igris-detect = { version = "0.1.0-rc1", path = "../igris-detect" }
 ratatui = "=0.30.2"
 serde_json = "=1.0.154"
 unicode-width = "=0.2.3"

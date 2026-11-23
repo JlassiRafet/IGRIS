@@ -593,7 +593,7 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "igris"
-version = "0.0.0"
+version = "0.1.0-rc1"
 dependencies = [
  "clap",
  "igris-core",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "igris-core"
-version = "0.0.0"
+version = "0.1.0-rc1"
 dependencies = [
  "globset",
  "serde",
@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "igris-detect"
-version = "0.0.0"
+version = "0.1.0-rc1"
 dependencies = [
  "igris-core",
  "serde",
