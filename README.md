@@ -53,6 +53,14 @@ Test runs the same checks as `igris doctor` and can run a small sample task thro
 
 ![Test screen: every check is ready](preview/test.png)
 
+## How a task runs
+
+One task, start to finish. You ask in a chat app, or run `igris run` yourself. IGRIS answers four questions (which agent, how big, how risky, does it need your yes) and starts the builder in its own worktree. A different agent reviews the diff, then your check command runs in the shell. Exit code 0 and an approving review mean done; merging still waits for you. A task that touches migrations, `auth`, `.env` files or SQL stops and asks first.
+
+![The pipeline page: seven steps from You to Report, with the decision, the session log and the result below](preview/how-it-runs.png)
+
+Watch it run on the [pipeline page](https://jlassirafet.github.io/IGRIS/pipeline/).
+
 ## Headless
 
 Every check has a command, for scripts and CI. Results are JSON on stdout, and the exit code says what happened.

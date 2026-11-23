@@ -3,7 +3,8 @@
 
     cargo build && scripts/preview.py [--bin target/debug/igris] [--scrub FILE]
 
-Needs tmux, chromium (or google-chrome) and Pillow. It drives `igris` in a detached 100x30 tmux
+Needs tmux, chromium (or google-chrome) and Pillow. It also screenshots one finished task of the
+pipeline page (site/pipeline-src) into how-it-runs.png. It drives `igris` in a detached 100x30 tmux
 terminal against a throwaway git repo in /tmp/igris-demo, captures each screen with its colours,
 and renders it to a PNG with the font in site/src/assets/fonts. Nothing outside /tmp/igris-demo, a
 temporary HOME and preview/ is written.
@@ -133,6 +134,16 @@ pre{{width:{COLS}ch;margin:0 22px;font:15px/1.28 JB,'DejaVu Sans Mono',monospace
     im.crop(im.getchannel("A").getbbox()).save(png, optimize=True)
 
 
+def page_shot(png, chrome):
+    """One finished task of the pipeline page, as it looks with reduced motion."""
+    page = (ROOT / "site/pipeline-src/index.html").as_uri() + "?task=1"
+    sh(chrome, "--headless", "--no-sandbox", "--disable-gpu", "--allow-file-access-from-files",
+       "--force-prefers-reduced-motion", "--virtual-time-budget=3000", "--hide-scrollbars",
+       "--force-device-scale-factor=2", "--window-size=1320,960", f"--screenshot={png}", page)
+    from PIL import Image
+    Image.open(png).convert("RGB").crop((0, 112, 2640, 1760)).save(png, optimize=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--bin", default=str(ROOT / "target/debug/igris"))
@@ -178,6 +189,8 @@ def main():
     finally:
         t.kill()
         shutil.rmtree(home, ignore_errors=True)
+    page_shot(out / "how-it-runs.png", chrome)
+    print("wrote", out / "how-it-runs.png")
     for name, ansi in shots.items():
         render(ansi, out / f"{name}.png", scrub, chrome)
         print("wrote", out / f"{name}.png")
