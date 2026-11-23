@@ -38,13 +38,6 @@ impl Target {
             Target::UserConfig => home.join(".config/igris/igris.toml"),
         }
     }
-
-    pub fn title(&self) -> &'static str {
-        match self {
-            Target::Repo => "this repository (igris.toml)",
-            Target::UserConfig => "your user config (~/.config/igris/igris.toml)",
-        }
-    }
 }
 
 /// A line diff: lines in both stay `Same` in order, the rest are `Del` (old) and `Add` (new).

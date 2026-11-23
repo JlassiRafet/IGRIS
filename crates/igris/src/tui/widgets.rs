@@ -1,7 +1,5 @@
 //! Small reusable pieces: shortening text by display width, framed panels, status chips and the
 //! progress bar. Every string from outside the binary is shortened here before it is drawn.
-// Status chips, the Link/Info/Optional/Primary roles and the buttons are used from tasks 3 to 5 of the polish plan.
-#![allow(dead_code)]
 
 use super::style::{ACCENT, GLOW, Role, rgb};
 use super::theme::{ColorDepth, Glyphs, Theme};
@@ -54,6 +52,42 @@ pub fn ellipsize_ascii(s: &str, width: usize) -> String {
         })
         .collect();
     shorten(&plain, width, "...")
+}
+
+/// Like `ellipsize` but keeps the END: `…/igris/igris.toml`. For paths, where the file name matters
+/// most. Control characters are dropped; a wide character is never split.
+pub fn ellipsize_start(s: &str, width: usize, ellipsis: &str) -> String {
+    let clean: Vec<char> = s.chars().filter(|c| !c.is_control()).collect();
+    let w = |c: &char| c.width().unwrap_or(0);
+    if clean.iter().map(w).sum::<usize>() <= width {
+        return clean.into_iter().collect();
+    }
+    let room = width.saturating_sub(ellipsis.chars().count());
+    let mut tail: Vec<char> = vec![];
+    let mut used = 0;
+    for c in clean.iter().rev() {
+        if used + w(c) > room {
+            break;
+        }
+        used += w(c);
+        tail.push(*c);
+    }
+    tail.reverse();
+    let mut out = if width >= ellipsis.chars().count() {
+        ellipsis.to_string()
+    } else {
+        String::new()
+    };
+    out.extend(tail);
+    out
+}
+
+/// The path version of `fit`: the start is cut, the file name stays.
+pub fn fit_path(t: &Theme, s: &str, width: usize) -> String {
+    match t.glyphs {
+        Glyphs::Unicode => ellipsize_start(s, width, "…"),
+        Glyphs::Ascii => ellipsize_start(s, width, "..."),
+    }
 }
 
 /// The right one for this terminal's glyph set.
@@ -160,6 +194,36 @@ pub fn detail_strip<'a>(t: &Theme, lines: Vec<Line<'a>>) -> Paragraph<'a> {
     Paragraph::new(lines).wrap(Wrap { trim: true }).block(block)
 }
 
+/// Width of the status column at the right edge: glyph, space, word ("● needs a step").
+pub fn status_width(t: &Theme) -> usize {
+    if t.glyphs == Glyphs::Ascii { 16 } else { 14 }
+}
+
+/// `● needs a step`, right-aligned in the status column and coloured by its role.
+pub fn status_cell(t: &Theme, st: Status) -> Span<'static> {
+    let text = format!("{} {}", status_glyph(t, st), status_word(st));
+    let fill = status_width(t).saturating_sub(unicode_width::UnicodeWidthStr::width(text.as_str()));
+    Span::styled(" ".repeat(fill) + &text, t.style(status_role(st)))
+}
+
+/// A button. The primary one (the thing to do next) is red; the others are light-blue text in
+/// brackets. A focused one is also bold and underlined, so focus never relies on colour.
+pub fn button(t: &Theme, label: &str, primary: bool, focused: bool) -> Span<'static> {
+    let mut style = if primary {
+        t.style(Role::Primary)
+    } else {
+        t.style(Role::Link)
+    };
+    if focused {
+        style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+    }
+    if primary {
+        Span::styled(format!(" {label} "), style)
+    } else {
+        Span::styled(format!("[ {label} ]"), style)
+    }
+}
+
 /// A progress bar exactly `width` cells wide. `Some(fraction)` fills from the left; `None` is a
 /// highlight sweeping back and forth, for work whose length is not known. The percentage is the
 /// caller's to add.
@@ -248,6 +312,27 @@ mod tests {
             "no non-ASCII on a plain terminal"
         );
         assert_eq!(ellipsize_ascii("日本", 10), "??");
+    }
+
+    #[test]
+    fn a_long_path_keeps_its_end_and_never_exceeds_the_width() {
+        assert_eq!(
+            ellipsize_start("/very/long/path/igris.toml", 14, "…"),
+            "…th/igris.toml"
+        );
+        assert_eq!(ellipsize_start("/short", 14, "…"), "/short");
+        assert_eq!(ellipsize_start("/a/b/c.toml", 0, "…"), "");
+        for w in 0..16 {
+            assert!(
+                ellipsize_start("/tmp/日本語/igris.toml", w, "…").width() <= w,
+                "{w}"
+            );
+        }
+        assert!(
+            !ellipsize_start("/a\x1b[2J/b", 20, "…")
+                .chars()
+                .any(char::is_control)
+        );
     }
 
     #[test]

@@ -44,12 +44,12 @@ echo "ok  2 opens the Pipeline form"
 tmux send-keys -t "$S" '?'; wait_for "How setup works" 5
 tmux send-keys -t "$S" Escape; gone "How setup works" 5
 echo "ok  ? opens help, Esc closes it"
-tmux send-keys -t "$S" ']'; wait_for "Write to:" 5
+tmux send-keys -t "$S" ']'; wait_for "Write to" 5
 tmux send-keys -t "$S" '[';  wait_for "Builder agent" 5
 echo "ok  ] and [ change screen"
 
 # Mouse. At 100x30 the steps are a rail: rows 6 to 9 (the wordmark band takes rows 1 to 4, then a rule).
-click 10 8; wait_for "Write to:" 5              # Review
+click 10 8; wait_for "Write to" 5              # Review
 click 10 9; wait_for "Run the checks again" 5   # Test
 click 10 6; wait_for "optional" 5                   # Check
 echo "ok  click on a tab switches screen"
