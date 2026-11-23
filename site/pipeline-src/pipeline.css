@@ -1,61 +1,65 @@
 /* IGRIS palette (decision 0012) for the chrome; each tool keeps its own soft colour. */
 :root{color-scheme:dark;
---bg:#0b1114;--stage:#080e11;--line:#25323a;--line2:#34454f;--txt:#e6e9ec;--dim:#7d8b94;
+--bg:#0b1114;--line:#25323a;--line2:#34454f;--txt:#e6e9ec;--dim:#7d8b94;
 --you:#e6e9ec;--her:#9be8d8;--jev:#ec7fb3;--cla:#e3875c;--cdx:#6aa7f2;--hrd:#a995f0;--sh:#c9ced3;
---red:#ff3038;--glow:#bcfaf1;--work:#f2c14e;--idle:#3a4650;
+--red:#ff3038;--glow:#bcfaf1;--idle:#3a4650;
 --mono:ui-monospace,'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace}
 *{box-sizing:border-box;min-width:0}
 html{background:var(--bg)}
 body{margin:0;background:var(--bg);color:#c9ced3;font:14px/1.5 var(--mono);overflow-x:clip}
 a{color:#539fdf}a:focus-visible{outline:2px solid var(--red);outline-offset:3px}
-main{max-width:1400px;margin:0 auto;padding:16px 24px 40px}
-.top nav{display:flex;justify-content:flex-end;gap:20px;font-size:13px}
-.top a{color:var(--dim);text-decoration:none}.top a:hover{color:var(--txt)}
+main{max-width:848px;margin:0 auto;padding:16px 24px 40px}
 
 /* header: a small word, then the wordmark (the terminal app's, decoded in pipeline.js) */
-.hero{text-align:center;padding:24px 0 30px}
+.hero{text-align:center;padding:24px 0 34px}
 .label{margin:0 0 38px;color:var(--dim);font-size:15px;letter-spacing:.04em}
 .wm{--px:13px;position:relative;display:inline-grid;grid-template-columns:repeat(19,var(--px));grid-auto-rows:var(--px)}
 .wm i{display:block;transform:scale(1.06)}
 .wm b{position:absolute;left:calc(5.5*var(--px));top:calc(-2.7*var(--px));transform:translateX(-50%);color:var(--red);font:700 calc(2*var(--px))/1 var(--mono)}
 
-/* the terminal: a fixed 1400 x 624 stage, scaled to the page width (never below 0.72) */
+/* the pipeline: a fixed 800 x 850 stage with no frame, scaled to the page (never below 0.72) */
 .wrap{position:relative;width:100%}
 .scroll{overflow-x:auto;overflow-y:hidden;position:relative}
-.stage{position:absolute;left:0;top:0;width:1400px;height:624px;transform-origin:0 0;background:var(--stage);border:1px solid var(--line);border-radius:6px;overflow:hidden;font:12px/16px var(--mono);color:#d5dade}
-.stage:after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;background:repeating-linear-gradient(#fff0 0 2px,#ffffff06 2px 3px)}
+.stage{position:absolute;left:0;top:0;width:800px;height:850px;transform-origin:0 0;font:12px/16px var(--mono);color:#d5dade}
 .a{position:absolute}
-.bar{border-bottom:1px solid var(--line)}
-.b{position:absolute;border:1px solid var(--line2);background:var(--stage);transition:box-shadow .4s,border-color .4s}
-.b.on{border-color:color-mix(in srgb,var(--c) 70%,#0000);box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 28%,#0000),0 0 24px -8px color-mix(in srgb,var(--c) 70%,#0000),inset 0 0 22px -14px var(--c)}
+
+/* every box has a fixed size and a 1px border; a running part only changes colour inside its box */
+.b{position:absolute;border:1px solid var(--line2);background:var(--bg);transition:border-color .4s,background-color .4s,box-shadow .4s}
+.b.on{border-color:color-mix(in srgb,var(--c) 75%,#0000);background:color-mix(in srgb,var(--c) 7%,var(--bg));box-shadow:inset 0 0 16px -10px var(--c)}
+.group{background:none}.group.on{background:none;box-shadow:none}
+.lab{left:14px;top:-9px;padding:0 8px;background:var(--bg);color:var(--glow)}
 .t{color:var(--c);font-weight:700}.d{color:var(--dim)}.s{font-size:11px}
 .ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ic{width:16px;height:16px;vertical-align:-3px;margin-right:6px;fill:currentColor;shape-rendering:crispEdges}
-.ic.mm{width:12px;height:12px;vertical-align:-2px;margin-right:4px;fill:var(--her)}
-.mk{position:absolute;left:8px;right:8px;padding:0 4px;color:var(--dim)}
-.cb{display:inline-block;width:10px;height:10px;border:1px solid currentColor;margin-right:7px;vertical-align:-1px;position:relative}
-.mk.on{color:var(--txt);font-weight:700}.mk.on .cb{color:var(--her)}
-.mk.on .cb:after{content:"";position:absolute;inset:2px;background:currentColor}
-.mk.done{color:#53636d}.mk.done .cb{background:linear-gradient(45deg,#0000 42%,currentColor 42% 58%,#0000 58%),linear-gradient(-45deg,#0000 42%,currentColor 42% 58%,#0000 58%)}
+.ic{width:18px;height:18px;vertical-align:-4px;margin-right:6px;fill:currentColor}
+.ic.mm{width:12px;height:12px;vertical-align:-2px;margin:0 4px 0 0;fill:var(--her)}
 
-/* decision rows and pane bars */
-.row{display:grid;grid-template-columns:62px 62px 1fr 34px;gap:6px;align-items:center;height:22px}
-.row .bar,.pbar .bar{display:block;height:10px;background:#121b20;position:relative;border:0}
-.row .bar i,.pbar .bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--jev);transition:width .5s steps(8);-webkit-mask:repeating-linear-gradient(90deg,#000 0 5px,#0000 5px 7px);mask:repeating-linear-gradient(90deg,#000 0 5px,#0000 5px 7px)}
-.pane{padding:8px 10px;font-size:11px}
-.pbar{display:flex;align-items:center;gap:6px;margin-top:14px}.pbar .bar{flex:1}
-.act{margin-top:10px}.st{margin-top:10px}
+/* the decision: four typed questions, each answered with a confidence */
+.cells{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+.cells>div{display:grid;grid-template-columns:1fr 34px;align-items:center;row-gap:2px}
+.cells>div>.d:first-child,.cells>div>b{grid-column:1/3}
+.cells b{font-size:14px;color:var(--txt);height:20px}
+.cells b.flag{color:#ff8a8f}
+.bar{display:block;height:10px;background:#121b20;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--jev);transition:width .5s steps(8);-webkit-mask:repeating-linear-gradient(90deg,#000 0 5px,#0000 5px 7px);mask:repeating-linear-gradient(90deg,#000 0 5px,#0000 5px 7px)}
+.cells .s:last-child{text-align:right}
+
+/* the three Herdr panes */
+.pane{padding:8px 12px;font-size:11px}
+.pbar{display:flex;align-items:center;gap:6px;margin-top:10px}.pbar .bar{flex:1}
+.act{margin-top:6px}.st{margin-top:6px}
 .dot{display:inline-block;width:8px;height:8px;background:var(--idle);margin-right:6px;transition:background .3s}
 .cur{display:inline-block;width:8px;height:14px;background:var(--her);vertical-align:-2px}
 
 /* session log */
-#log>div{display:grid;grid-template-columns:70px 100px minmax(0,1fr) 230px;height:21px;align-items:center}
+#log>div{display:grid;grid-template-columns:48px 76px minmax(0,1fr) 190px;height:21px;align-items:center}
 .hex{flex:none;width:12px;height:13px;background:var(--her);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);transition:background .3s}
 
-/* under the terminal: the dot that follows the part that is working */
+/* under the pipeline: the dot that follows the part that is working */
 .below{display:flex;gap:10px;align-items:center;margin-top:14px}
-.cap{font-size:15px;color:#c9ced3}
-.note{margin:18px 0 0;font-size:12px;color:var(--dim)}
+.cap{font-size:15px;color:#c9ced3;min-height:44px}
+
+/* seek mode (?at=MS) draws one exact moment: nothing may be mid-transition */
+.still *{transition:none!important;animation:none!important}
 
 @media (prefers-reduced-motion:no-preference){
 .cur{animation:bl 1s steps(1) infinite}
