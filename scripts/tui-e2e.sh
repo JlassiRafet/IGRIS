@@ -36,7 +36,7 @@ tmux new-session -d -s "$S" -x 100 -y 30 \
 
 wait_for "▀█▀ █▀▀ █▀█" 10   # the wordmark
 wait_for "Pipeline" 5       # the tab strip
-wait_for "ready ·" 60       # the scan finished: "N ready · N need a step · N optional"
+wait_for "optional" 60          # the scan finished: the count chips are on screen
 echo "ok  wordmark, tabs, scan"
 
 tmux send-keys -t "$S" 2;   wait_for "agents.builder" 5
@@ -51,7 +51,7 @@ echo "ok  ] and [ change screen"
 # Mouse. At 100x30 the steps are a rail: rows 6 to 9 (the wordmark band takes rows 1 to 4, then a rule).
 click 10 8; wait_for "Write to:" 5              # Review
 click 10 9; wait_for "Run the checks again" 5   # Test
-click 10 6; wait_for "ready ·" 5                # Check
+click 10 6; wait_for "optional" 5                   # Check
 echo "ok  click on a tab switches screen"
 tmux send-keys -t "$S" 2; wait_for "agents.builder" 5
 wheel_down 20 12; wait_for "> agents.reviewer" 5

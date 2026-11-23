@@ -9,7 +9,7 @@ use crate::check::view::Status;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::border;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Padding};
+use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap};
 use unicode_width::UnicodeWidthChar;
 
 /// Shorten `s` to at most `width` display columns, ending in `ellipsis` when it was cut. Control
@@ -41,9 +41,19 @@ pub fn ellipsize(s: &str, width: usize) -> String {
     shorten(s, width, "…")
 }
 
-/// The same for terminals that cannot show `…`: three dots.
+/// The same for terminals that cannot show `…`: three dots, and anything that is not ASCII is
+/// replaced (`·` by `-`, the rest by `?`) so the text never garbles on a non-UTF-8 terminal.
 pub fn ellipsize_ascii(s: &str, width: usize) -> String {
-    shorten(s, width, "...")
+    let plain: String = s
+        .chars()
+        .map(|c| match c {
+            c if c.is_ascii() => c,
+            '·' | '–' | '—' => '-',
+            '’' | '‘' => '\'',
+            _ => '?',
+        })
+        .collect();
+    shorten(&plain, width, "...")
 }
 
 /// The right one for this terminal's glyph set.
@@ -75,18 +85,21 @@ pub fn panel<'a>(t: &Theme, title: &str, focused: bool) -> Block<'a> {
         .title(title);
     match t.glyphs {
         Glyphs::Unicode => block.border_type(BorderType::Rounded),
-        Glyphs::Ascii => block.border_set(border::Set {
-            top_left: "+",
-            top_right: "+",
-            bottom_left: "+",
-            bottom_right: "+",
-            vertical_left: "|",
-            vertical_right: "|",
-            horizontal_top: "-",
-            horizontal_bottom: "-",
-        }),
+        Glyphs::Ascii => block.border_set(ASCII_BORDER),
     }
 }
+
+/// `+-|`, for terminals that cannot draw box characters.
+const ASCII_BORDER: border::Set = border::Set {
+    top_left: "+",
+    top_right: "+",
+    bottom_left: "+",
+    bottom_right: "+",
+    vertical_left: "|",
+    vertical_right: "|",
+    horizontal_top: "-",
+    horizontal_bottom: "-",
+};
 
 pub fn status_glyph(t: &Theme, st: Status) -> &'static str {
     match (st, t.glyphs) {
@@ -126,6 +139,18 @@ pub fn chip(t: &Theme, st: Status, n: usize) -> Vec<Span<'static>> {
         Span::styled(status_glyph(t, st), style),
         Span::styled(format!(" {n} {}", status_word(st)), style),
     ]
+}
+
+/// A strip under a list: a rule, then the full text of the focused item. Lines are wrapped.
+pub fn detail_strip<'a>(t: &Theme, lines: Vec<Line<'a>>) -> Paragraph<'a> {
+    let block = Block::new()
+        .borders(Borders::TOP)
+        .border_style(t.style(Role::Border));
+    let block = match t.glyphs {
+        Glyphs::Unicode => block,
+        Glyphs::Ascii => block.border_set(ASCII_BORDER),
+    };
+    Paragraph::new(lines).wrap(Wrap { trim: true }).block(block)
 }
 
 /// A progress bar exactly `width` cells wide. `Some(fraction)` fills from the left; `None` is a
@@ -210,6 +235,12 @@ mod tests {
         );
         assert_eq!(ellipsize("hello", 0), "");
         assert_eq!(ellipsize_ascii("hello world", 8), "hello...");
+        assert_eq!(
+            ellipsize_ascii("12 cores · 7 GiB", 40),
+            "12 cores - 7 GiB",
+            "no non-ASCII on a plain terminal"
+        );
+        assert_eq!(ellipsize_ascii("日本", 10), "??");
     }
 
     #[test]

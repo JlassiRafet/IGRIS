@@ -3,14 +3,17 @@ use super::action::Action;
 use super::fix::{Fix, fixes_for};
 use super::hit::HitMap;
 use super::state::{Effect, FixDialog, Overlay, State};
+use super::style::Role;
 use super::theme::{Glyphs, Theme};
-use crate::check::view::{Row, Status, View, build};
+use super::widgets::{chip, detail_strip, fit, progress, status_glyph, status_role, status_word};
+use crate::check::view::{Status, View, build};
 use igris_detect::Snapshot;
 use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::Style;
-use ratatui::text::Line;
-use ratatui::widgets::Paragraph;
+use ratatui::layout::{Alignment, Rect};
+use ratatui::style::Modifier;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Paragraph, Wrap};
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CheckUi {
@@ -118,85 +121,180 @@ fn activate(s: &mut State) -> Effect {
     Effect::None
 }
 
-fn status_words(t: &Theme, st: Status) -> (&'static str, &'static str) {
+/// Width of the status column at the right edge: glyph, space, word ("● needs a step").
+fn status_width(t: &Theme) -> usize {
+    if t.glyphs == Glyphs::Ascii { 16 } else { 14 }
+}
+
+/// `s` shortened to `width` columns and padded with spaces to exactly that width.
+fn cell(t: &Theme, s: &str, width: usize) -> String {
+    let f = fit(t, s, width);
+    let pad = width.saturating_sub(f.width());
+    f + &" ".repeat(pad)
+}
+
+fn status_cell(t: &Theme, st: Status) -> Span<'static> {
+    let text = format!("{} {}", status_glyph(t, st), status_word(st));
+    let pad = status_width(t).saturating_sub(text.width());
+    Span::styled(" ".repeat(pad) + &text, t.style(status_role(st)))
+}
+
+fn marker(t: &Theme, selected: bool) -> Span<'static> {
+    let m = match (selected, t.glyphs) {
+        (false, _) => " ",
+        (true, Glyphs::Unicode) => "▌",
+        (true, Glyphs::Ascii) => ">",
+    };
+    Span::styled(m, t.style(Role::Bad))
+}
+
+/// One line of the list, exactly `width` columns, with its status in the column at the right.
+fn item_line(
+    t: &Theme,
+    view: &View,
+    ui: &CheckUi,
+    item: Item,
+    selected: bool,
+    width: usize,
+) -> Line<'static> {
     let ascii = t.glyphs == Glyphs::Ascii;
-    match (st, ascii) {
-        (Status::Ready, false) => ("⬢", "ready"),
-        (Status::NeedsStep, false) => ("⬡", "needs a step"),
-        (Status::Optional, false) => ("◇", "optional"),
-        (Status::Info, false) => ("·", "info"),
-        (Status::Ready, true) => ("[x]", "ready"),
-        (Status::NeedsStep, true) => ("[ ]", "needs a step"),
-        (Status::Optional, true) => ("[-]", "optional"),
-        (Status::Info, true) => ("[i]", "info"),
+    let bold = if selected {
+        Modifier::BOLD
+    } else {
+        Modifier::empty()
+    };
+    let text = t.style(Role::Text).add_modifier(bold);
+    let dim = t.style(Role::Dim);
+    let sw = status_width(t);
+    match item {
+        Item::Header(g) => {
+            let group = &view.groups[g];
+            let fold = match (ui.open[g], ascii) {
+                (true, false) => "▾",
+                (false, false) => "▸",
+                (true, true) => "v",
+                (false, true) => ">",
+            };
+            let title_w = 22;
+            let summary_w = width.saturating_sub(3 + title_w + 1 + 1 + sw);
+            Line::from(vec![
+                marker(t, selected),
+                Span::styled(fold, t.style(Role::Link)),
+                Span::raw(" "),
+                Span::styled(
+                    cell(t, group.title, title_w),
+                    text.add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled(cell(t, &group.summary, summary_w), dim),
+                Span::raw(" "),
+                status_cell(t, group.status),
+            ])
+        }
+        Item::Row(g, r) => {
+            let row = &view.groups[g].rows[r];
+            let name_w = 20;
+            let detail_w = width.saturating_sub(1 + 4 + name_w + 1 + 1 + sw);
+            Line::from(vec![
+                marker(t, selected),
+                Span::raw("    "),
+                Span::styled(cell(t, &row.name, name_w), text),
+                Span::raw(" "),
+                Span::styled(cell(t, &row.detail, detail_w), dim),
+                Span::raw(" "),
+                status_cell(t, row.status),
+            ])
+        }
     }
 }
 
-fn spinner(tick: usize, t: &Theme) -> &'static str {
-    let frames: &[&str] = if t.glyphs == Glyphs::Ascii {
-        &["|", "/", "-", "\\"]
-    } else {
-        &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+/// The full text of the focused item: what the list had to shorten, and what Enter will do.
+fn detail_lines(t: &Theme, s: &State, width: usize) -> Vec<Line<'static>> {
+    let (Some(view), Some(item)) = (&s.check.view, s.check.items().get(s.check.sel).copied())
+    else {
+        return vec![];
     };
-    frames[tick % frames.len()]
-}
-
-fn row_line(t: &Theme, marker: &str, r: &Row) -> String {
-    let (glyph, words) = status_words(t, r.status);
-    format!("{marker}   {glyph} {}  {}  [{words}]", r.name, r.detail)
-}
-
-/// Draw into `area`. Each focusable line is registered as a clickable area when `clickable`.
-pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, clickable: bool) {
-    let Some(view) = &s.check.view else {
-        let msg = format!("{} Scanning this machine…", spinner(s.tick, t));
-        f.render_widget(Paragraph::new(msg), area);
-        return;
+    let room = width * 2;
+    let head = |x: &str| {
+        Line::styled(
+            fit(t, x, room),
+            t.style(Role::Text).add_modifier(Modifier::BOLD),
+        )
     };
-    let ascii = t.glyphs == Glyphs::Ascii;
-    let mut head = vec![Line::from(view.lead.clone())];
-    let c = &view.counts;
-    let scan = if s.detecting {
-        format!("   {} scanning", spinner(s.tick, t))
-    } else {
-        String::new()
-    };
-    head.push(Line::from(format!(
-        "{} ready · {} need a step · {} optional{scan}",
-        c.ready, c.needs_step, c.optional
-    )));
-    head.push(Line::from(""));
-    let top = head.len() as u16;
-    f.render_widget(
-        Paragraph::new(head),
-        Rect::new(area.x, area.y, area.width, top.min(area.height)),
-    );
-
-    // Display lines; `Some(i)` marks the ones that are items.
-    let items = s.check.items();
-    let mut lines: Vec<(String, Option<usize>)> = vec![];
-    for (i, item) in items.iter().enumerate() {
-        let marker = if i == s.check.sel { ">" } else { " " };
-        match *item {
-            Item::Header(g) => {
-                let group = &view.groups[g];
-                let fold = match (s.check.open[g], ascii) {
-                    (true, false) => "▾",
-                    (false, false) => "▸",
-                    (true, true) => "v",
-                    (false, true) => ">",
-                };
-                let (glyph, words) = status_words(t, group.status);
-                lines.push((
-                    format!(
-                        "{marker} {fold} {}: {}  {glyph} {words}",
-                        group.title, group.summary
-                    ),
-                    Some(i),
+    let body = |x: &str| Line::styled(fit(t, x, room), t.style(Role::Dim));
+    match item {
+        Item::Header(g) => {
+            let group = &view.groups[g];
+            let mut v = vec![head(group.title), body(&group.summary)];
+            v.extend(
+                group
+                    .facts
+                    .iter()
+                    .map(|f| body(&format!("{}: {}", f.label, f.value))),
+            );
+            v.extend(group.hint.iter().map(|h| body(h)));
+            v
+        }
+        Item::Row(g, r) => {
+            let group = &view.groups[g];
+            let row = &group.rows[r];
+            let mut v = vec![head(&row.name), body(&row.detail)];
+            if !fixes_for(group.id, row).is_empty() {
+                v.push(Line::styled(
+                    "Press Enter to see how to fix it.",
+                    t.style(Role::Key),
                 ));
             }
-            Item::Row(g, r) => lines.push((row_line(t, marker, &view.groups[g].rows[r]), Some(i))),
+            v
         }
+    }
+}
+
+/// Draw into `area` (the inside of the panel). Each focusable line is a clickable area when `clickable`.
+pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, clickable: bool) {
+    let Some(view) = &s.check.view else {
+        f.render_widget(Paragraph::new("Scanning this machine…"), area);
+        return;
+    };
+    let width = area.width as usize;
+    // The lead sentence (two rows at most), the counts and the scan indicator, then a gap.
+    let lead = fit(t, &view.lead, width * 2);
+    f.render_widget(
+        Paragraph::new(Line::styled(lead, t.style(Role::Text))).wrap(Wrap { trim: true }),
+        Rect::new(area.x, area.y, area.width, 2.min(area.height)),
+    );
+    let c = &view.counts;
+    let mut chips = chip(t, Status::Ready, c.ready);
+    chips.push(Span::raw("   "));
+    chips.extend(chip(t, Status::NeedsStep, c.needs_step));
+    chips.push(Span::raw("   "));
+    chips.extend(chip(t, Status::Optional, c.optional));
+    let chips_row = Rect::new(area.x, area.y + 2, area.width, 1);
+    f.render_widget(Paragraph::new(Line::from(chips)), chips_row);
+    if s.detecting {
+        let mut scan = vec![Span::styled("scanning ", t.style(Role::Dim))];
+        scan.extend(progress(t, 10, None, s.tick).spans);
+        f.render_widget(
+            Paragraph::new(Line::from(scan)).alignment(Alignment::Right),
+            chips_row,
+        );
+    }
+
+    let strip_h = if area.height >= 16 { 4 } else { 0 };
+    let list = Rect::new(
+        area.x,
+        area.y + 4,
+        area.width,
+        area.height.saturating_sub(4 + strip_h),
+    );
+    let items = s.check.items();
+    // Display lines; `Some(i)` marks the ones that are items.
+    let mut lines: Vec<(Line<'static>, Option<usize>)> = vec![];
+    for (i, item) in items.iter().enumerate() {
+        lines.push((
+            item_line(t, view, &s.check, *item, i == s.check.sel, width),
+            Some(i),
+        ));
         // Facts, hint and the folded "more" line belong to the group and follow its last row.
         let (g, ends) = match *item {
             Item::Header(g) => (g, view.groups[g].rows.is_empty()),
@@ -204,47 +302,45 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
         };
         if ends && s.check.open[g] {
             let group = &view.groups[g];
-            lines.extend(
-                group
-                    .facts
-                    .iter()
-                    .map(|x| (format!("        {}: {}", x.label, x.value), None)),
-            );
-            if let Some(h) = &group.hint {
-                lines.push((format!("        {h}"), None));
-            }
-            if let Some(m) = &group.more {
-                lines.push((format!("        + {}", m.title), None));
+            let mut extra: Vec<String> = group
+                .facts
+                .iter()
+                .map(|x| format!("{}: {}", x.label, x.value))
+                .collect();
+            extra.extend(group.hint.iter().cloned());
+            extra.extend(group.more.iter().map(|m| format!("+ {}", m.title)));
+            for text in extra {
+                let shown = fit(t, &text, width.saturating_sub(5));
+                lines.push((
+                    Line::from(vec![
+                        Span::raw("     "),
+                        Span::styled(shown, t.style(Role::Dim)),
+                    ]),
+                    None,
+                ));
             }
         }
     }
-    let list = Rect::new(
-        area.x,
-        area.y + top,
-        area.width,
-        area.height.saturating_sub(top),
-    );
     let focus = lines
         .iter()
         .position(|(_, i)| *i == Some(s.check.sel))
         .unwrap_or(0);
     let first = (focus + 1).saturating_sub(list.height as usize);
-    for (row, (text, item)) in lines
+    for (row, (line, item)) in lines
         .iter()
         .skip(first)
         .take(list.height as usize)
         .enumerate()
     {
         let r = Rect::new(list.x, list.y + row as u16, list.width, 1);
-        let style = if *item == Some(s.check.sel) {
-            Style::new().bold()
-        } else {
-            Style::new()
-        };
-        f.render_widget(Paragraph::new(text.clone()).style(style), r);
+        f.render_widget(Paragraph::new(line.clone()), r);
         if let (true, Some(i)) = (clickable, item) {
             hits.add(r, Action::Select(*i));
         }
+    }
+    if strip_h > 0 {
+        let strip = Rect::new(area.x, area.bottom() - strip_h, area.width, strip_h);
+        f.render_widget(detail_strip(t, detail_lines(t, s, width)), strip);
     }
 }
 
@@ -374,27 +470,150 @@ mod tests {
     }
 
     #[test]
-    fn ascii_terminals_get_ascii_status_glyphs() {
+    fn ascii_terminals_get_only_ascii_status_and_text() {
         let s = loaded(&real());
-        let mut term = Terminal::new(TestBackend::new(100, 24)).unwrap();
-        let mut hits = HitMap::default();
         let t = Theme {
             motion: false,
             depth: crate::tui::theme::ColorDepth::None,
             glyphs: Glyphs::Ascii,
         };
-        term.draw(|f| draw(f, f.area(), &s, &t, &mut hits, true))
+        let text = render_with(&s, &t, 100, 24).0;
+        assert!(
+            text.contains("[!] needs a step") && text.contains("[x] ready"),
+            "{text}"
+        );
+        assert!(
+            text.is_ascii(),
+            "nothing a non-UTF-8 terminal would garble:\n{text}"
+        );
+    }
+
+    fn render_with(s: &State, t: &Theme, w: u16, h: u16) -> (String, HitMap) {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        let mut hits = HitMap::default();
+        term.draw(|f| draw(f, f.area(), s, t, &mut hits, true))
             .unwrap();
         let buf = term.backend().buffer().clone();
-        let text: String = (0..24u16)
-            .flat_map(|y| (0..100u16).map(move |x| (x, y)))
-            .map(|(x, y)| buf[(x, y)].symbol().to_string())
-            .collect();
+        let text = (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        (text, hits)
+    }
+
+    fn unicode_theme() -> Theme {
+        Theme::detect(&crate::tui::theme::Env::default())
+    }
+
+    #[test]
+    fn the_counts_are_chips_with_a_glyph_a_number_and_a_word() {
+        let s = loaded(&real());
+        let (text, _) = render_with(&s, &unicode_theme(), 100, 24);
         assert!(
-            text.contains("[ ] needs a step") || text.contains("[ ]"),
-            "ASCII needs-a-step glyph"
+            text.contains("✓ 4 ready")
+                && text.contains("● 1 needs a step")
+                && text.contains("○ 2 optional"),
+            "{text}"
         );
-        assert!(!text.contains('⬡') && !text.contains('▸') && !text.contains('⠋'));
+    }
+
+    #[test]
+    fn every_status_sits_in_one_column_at_the_right_edge() {
+        let s = loaded(&real());
+        for w in [74u16, 98, 140] {
+            let (text, _) = render_with(&s, &unicode_theme(), w, 24);
+            let status_lines: Vec<&str> = text
+                .lines()
+                .filter(|l| {
+                    ["✓ ready", "● needs a step", "○ optional", "· info"]
+                        .iter()
+                        .any(|k| l.trim_end().ends_with(k))
+                })
+                .collect();
+            assert!(status_lines.len() >= 6, "{w}: too few status rows:\n{text}");
+            for l in status_lines {
+                assert_eq!(
+                    l.chars().count(),
+                    w as usize,
+                    "{w}: the status column moved: {l:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn long_hostile_and_wide_names_are_shortened_and_never_push_the_status_out() {
+        let evil = "x\x1b]52;c;aGk=\x07\x1b[2J";
+        let long = format!("{evil}{}", "very-long-server-name-".repeat(12));
+        let wide = "日本語のサーバー".repeat(12);
+        for name in [long, wide] {
+            let mut snap = real();
+            snap.local_llm[0].name = name.clone();
+            snap.local_llm[0].up = true;
+            snap.local_llm[0].models = vec![name];
+            let mut s = loaded(&snap);
+            s.check.open = vec![true; s.check.open.len()];
+            for w in [74u16, 98, 140] {
+                let (text, _) = render_with(&s, &unicode_theme(), w, 30);
+                assert!(!text.chars().any(|c| c.is_control() && c != '\n'), "{w}");
+                let row = text
+                    .lines()
+                    .find(|l| l.contains("Local model servers"))
+                    .expect("the row");
+                assert!(
+                    row.contains('…'),
+                    "{w}: shortened with an ellipsis: {row:?}"
+                );
+                assert!(
+                    row.trim_end().ends_with("✓ ready") || row.trim_end().ends_with("○ optional"),
+                    "{w}: the status stayed in its column: {row:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_focused_row_shows_its_full_text_and_what_enter_does() {
+        let mut s = loaded(&real());
+        let hermes = s
+            .check
+            .items()
+            .iter()
+            .position(|i| matches!(i, Item::Row(g, r) if s.check.view.as_ref().unwrap().groups[*g].rows[*r].name == "Hermes"))
+            .unwrap();
+        s.check.sel = hermes;
+        let (text, _) = render_with(&s, &unicode_theme(), 74, 24);
+        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            flat.contains("Takes your requests from a chat app. Not found on this computer."),
+            "{flat}"
+        );
+        // A row with a fix says how to reach it.
+        let mut s = loaded(&logged_out());
+        let claude = s
+            .check
+            .items()
+            .iter()
+            .position(|i| matches!(i, Item::Row(g, r) if s.check.view.as_ref().unwrap().groups[*g].rows[*r].name == "Claude Code"))
+            .unwrap();
+        s.check.sel = claude;
+        let (text, _) = render_with(&s, &unicode_theme(), 74, 24);
+        assert!(text.contains("Press Enter to see how to fix it."), "{text}");
+    }
+
+    #[test]
+    fn a_rescan_shows_a_sweeping_indicator_without_hiding_the_list() {
+        let mut s = loaded(&real());
+        s.detecting = true;
+        let (a, _) = render_with(&s, &unicode_theme(), 100, 24);
+        s.tick = 6;
+        let (b, _) = render_with(&s, &unicode_theme(), 100, 24);
+        assert!(a.contains("scanning") && a.contains("Your machine"), "{a}");
+        assert_ne!(a, b, "the indicator moves");
     }
 
     #[test]
