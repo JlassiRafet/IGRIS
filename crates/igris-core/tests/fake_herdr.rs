@@ -1,3 +1,4 @@
+#![cfg(unix)] // the fake Herdr is a shell script
 mod common;
 use common::FakeHerdr;
 

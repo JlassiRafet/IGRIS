@@ -187,7 +187,7 @@ pub struct Config {
 impl Config {
     /// Look in `path`, then `<repo>/igris.toml`, then `~/.config/igris/igris.toml`.
     pub fn load(repo: &Path, path: Option<&Path>) -> Result<Self, ConfigError> {
-        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let home = crate::platform::home();
         Self::load_from(repo, path, home.as_deref())
     }
 
@@ -215,7 +215,7 @@ impl Config {
         } else {
             tried.push(repo.join("igris.toml"));
             if let Some(h) = home {
-                tried.push(h.join(".config/igris/igris.toml"));
+                tried.push(crate::platform::user_config_file_here(h));
             }
         }
         tried.iter().find(|p| p.is_file()).cloned().ok_or_else(|| {

@@ -231,7 +231,7 @@ impl PipelineForm {
 }
 
 pub fn load_for_form(repo: &Path, snap: &Snapshot) -> Loaded {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = igris_core::platform::home();
     load_for_form_in(repo, home.as_deref(), snap)
 }
 

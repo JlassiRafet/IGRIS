@@ -1,3 +1,4 @@
+#![cfg(unix)] // the fake Herdr is a shell script
 mod common;
 use common::FakeHerdr;
 use igris_core::herdr::{AgentState, Herdr, sh_quote};
@@ -208,5 +209,18 @@ fn wait_returns_the_settled_state() {
     assert_eq!(
         fake.calls()[0],
         ["agent", "wait", "builder", "--timeout", "5000"]
+    );
+}
+
+#[test]
+fn the_pane_line_is_sh_on_unix_and_cmd_with_delayed_expansion_on_windows() {
+    use igris_core::herdr::pane_line;
+    assert_eq!(
+        pane_line(false, "cargo test", "M="),
+        "sh -c 'cargo test; echo M=$?'"
+    );
+    assert_eq!(
+        pane_line(true, "cargo test", "M="),
+        "cmd /V:ON /C \"cargo test & echo M=!ERRORLEVEL!\""
     );
 }

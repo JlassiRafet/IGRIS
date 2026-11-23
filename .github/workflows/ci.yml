@@ -6,8 +6,10 @@ permissions: {contents: read}
 jobs:
   rust:
     strategy:
-      matrix: {os: [ubuntu-latest, macos-latest]}
+      matrix: {os: [ubuntu-latest, macos-latest, windows-latest]}
     runs-on: ${{ matrix.os }}
+    # The commands below are bash on every platform (Git Bash on the Windows runner).
+    defaults: {run: {shell: bash}}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: (rustup toolchain install 2>/dev/null || rustup show) && cargo --version

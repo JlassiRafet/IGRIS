@@ -42,7 +42,7 @@ fn target_path(s: &State, t: Target) -> Result<PathBuf, String> {
     match t {
         Target::Repo => Ok(Target::Repo.path(&s.repo, std::path::Path::new(""))),
         Target::UserConfig => user_config(s)
-            .ok_or_else(|| "HOME is not set, so there is no user config folder.".into()),
+            .ok_or_else(|| "No home folder was found, so there is no user config folder.".into()),
     }
 }
 
