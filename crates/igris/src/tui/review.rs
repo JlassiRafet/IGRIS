@@ -5,7 +5,7 @@ use super::hit::HitMap;
 use super::state::{Effect, State};
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
-use super::widgets::{button, fit};
+use super::widgets::{button, fit, fit_path};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -209,7 +209,7 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
         .unwrap_or_default();
     f.render_widget(
         Paragraph::new(Line::styled(
-            format!("  {}", fit(t, &path, width.saturating_sub(2))),
+            format!("  {}", fit_path(t, &path, width.saturating_sub(2))),
             dim,
         )),
         at(2),
