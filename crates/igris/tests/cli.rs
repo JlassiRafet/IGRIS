@@ -489,63 +489,11 @@ fn the_smoke_script_is_valid_sh_and_names_the_trust_step() {
     );
 }
 
-/// Start `igris setup --no-open` and read the one JSON line it prints at start.
-fn start_setup(idle_seconds: &str) -> (std::process::Child, Value) {
-    use std::io::{BufRead, BufReader};
-    use std::process::Stdio;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_igris"))
-        .args(["setup", "--no-open", "--idle-seconds", idle_seconds])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut line = String::new();
-    BufReader::new(child.stdout.as_mut().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    let v: Value = serde_json::from_str(&line).unwrap_or_else(|_| panic!("first line: {line:?}"));
-    (child, v)
-}
-
-fn wait_within(child: &mut std::process::Child, secs: u64) -> Option<std::process::ExitStatus> {
-    let end = std::time::Instant::now() + std::time::Duration::from_secs(secs);
-    while std::time::Instant::now() < end {
-        if let Some(s) = child.try_wait().unwrap() {
-            return Some(s);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-    let _ = child.kill();
-    None
-}
-
 #[test]
-fn setup_prints_a_loopback_url_and_exits_when_idle() {
-    let (mut child, v) = start_setup("1");
-    let url = v["url"].as_str().unwrap();
-    assert!(url.starts_with("http://127.0.0.1:"), "{url}");
-    let token = url.split("#t=").nth(1).expect("token in the fragment");
-    assert!(token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()));
-    assert!(v["port"].as_u64().unwrap() > 0);
-    let status = wait_within(&mut child, 10).expect("exits when idle");
-    assert_eq!(status.code(), Some(0));
-}
-
-#[test]
-fn setup_never_binds_all_interfaces() {
-    let (mut child, v) = start_setup("3");
-    let port = v["port"].as_u64().unwrap() as u16;
-    assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_ok());
-    // This machine's own non-loopback address (a UDP connect sends no packet): it must refuse.
-    let local = std::net::UdpSocket::bind("0.0.0.0:0")
-        .and_then(|s| s.connect("192.0.2.1:9").and_then(|_| s.local_addr()))
-        .map(|a| a.ip());
-    if let Some(ip) = local.ok().filter(|ip| !ip.is_loopback()) {
-        let addr = std::net::SocketAddr::new(ip, port);
-        assert!(
-            std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)).is_err(),
-            "reachable on {ip}"
-        );
-    }
-    let _ = child.kill();
+fn setup_command_is_gone() {
+    let o = Command::new(env!("CARGO_BIN_EXE_igris"))
+        .arg("setup")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
 }
