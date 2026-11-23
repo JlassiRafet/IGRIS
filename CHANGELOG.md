@@ -8,6 +8,7 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 - The web setup app (`igris setup`, its 127.0.0.1 server and pages). It never shipped in a release. A terminal app replaces it (see Added).
 
 ### Changed
+- The plume over the G is one slim glyph that sweeps back like the logo's plume (it was two block pixels). The README follows the torlink layout, with screenshots of the real app in `preview/`, rebuilt by `scripts/preview.py`.
 - The terminal app has a new look: the wordmark with a moving sheen while the first scan runs, then a step rail (or a strip in a narrow window), framed panels, aligned status columns that never clip, a detail strip, a framed input box, progress bars, hover highlight and a `Next` row above calm key hints. `IGRIS_NO_MOTION=1` stops the animation.
 - The Pages Home is rebuilt in the style of the owner's reference: a white grid page, a big bold headline, numbered sections and a floating Index pill with the scroll percentage. The pipeline animation moves to `/pipeline/`. The docs take the same red and fonts. Fonts are self-hosted (Inter, JetBrains Mono); the site loads nothing from outside.
 - `igris merge` names the files that block removing the worktree and says what to do. `scripts/smoke.sh` takes `SMOKE_AGENTS` to pick agents and models.
