@@ -289,6 +289,7 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     state.repo = opts.repo.clone();
     state.home = std::env::var_os("HOME").map(PathBuf::from);
     let mut hits = HitMap::default();
+    let started = std::time::Instant::now();
     let (tx, rx) = std::sync::mpsc::channel();
     state.detecting = true;
     detect_worker::spawn_real(tx.clone());
@@ -296,7 +297,8 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
         while let Ok(m) = rx.try_recv() {
             state.apply(m);
         }
-        state.tick = state.tick.wrapping_add(1);
+        // Time, not loop turns: mouse movement must not speed the animation up.
+        state.tick = (started.elapsed().as_millis() / 100) as usize;
         terminal.draw(|f| draw(f, &state, &theme, &mut hits))?;
         if stop.load(Ordering::Relaxed) {
             return Ok(());

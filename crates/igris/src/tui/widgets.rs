@@ -1,7 +1,7 @@
 //! Small reusable pieces: shortening text by display width, framed panels, status chips and the
 //! progress bar. Every string from outside the binary is shortened here before it is drawn.
 
-use super::style::{ACCENT, GLOW, Role, rgb};
+use super::style::{ACCENT, GLOW, Role, SHEEN, rgb};
 use super::theme::{ColorDepth, Glyphs, Theme};
 use crate::check::view::Status;
 use ratatui::style::{Color, Modifier, Style};
@@ -244,6 +244,8 @@ pub fn progress(t: &Theme, width: u16, pct: Option<f32>, tick: usize) -> Line<'s
             (start, start + len)
         }
     };
+    // A bright band glides over the filled part, like the wordmark's sheen (only with motion on).
+    let centre = (tick % (width + 14)) as f32 - 4.0;
     let cells = (0..width).map(|i| {
         if (window.0..window.1).contains(&i) {
             let k = if window.1 - window.0 <= 1 {
@@ -251,7 +253,12 @@ pub fn progress(t: &Theme, width: u16, pct: Option<f32>, tick: usize) -> Line<'s
             } else {
                 (i - window.0) as f32 / (window.1 - window.0 - 1) as f32
             };
-            Span::styled(full, filled_style(t, k))
+            let shine = if t.motion {
+                0.85 * (1.0 - (i as f32 - centre).abs() / 4.0).max(0.0)
+            } else {
+                0.0
+            };
+            Span::styled(full, filled_style(t, k, shine))
         } else {
             Span::styled(empty, t.style(Role::Dim))
         }
@@ -260,15 +267,22 @@ pub fn progress(t: &Theme, width: u16, pct: Option<f32>, tick: usize) -> Line<'s
 }
 
 /// Filled cells run from the accent blue to the glow, left to right.
-fn filled_style(t: &Theme, k: f32) -> Style {
+fn filled_style(t: &Theme, k: f32, shine: f32) -> Style {
     match t.depth {
         ColorDepth::True => {
             let mix =
                 |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * k).round() as u8;
-            Style::new().fg(rgb((
+            let base = (
                 mix(ACCENT.0, GLOW.0),
                 mix(ACCENT.1, GLOW.1),
                 mix(ACCENT.2, GLOW.2),
+            );
+            let lift =
+                |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * shine).round() as u8;
+            Style::new().fg(rgb((
+                lift(base.0, SHEEN.0),
+                lift(base.1, SHEEN.1),
+                lift(base.2, SHEEN.2),
             )))
         }
         ColorDepth::Ansi16 => Style::new().fg(Color::LightBlue),
@@ -458,6 +472,29 @@ mod tests {
         assert_eq!(
             chip(&t, Status::NeedsStep, 1)[0].style.fg,
             Some(Color::Rgb(0xff, 0x30, 0x38))
+        );
+    }
+
+    #[test]
+    fn a_shine_glides_over_the_filled_bar_only_with_motion_on() {
+        let on = Theme {
+            depth: ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: true,
+        };
+        let off = Theme {
+            motion: false,
+            ..on
+        };
+        let (a, b) = (
+            progress(&on, 20, Some(1.0), 0),
+            progress(&on, 20, Some(1.0), 8),
+        );
+        assert_ne!(a, b, "the bright band is somewhere else");
+        assert_eq!(plain(&a), plain(&b));
+        assert_eq!(
+            progress(&off, 20, Some(1.0), 0),
+            progress(&off, 20, Some(1.0), 8)
         );
     }
 }

@@ -12,6 +12,8 @@ const DIM: (u8, u8, u8) = (0x7d, 0x87, 0x90);
 const BORDER: (u8, u8, u8) = (0x3a, 0x46, 0x50);
 const HOVER: (u8, u8, u8) = (0x16, 0x22, 0x2b);
 const INK: (u8, u8, u8) = (0x0b, 0x11, 0x14);
+/// The bright band of a sheen (wordmark and progress bar).
+pub const SHEEN: (u8, u8, u8) = (0xf2, 0xff, 0xfd);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {

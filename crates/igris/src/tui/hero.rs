@@ -5,7 +5,7 @@ use super::state::State;
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
 use super::widgets::progress;
-use super::wordmark::{WIDTH, wordmark};
+use super::wordmark::{WIDTH, big_height, big_width, wordmark, wordmark_big};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::Modifier;
@@ -13,7 +13,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 const BAR: u16 = 32;
-const HEIGHT: u16 = 10;
 
 fn centred(area: Rect, row: u16, width: u16) -> Rect {
     Rect::new(
@@ -24,19 +23,39 @@ fn centred(area: Rect, row: u16, width: u16) -> Rect {
     )
 }
 
+/// How large the wordmark is for this window: 0 is the small one (4 rows), 1 and 2 are the large ones.
+fn scale(area: Rect, t: &Theme) -> u16 {
+    match (t.glyphs, area.width, area.height) {
+        (Glyphs::Ascii, _, _) => 0,
+        (_, w, h) if w >= 150 && h >= 44 => 2,
+        (_, w, h) if w >= 100 && h >= 30 => 1,
+        _ => 0,
+    }
+}
+
 /// `area` is the whole frame; the last row is left for the key hints.
 pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme) {
+    let rpp = scale(area, t);
+    let (wh, ww) = if rpp == 0 {
+        (4, WIDTH)
+    } else {
+        (big_height(rpp), big_width(rpp))
+    };
     let avail = area.height.saturating_sub(1);
-    let y0 = avail.saturating_sub(HEIGHT) / 2;
-    let big = t.glyphs == Glyphs::Unicode;
-    if big {
+    let y0 = avail.saturating_sub(wh + 6) / 2;
+    if t.glyphs == Glyphs::Unicode {
         let r = Rect::new(
-            area.x + area.width.saturating_sub(WIDTH) / 2,
+            area.x + area.width.saturating_sub(ww) / 2,
             area.y + y0,
-            WIDTH,
-            4,
+            ww,
+            wh,
         );
-        f.render_widget(Paragraph::new(wordmark(t, s.tick)), r);
+        let lines = if rpp == 0 {
+            wordmark(t, s.tick)
+        } else {
+            wordmark_big(t, s.tick, rpp)
+        };
+        f.render_widget(Paragraph::new(lines), r);
     } else {
         let line = Line::styled("IGRIS", t.style(Role::Text).add_modifier(Modifier::BOLD));
         f.render_widget(
@@ -45,7 +64,7 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme) {
         );
     }
     for (i, text) in super::header::TAGLINE.iter().enumerate() {
-        let r = Rect::new(area.x, area.y + y0 + 5 + i as u16, area.width, 1);
+        let r = Rect::new(area.x, area.y + y0 + wh + 1 + i as u16, area.width, 1);
         f.render_widget(
             Paragraph::new(Line::styled(*text, t.style(Role::Dim))).alignment(Alignment::Center),
             r,
@@ -63,7 +82,7 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme) {
     };
     f.render_widget(
         Paragraph::new(Line::styled(what, t.style(Role::Text))).alignment(Alignment::Center),
-        Rect::new(area.x, area.y + y0 + 8, area.width, 1),
+        Rect::new(area.x, area.y + y0 + wh + 4, area.width, 1),
     );
     let mut bar = progress(t, BAR, pct, s.tick).spans;
     let tail = pct.map_or(String::new(), |p| {
@@ -73,7 +92,7 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme) {
     bar.push(Span::styled(tail, t.style(Role::Dim)));
     f.render_widget(
         Paragraph::new(Line::from(bar)),
-        centred(area, y0 + 9, width),
+        centred(area, y0 + wh + 5, width),
     );
 }
 
@@ -98,11 +117,14 @@ mod tests {
         s.scan = Some((3, 6, "agents"));
         let t = Theme::detect(&Env::default());
         let r = rows(&s, &t, 100, 30);
-        let row = r
+        // 100x30 gets the large wordmark: 38 columns, centred.
+        let left = r
             .iter()
-            .find(|l| l.contains("▀█▀ █▀▀"))
-            .expect("the wordmark");
-        assert_eq!(row.find('▀').unwrap(), (100 - 19) / 2, "centred");
+            .filter(|l| l.contains('█'))
+            .map(|l| l.find('█').unwrap())
+            .min()
+            .unwrap();
+        assert_eq!(left, (100 - 38) / 2, "centred:\n{r:?}");
         assert!(
             r.iter()
                 .any(|l| l.contains("Scanning this machine · agents")),
