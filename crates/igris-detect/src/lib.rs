@@ -52,12 +52,36 @@ pub fn detect(host: &dyn Host) -> Snapshot {
 }
 
 pub fn detect_with(host: &dyn Host, opts: &Options) -> Snapshot {
+    detect_with_progress(host, opts, &mut |_, _, _| {})
+}
+
+/// Like `detect_with`, and reports `(done, total, what is next)` before each of the six probes, so
+/// a screen can show real progress. The probes and their order are the same.
+pub fn detect_with_progress(
+    host: &dyn Host,
+    opts: &Options,
+    progress: &mut dyn FnMut(usize, usize, &'static str),
+) -> Snapshot {
+    const TOTAL: usize = 6;
+    progress(0, TOTAL, "machine");
+    let machine = machine::probe(host);
+    progress(1, TOTAL, "herdr");
+    let herdr = tools::herdr(host);
+    progress(2, TOTAL, "agents");
+    let agents = tools::agents(host);
+    progress(3, TOTAL, "hermes");
+    let hermes = services::hermes(host);
+    progress(4, TOTAL, "decision layer");
+    let decision = services::decision(host);
+    progress(5, TOTAL, "local models");
+    let local_llm = services::local_llm(host, opts);
+    progress(TOTAL, TOTAL, "done");
     Snapshot {
-        machine: machine::probe(host),
-        herdr: tools::herdr(host),
-        agents: tools::agents(host),
-        hermes: services::hermes(host),
-        decision: services::decision(host),
-        local_llm: services::local_llm(host, opts),
+        machine,
+        herdr,
+        agents,
+        hermes,
+        decision,
+        local_llm,
     }
 }

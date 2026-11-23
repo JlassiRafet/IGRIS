@@ -22,9 +22,11 @@ mod pipeline_screen;
 mod review;
 mod sample;
 mod state;
+mod style;
 mod term;
 mod test_screen;
 mod theme;
+mod widgets;
 mod wordmark;
 
 use action::Action;
@@ -64,7 +66,7 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
         f.render_widget(Paragraph::new(msg).wrap(Wrap { trim: true }), area);
         return;
     }
-    let head = header::header(t, area.width, area.height);
+    let head = header::header(t, area.width, area.height, s.tick);
     let top = head.len() as u16;
     f.render_widget(
         Paragraph::new(head),

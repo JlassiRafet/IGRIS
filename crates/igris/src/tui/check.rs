@@ -379,6 +379,7 @@ mod tests {
         let mut term = Terminal::new(TestBackend::new(100, 24)).unwrap();
         let mut hits = HitMap::default();
         let t = Theme {
+            motion: false,
             depth: crate::tui::theme::ColorDepth::None,
             glyphs: Glyphs::Ascii,
         };

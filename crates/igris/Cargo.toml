@@ -22,3 +22,4 @@ igris-detect = { version = "0.0.0", path = "../igris-detect" }
 ratatui = "=0.30.2"
 serde_json = "=1.0.154"
 signal-hook = "=0.3.18"
+unicode-width = "=0.2.3"
