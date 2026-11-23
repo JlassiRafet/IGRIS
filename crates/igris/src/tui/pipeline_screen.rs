@@ -12,7 +12,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Paragraph, Wrap};
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -467,7 +467,7 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
             "The existing igris.toml cannot be used:\n  {msg}\n\nNothing was changed. Press Enter to start from the defaults; \
              the old file is kept as igris.toml.bak when you apply."
         );
-        f.render_widget(Paragraph::new(text), area);
+        f.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
         if clickable {
             hits.add(area, Action::Select(0));
         }
@@ -794,9 +794,10 @@ mod tests {
         let mut s = on_pipeline(Some("[checks]\ncommand = \"t\"\nbogus = 1\n"));
         assert!(s.pipeline.form.is_none());
         let (text, _) = render(&s, 100, 30);
+        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            text.contains("cannot be used") && text.contains("unknown field `bogus`"),
-            "{text}"
+            flat.contains("cannot be used") && flat.contains("unknown field `bogus`"),
+            "a long path may wrap the message:\n{text}"
         );
         assert_eq!(
             std::fs::read_to_string(s.repo.join("igris.toml"))
