@@ -5,11 +5,13 @@
 #![allow(dead_code)]
 
 mod action;
+mod header;
 mod hit;
 mod keymap;
 mod state;
 mod term;
 mod theme;
+mod wordmark;
 
 use action::Action;
 use hit::HitMap;
@@ -48,12 +50,19 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
         f.render_widget(Paragraph::new(msg).wrap(Wrap { trim: true }), area);
         return;
     }
+    let head = header::header(t, area.width, area.height);
+    let top = head.len() as u16;
+    f.render_widget(
+        Paragraph::new(head),
+        Rect::new(area.x, area.y, area.width, top),
+    );
+    let tab_y = area.y + top;
     let mut x = area.x;
     let mut tabs = Vec::new();
     for screen in Screen::ALL {
         let label = format!(" {} ", screen.title());
         let width = label.chars().count() as u16;
-        hits.add(Rect::new(x, area.y, width, 1), Action::Goto(screen));
+        hits.add(Rect::new(x, tab_y, width, 1), Action::Goto(screen));
         let style = if screen == s.screen {
             t.accent()
         } else {
@@ -64,9 +73,9 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
     }
     f.render_widget(
         Paragraph::new(Line::from(tabs)),
-        Rect::new(area.x, area.y, area.width, 1),
+        Rect::new(area.x, tab_y, area.width, 1),
     );
-    let body = Rect::new(area.x, area.y + 2, area.width, area.height - 3);
+    let body = Rect::new(area.x, tab_y + 2, area.width, area.height - top - 3);
     f.render_widget(
         Paragraph::new(format!("{}: not built yet.", s.screen.title())),
         body,
