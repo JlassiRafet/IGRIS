@@ -36,7 +36,10 @@ fn read_and_machine_basics() {
     assert_eq!(h.read("/igris/no/such/file"), None);
     assert!(h.read("/proc/self/stat").is_some() || cfg!(not(target_os = "linux")));
     assert!(h.cpu_cores().is_some_and(|n| n > 0));
-    assert!(h.home().is_some_and(|p| p.starts_with('/')));
+    assert!(
+        h.home()
+            .is_some_and(|p| std::path::Path::new(&p).is_absolute())
+    );
     assert_eq!(h.os(), std::env::consts::OS);
 }
 
