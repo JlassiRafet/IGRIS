@@ -42,8 +42,10 @@ wait_for "Runs on your machine" 5   # the second line of the top band
 wait_for "Setup" 5          # the step rail and its progress
 echo "ok  the privacy line and the step rail"
 
-tmux send-keys -t "$S" 2;   wait_for "Builder agent" 5
-echo "ok  2 opens the Pipeline form"
+tmux send-keys -t "$S" 2;   wait_for "managers" 5
+echo "ok  2 opens the Tools step"
+tmux send-keys -t "$S" 3;   wait_for "Builder agent" 5
+echo "ok  3 opens the Pipeline form"
 tmux send-keys -t "$S" '?'; wait_for "How setup works" 5
 tmux send-keys -t "$S" Escape; gone "How setup works" 5
 echo "ok  ? opens help, Esc closes it"
@@ -51,19 +53,19 @@ tmux send-keys -t "$S" ']'; wait_for "Write to" 5
 tmux send-keys -t "$S" '[';  wait_for "Builder agent" 5
 echo "ok  ] and [ change screen"
 
-# Mouse. At 100x30 the steps are a rail: rows 6 to 9 (the wordmark band takes rows 1 to 4, then a rule).
-click 10 8; wait_for "Write to" 5              # Review
-click 10 9; wait_for "Run the checks again" 5   # Test
+# Mouse. At 100x30 the steps are a rail: rows 6 to 10 (the wordmark band takes rows 1 to 4, then a rule).
+click 10 9; wait_for "Write to" 5              # Review
+click 10 10; wait_for "Run the checks again" 5   # Test
 click 10 6; wait_for "optional" 5                   # Check
 echo "ok  click on a tab switches screen"
-tmux send-keys -t "$S" 2; wait_for "Builder agent" 5
+tmux send-keys -t "$S" 3; wait_for "Builder agent" 5
 wheel_down 20 12; wait_for "▌ Reviewer agent" 5
 echo "ok  the wheel moves the focus"
 
 tmux resize-window -t "$S" -x 70 -y 20; wait_for "at least 80x24" 5
 tmux resize-window -t "$S" -x 100 -y 30; wait_for "Builder agent" 5
 echo "ok  too small a window says so, and recovers"
-tmux resize-window -t "$S" -x 90 -y 30; wait_for "/4 done" 5   # under 100 columns the rail is a strip
+tmux resize-window -t "$S" -x 90 -y 30; wait_for "/5 done" 5   # under 100 columns the rail is a strip
 tmux resize-window -t "$S" -x 100 -y 30; wait_for "Setup" 5
 echo "ok  under 100 columns the rail becomes a strip, and back"
 

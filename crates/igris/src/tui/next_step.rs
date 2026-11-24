@@ -4,6 +4,8 @@ use super::state::State;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
     FixBlocker(String),
+    /// Herdr, the agents or the assistant are not settled on the Tools screen.
+    ChooseTools,
     SetCheckCommand,
     ReviewAndApply,
     /// A check on the Test screen fails: its id and its own fix text.
@@ -12,9 +14,19 @@ pub enum Step {
     Done,
 }
 
+/// Before the first scan there is nothing to settle, so the line does not nag about it.
+fn tools_settled(s: &State) -> bool {
+    match (&s.snapshot, &s.pipeline.form) {
+        (Some(snap), Some(form)) => super::tools_screen::tools_done(&s.tools, form, snap),
+        _ => true,
+    }
+}
+
 pub fn next_step(s: &State) -> Step {
     if let Some(b) = &s.blocker {
         Step::FixBlocker(b.clone())
+    } else if !tools_settled(s) {
+        Step::ChooseTools
     } else if !s.command_set {
         Step::SetCheckCommand
     } else if s.dirty || !s.applied {
@@ -25,7 +37,7 @@ pub fn next_step(s: &State) -> Step {
         .as_ref()
         .and_then(|c| c.iter().find(|c| !c.ok))
     {
-        Step::FixCheck(format!("fix the {} check (key 4): {}", c.id, c.fix))
+        Step::FixCheck(format!("fix the {} check (key 5): {}", c.id, c.fix))
     } else if !s.tested {
         Step::RunTest
     } else {
@@ -44,9 +56,10 @@ fn capital(s: &str) -> String {
 pub fn sentence(step: &Step) -> String {
     match step {
         Step::FixBlocker(what) | Step::FixCheck(what) => capital(what),
-        Step::SetCheckCommand => "Set the check command (key 2, Pipeline)".into(),
-        Step::ReviewAndApply => "Review and apply the change (key 3, Review)".into(),
-        Step::RunTest => "Run the test (key 4, Test)".into(),
+        Step::ChooseTools => "Choose your tools (key 2, Tools)".into(),
+        Step::SetCheckCommand => "Set the check command (key 3, Pipeline)".into(),
+        Step::ReviewAndApply => "Review and apply the change (key 4, Review)".into(),
+        Step::RunTest => "Run the test (key 5, Test)".into(),
         Step::Done => "Setup is done. Run a task: igris run --task \"...\"".into(),
     }
 }
@@ -77,6 +90,25 @@ mod tests {
     }
 
     #[test]
+    fn unsettled_tools_come_before_the_check_command() {
+        use crate::tui::detect_worker::Msg;
+        let mut s = State::new((100, 30));
+        s.repo = std::env::temp_dir().join("igris-next-none");
+        s.apply(Msg::Detected(Box::new(crate::check::view::tests::real())));
+        assert_eq!(
+            next_step(&s),
+            Step::ChooseTools,
+            "the assistant is unanswered"
+        );
+        assert_eq!(
+            sentence(&Step::ChooseTools),
+            "Choose your tools (key 2, Tools)"
+        );
+        s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
+        assert_eq!(next_step(&s), Step::SetCheckCommand);
+    }
+
+    #[test]
     fn a_failing_check_blocks_done_and_says_how_to_fix_it() {
         use crate::doctor::Check;
         let mut s = State::new((100, 30));
@@ -98,11 +130,11 @@ mod tests {
         let step = next_step(&s);
         assert_eq!(
             step,
-            Step::FixCheck("fix the clean check (key 4): commit or stash them".into())
+            Step::FixCheck("fix the clean check (key 5): commit or stash them".into())
         );
         assert_eq!(
             sentence(&step),
-            "Fix the clean check (key 4): commit or stash them"
+            "Fix the clean check (key 5): commit or stash them"
         );
         s.test.checks.as_mut().unwrap()[1].ok = true;
         assert_eq!(next_step(&s), Step::Done);
@@ -112,10 +144,10 @@ mod tests {
     fn each_step_reads_as_a_sentence() {
         assert_eq!(sentence(&Step::FixBlocker("log in".into())), "Log in");
         assert!(sentence(&Step::Done).starts_with("Setup is done."));
-        assert!(sentence(&Step::RunTest).contains("key 4"));
+        assert!(sentence(&Step::RunTest).contains("key 5"));
         assert_eq!(
             sentence(&Step::SetCheckCommand),
-            "Set the check command (key 2, Pipeline)"
+            "Set the check command (key 3, Pipeline)"
         );
     }
 }

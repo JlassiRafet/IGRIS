@@ -351,6 +351,7 @@ mod tests {
         s.blocker = None;
         s.command_set = true;
         s.applied = true;
+        s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
         assert_eq!(next_step(&s), Step::RunTest);
         s.apply(Msg::Checked(vec![check("config", true)]));
         s.apply(Msg::Sampled(Ok("done".into())));

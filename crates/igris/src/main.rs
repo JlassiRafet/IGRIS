@@ -7,7 +7,8 @@
 // Unused until the jobs and the connect step use them (issues #60, #63); the allows go then.
 #[allow(dead_code)]
 mod activity;
-// Unused until the Tools screen reads it (issue #62); the allow goes then.
+// The Tools screen reads names, groups and hints; the commands wait for the connect step and the
+// installs (issues #63, #64); the allow goes then.
 #[allow(dead_code)]
 mod catalog;
 mod check;

@@ -69,17 +69,23 @@ pub const BINDINGS: &[Binding] = &[
         Scope::Anywhere,
         KeyCode::Char('2'),
         NONE,
-        Action::Goto(Screen::Pipeline),
+        Action::Goto(Screen::Tools),
     ),
     b(
         Scope::Anywhere,
         KeyCode::Char('3'),
         NONE,
-        Action::Goto(Screen::Review),
+        Action::Goto(Screen::Pipeline),
     ),
     b(
         Scope::Anywhere,
         KeyCode::Char('4'),
+        NONE,
+        Action::Goto(Screen::Review),
+    ),
+    b(
+        Scope::Anywhere,
+        KeyCode::Char('5'),
         NONE,
         Action::Goto(Screen::Test),
     ),
@@ -108,6 +114,7 @@ pub const BINDINGS: &[Binding] = &[
     b(Scope::Browse, KeyCode::PageDown, NONE, Action::PageDown),
     b(Scope::Browse, KeyCode::Enter, NONE, Action::Activate),
     b(Scope::Browse, KeyCode::Char(' '), NONE, Action::Toggle),
+    b(Scope::Browse, KeyCode::Char('f'), NONE, Action::Filter),
     b(Scope::Browse, KeyCode::Esc, NONE, Action::Cancel),
     b(Scope::Dialog, KeyCode::Char('y'), NONE, Action::Yes),
     b(Scope::Dialog, KeyCode::Enter, NONE, Action::Yes),
@@ -195,7 +202,7 @@ mod tests {
         );
         assert_eq!(key_to_action(Context::List, k('k')), Some(Action::Up));
         assert_eq!(
-            key_to_action(Context::List, k('2')),
+            key_to_action(Context::List, k('3')),
             Some(Action::Goto(Screen::Pipeline))
         );
         assert_eq!(key_to_action(Context::List, k('q')), Some(Action::Quit));

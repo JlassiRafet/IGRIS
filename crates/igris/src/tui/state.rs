@@ -7,6 +7,7 @@ use super::fix::{Fix, INSTALL_HERDR_ARGV};
 use super::pipeline_screen::PipelineUi;
 use super::review::ReviewUi;
 use super::test_screen::TestUi;
+use super::tools_screen::ToolsUi;
 use igris_detect::Snapshot;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
@@ -14,14 +15,16 @@ use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
     Check,
+    Tools,
     Pipeline,
     Review,
     Test,
 }
 
 impl Screen {
-    pub const ALL: [Screen; 4] = [
+    pub const ALL: [Screen; 5] = [
         Screen::Check,
+        Screen::Tools,
         Screen::Pipeline,
         Screen::Review,
         Screen::Test,
@@ -30,6 +33,7 @@ impl Screen {
     pub fn title(self) -> &'static str {
         match self {
             Screen::Check => "Check",
+            Screen::Tools => "Tools",
             Screen::Pipeline => "Pipeline",
             Screen::Review => "Review",
             Screen::Test => "Test",
@@ -85,6 +89,7 @@ pub struct State {
     /// The palette's chosen row, or the help's scroll offset.
     pub cursor: usize,
     pub check: CheckUi,
+    pub tools: ToolsUi,
     pub pipeline: PipelineUi,
     pub review: ReviewUi,
     pub test: TestUi,
@@ -116,6 +121,10 @@ impl State {
             Msg::Checked(list) => {
                 self.test.checks = Some(list);
                 self.test.running = false;
+                return;
+            }
+            Msg::Found(ids) => {
+                self.tools.found = ids.into_iter().collect();
                 return;
             }
             Msg::Sampled(r) => {
@@ -151,6 +160,7 @@ impl State {
             query: String::new(),
             cursor: 0,
             check: CheckUi::default(),
+            tools: ToolsUi::default(),
             pipeline: PipelineUi::default(),
             review: ReviewUi::default(),
             test: TestUi::default(),
@@ -266,6 +276,23 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
             if s.screen == Screen::Check =>
         {
             super::check::update(s, a)
+        }
+        Action::Up
+        | Action::Down
+        | Action::PageUp
+        | Action::PageDown
+        | Action::Home
+        | Action::End
+        | Action::NextField
+        | Action::PrevField
+        | Action::Toggle
+        | Action::Activate
+        | Action::Cancel
+        | Action::Filter
+        | Action::Select(_)
+            if s.screen == Screen::Tools =>
+        {
+            super::tools_screen::update(s, a)
         }
         Action::Up
         | Action::Down
