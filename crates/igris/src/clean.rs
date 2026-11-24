@@ -46,9 +46,24 @@ pub fn strip_escapes(s: &str) -> String {
     out
 }
 
+/// The last `n` lines of `text`, with every escape sequence and control character removed.
+pub fn last_lines(text: &str, n: usize) -> Vec<String> {
+    let lines: Vec<String> = strip_escapes(text).lines().map(str::to_string).collect();
+    let skip = lines.len().saturating_sub(n);
+    lines.into_iter().skip(skip).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn last_lines_keeps_the_end_and_cleans_it() {
+        let text = "one\ntwo\n\x1b[31mthree\x1b[0m\nfour\n";
+        assert_eq!(last_lines(text, 2), ["three", "four"]);
+        assert_eq!(last_lines(text, 10), ["one", "two", "three", "four"]);
+        assert!(last_lines("", 5).is_empty());
+    }
 
     #[test]
     fn csi_and_osc_sequences_are_removed() {

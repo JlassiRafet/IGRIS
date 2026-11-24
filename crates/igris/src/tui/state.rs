@@ -133,6 +133,8 @@ impl State {
                 self.test.sample = Some(r);
                 return;
             }
+            // Taken in by the Tools step once it starts jobs (issues #63, #64).
+            Msg::Job(..) => return,
         };
         self.scan = None;
         self.check.set(&snap);

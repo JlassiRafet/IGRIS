@@ -2,7 +2,7 @@
 //! store-the-key command and nowhere else: never argv (the argv type is `'static`, so a runtime
 //! value cannot be in it), never a file, never the log, never the output shown back.
 use crate::activity::{Activity, Entry};
-use crate::clean::strip_escapes;
+use crate::clean::last_lines;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -103,12 +103,7 @@ fn tail(text: &str, secret: &Secret) -> Vec<String> {
     } else {
         text.replace(secret.as_str(), "***")
     };
-    let lines: Vec<String> = strip_escapes(&redacted)
-        .lines()
-        .map(str::to_string)
-        .collect();
-    let skip = lines.len().saturating_sub(20);
-    lines.into_iter().skip(skip).collect()
+    last_lines(&redacted, 20)
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! Detection: what this machine can run. Every probe goes through a `Host`, so tests replay recorded
 //! output, and a probe that cannot tell answers `None` (shown as `null`/"unknown") instead of guessing.
 
+pub mod fit;
 mod machine;
 mod real;
 mod services;

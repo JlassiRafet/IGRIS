@@ -15,6 +15,9 @@ mod check;
 #[allow(dead_code)]
 mod clean;
 mod doctor;
+// Unused until the Tools step starts installs and checks (issues #63, #64).
+#[allow(dead_code)]
+mod job;
 mod merge;
 #[allow(dead_code)]
 mod secret;
