@@ -1,4 +1,5 @@
 //! A single-line text field with Herdr's editing keys.
+use crate::secret::Secret;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,19 +10,63 @@ pub enum InputEvent {
     Cancel,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Input {
     text: String,
     /// In characters, 0..=len.
     cursor: usize,
+    /// A key is being typed: shown as bullets, hidden from `Debug`, taken once with `take_secret`.
+    masked: bool,
+}
+
+impl std::fmt::Debug for Input {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = if self.masked { "***" } else { &self.text };
+        f.debug_struct("Input")
+            .field("text", &text)
+            .field("cursor", &self.cursor)
+            .field("masked", &self.masked)
+            .finish()
+    }
 }
 
 // shortcut: char boundaries, not graphemes; upgrade if combining marks are reported.
 impl Input {
+    /// An empty field for a key. It starts with room for a long key so typing does not reallocate
+    /// (and leave an older copy of the text behind).
+    // Used by the connect step's key entry (issue #63).
+    #[allow(dead_code)]
+    pub fn masked() -> Input {
+        Input {
+            text: String::with_capacity(256),
+            cursor: 0,
+            masked: true,
+        }
+    }
+
+    /// The text as it is shown: one `bullet` per character when masked, the text itself otherwise.
+    pub fn shown(&self, bullet: char) -> String {
+        if self.masked {
+            bullet.to_string().repeat(self.len())
+        } else {
+            self.text.clone()
+        }
+    }
+
+    /// Hand the typed text over as a `Secret` and leave the field empty. The text moves; it is not
+    /// copied, and the `Secret` overwrites it when dropped.
+    // Used by the connect step's key entry (issue #63).
+    #[allow(dead_code)]
+    pub fn take_secret(&mut self) -> Secret {
+        self.cursor = 0;
+        Secret::new(std::mem::take(&mut self.text))
+    }
+
     pub fn new(value: &str) -> Input {
         Input {
             text: value.to_string(),
             cursor: value.chars().count(),
+            masked: false,
         }
     }
 
@@ -90,7 +135,9 @@ impl Input {
     pub fn handle(&mut self, key: KeyEvent) -> InputEvent {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
-        let before = self.text.clone();
+        // Every edit inserts or removes text, so a changed length is a changed text (and no copy of
+        // a typed key is left behind).
+        let before = self.text.len();
         match key.code {
             KeyCode::Esc => return InputEvent::Cancel,
             KeyCode::Enter => return InputEvent::Commit,
@@ -114,7 +161,7 @@ impl Input {
             KeyCode::Char(c) if !ctrl && !alt => self.insert(c),
             _ => {}
         }
-        if self.text != before {
+        if self.text.len() != before {
             InputEvent::Changed
         } else {
             InputEvent::None
@@ -222,6 +269,55 @@ mod tests {
         i.handle(plain(KeyCode::Backspace));
         i.handle(plain(KeyCode::Backspace));
         assert_eq!(i.value(), "héll");
+    }
+
+    fn typed(i: &mut Input, s: &str) {
+        for c in s.chars() {
+            i.handle(plain(KeyCode::Char(c)));
+        }
+    }
+
+    #[test]
+    fn take_secret_empties_the_input() {
+        let mut i = Input::masked();
+        typed(&mut i, "sk-test-123");
+        let s = i.take_secret();
+        assert!(!s.is_empty());
+        assert_eq!((i.value(), i.cursor()), ("", 0));
+    }
+
+    #[test]
+    fn debug_of_an_input_holding_a_secret_hides_the_text() {
+        let mut i = Input::masked();
+        typed(&mut i, "sk-test-123");
+        let d = format!("{i:?}");
+        assert!(
+            !d.contains("sk-test-123") && d.contains("masked: true"),
+            "{d}"
+        );
+    }
+
+    #[test]
+    fn an_unmasked_input_still_shows_its_text_in_debug() {
+        assert!(format!("{:?}", Input::new("hello")).contains("hello"));
+    }
+
+    #[test]
+    fn editing_a_masked_input_works_like_any_input() {
+        let mut i = Input::masked();
+        typed(&mut i, "ab");
+        i.handle(plain(KeyCode::Left));
+        assert_eq!(i.handle(plain(KeyCode::Char('c'))), InputEvent::Changed);
+        assert_eq!(i.value(), "acb");
+        assert_eq!(i.handle(plain(KeyCode::Left)), InputEvent::None);
+    }
+
+    #[test]
+    fn shown_is_one_bullet_per_character_only_when_masked() {
+        let mut m = Input::masked();
+        typed(&mut m, "héllo");
+        assert_eq!(m.shown('▪'), "▪▪▪▪▪");
+        assert_eq!(Input::new("héllo").shown('▪'), "héllo");
     }
 
     #[test]
