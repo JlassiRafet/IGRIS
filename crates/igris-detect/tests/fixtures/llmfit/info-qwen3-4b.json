@@ -1,0 +1,139 @@
+{
+  "models": [
+    {
+      "best_quant": "Q5_K_M",
+      "capabilities": [
+        "Tool Use"
+      ],
+      "capability_ids": [
+        "tool_use"
+      ],
+      "category": "Chat",
+      "context_length": 262144,
+      "disk_size_gb": 2.74,
+      "effective_context_length": 8192,
+      "estimate_basis": {
+        "assumed_context": 8192,
+        "ddr_bandwidth_gbps": null,
+        "efficiency": 0.55,
+        "gpu_bandwidth_gbps": null,
+        "local_calibration": null,
+        "method": "backend_constant"
+      },
+      "estimate_confidence": "estimated",
+      "estimate_confidence_label": "estimated",
+      "estimated_tps": 60.2,
+      "fit_label": "Marginal",
+      "fit_level": "Marginal",
+      "format": "gguf",
+      "gguf_sources": [
+        {
+          "provider": "unsloth",
+          "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF"
+        },
+        {
+          "provider": "mradermacher",
+          "repo": "mradermacher/Qwen3-4B-Instruct-2507-GGUF"
+        }
+      ],
+      "installed": false,
+      "is_moe": false,
+      "layout_refusal": null,
+      "license": "apache-2.0",
+      "measured_tps": null,
+      "memory_available_gb": 4.5,
+      "memory_required_gb": 4.36,
+      "moe_offloaded_gb": null,
+      "name": "Qwen/Qwen3-4B-Instruct-2507",
+      "notes": [
+        "Context capped at 8192 tokens for estimation (model supports up to 262144; use --max-context to override)",
+        "GPU: model loaded into VRAM",
+        "Best quantization for hardware: Q5_K_M (model default: Q4_K_M)",
+        "Baseline estimated speed: 60.2 tok/s"
+      ],
+      "ollama_name": "qwen3:4b",
+      "parameter_count": "4.0B",
+      "params_b": 4.02,
+      "prefill_tps": null,
+      "provider": "Alibaba",
+      "quantization": "Q4_K_M",
+      "release_date": "2025-08-06",
+      "run_mode": "GPU",
+      "run_mode_label": "GPU",
+      "runnable": true,
+      "runtime": "llama.cpp",
+      "runtime_label": "llama.cpp",
+      "score": 78.4,
+      "score_components": {
+        "context": 100.0,
+        "fit": 40.5,
+        "quality": 68.4,
+        "speed": 100.0
+      },
+      "supports_tp": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "total_memory_gb": 4.36,
+      "tp_size": null,
+      "ttft_ms": null,
+      "usable_context": 8554,
+      "use_case": "Instruction following, chat",
+      "utilization_pct": 96.9,
+      "verify_command": "llama-bench -m <path-to-Q5_K_M-gguf> -ngl 99 -p 512 -n 128"
+    }
+  ],
+  "system": {
+    "available_ram_gb": 3.72,
+    "backend": "CUDA",
+    "cpu_cores": 12,
+    "cpu_name": "Test CPU",
+    "gpu_available_gb": 3.79,
+    "gpu_count": 2,
+    "gpu_name": "Test GPU",
+    "gpu_vram_gb": 4.0,
+    "gpus": [
+      {
+        "backend": "CUDA",
+        "count": 1,
+        "free_vram_gb": 3.73,
+        "memory_bandwidth_gbps": null,
+        "name": "Test GPU 1",
+        "pcie_links": [
+          {
+            "generation": 3,
+            "index": 0,
+            "max_generation": 3,
+            "max_width": 16,
+            "width": 8
+          }
+        ],
+        "unified_memory": false,
+        "vram_gb": 4.0
+      },
+      {
+        "backend": "Vulkan",
+        "count": 1,
+        "free_vram_gb": 0.06,
+        "memory_bandwidth_gbps": null,
+        "name": "Test GPU 2",
+        "pcie_links": [
+          {
+            "generation": null,
+            "index": null,
+            "max_generation": null,
+            "max_width": 16,
+            "width": 16
+          }
+        ],
+        "unified_memory": false,
+        "vram_gb": 0.5
+      }
+    ],
+    "has_gpu": true,
+    "total_ram_gb": 7.15,
+    "unified_memory": false
+  }
+}

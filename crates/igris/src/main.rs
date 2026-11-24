@@ -7,6 +7,9 @@
 // Unused until the jobs and the connect step use them (issues #60, #63); the allows go then.
 #[allow(dead_code)]
 mod activity;
+// Unused until the Tools screen reads it (issue #62); the allow goes then.
+#[allow(dead_code)]
+mod catalog;
 mod check;
 #[allow(dead_code)]
 mod clean;

@@ -7,7 +7,7 @@ mod apply;
 mod attached;
 mod check;
 pub(crate) mod detect_worker;
-mod fix;
+pub(crate) mod fix;
 mod footer;
 mod form;
 mod header;
