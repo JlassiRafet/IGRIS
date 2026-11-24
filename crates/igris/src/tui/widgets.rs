@@ -1,6 +1,7 @@
 //! Small reusable pieces: shortening text by display width, framed panels, status chips and the
 //! progress bar. Every string from outside the binary is shortened here before it is drawn.
 
+use super::input::Input;
 use super::style::{ACCENT, GLOW, Role, SHEEN, rgb};
 use super::theme::{ColorDepth, Glyphs, Theme};
 use crate::check::view::Status;
@@ -103,6 +104,25 @@ pub fn pad(t: &Theme, s: &str, width: usize) -> String {
     let f = fit(t, s, width);
     let fill = width.saturating_sub(unicode_width::UnicodeWidthStr::width(f.as_str()));
     f + &" ".repeat(fill)
+}
+
+/// An input's line with `caret` at its cursor. A masked input shows one bullet per character
+/// (`*` on ASCII terminals) and never its text.
+// Used by the connect step's key entry (issue #63).
+#[allow(dead_code)]
+pub fn input_line(t: &Theme, i: &Input, caret: &str) -> String {
+    let bullet = if t.glyphs == Glyphs::Ascii {
+        '*'
+    } else {
+        '▪'
+    };
+    let shown: Vec<char> = i.shown(bullet).chars().collect();
+    let (before, after) = shown.split_at(i.cursor().min(shown.len()));
+    format!(
+        "{}{caret}{}",
+        before.iter().collect::<String>(),
+        after.iter().collect::<String>()
+    )
 }
 
 /// A rounded frame with the title in the border (`+-|` on ASCII terminals) and one column of padding.
@@ -296,6 +316,52 @@ mod tests {
     use crate::tui::theme::Glyphs;
     use ratatui::{Terminal, backend::TestBackend};
     use unicode_width::UnicodeWidthStr;
+
+    fn render_line(line: String) -> String {
+        let mut term = Terminal::new(TestBackend::new(30, 1)).unwrap();
+        term.draw(|f| f.render_widget(Paragraph::new(line), f.area()))
+            .unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..30).map(|x| buf[(x, 0)].symbol().to_string()).collect()
+    }
+
+    fn secret_input() -> Input {
+        let mut i = Input::masked();
+        i.paste("sk-test-123");
+        i
+    }
+
+    #[test]
+    fn masked_input_renders_one_bullet_per_character_and_not_the_text() {
+        let t = Theme::detect(&crate::tui::theme::Env::default());
+        let shown = render_line(input_line(&t, &secret_input(), "_"));
+        assert!(shown.contains(&"▪".repeat(11)), "{shown}");
+        assert!(!shown.contains("sk-test"), "{shown}");
+    }
+
+    #[test]
+    fn ascii_terminals_get_stars_for_a_masked_input() {
+        let t = Theme {
+            glyphs: Glyphs::Ascii,
+            ..Theme::detect(&crate::tui::theme::Env::default())
+        };
+        let shown = render_line(input_line(&t, &secret_input(), "_"));
+        assert!(
+            shown.contains(&"*".repeat(11)) && !shown.contains("sk-test"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn the_caret_sits_at_the_cursor_and_plain_text_is_shown() {
+        let t = Theme::detect(&crate::tui::theme::Env::default());
+        let mut i = Input::new("abc");
+        i.handle(ratatui::crossterm::event::KeyEvent::new(
+            ratatui::crossterm::event::KeyCode::Left,
+            ratatui::crossterm::event::KeyModifiers::NONE,
+        ));
+        assert_eq!(input_line(&t, &i, "|"), "ab|c");
+    }
 
     fn theme(depth: ColorDepth, glyphs: Glyphs) -> Theme {
         Theme {
