@@ -299,7 +299,7 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
             }));
             lines.push(Line::raw(""));
             lines.push(Line::styled(
-                "Fix this on the Pipeline screen (key 2).",
+                "Fix this on the Pipeline screen (key 3).",
                 dim,
             ));
             f.render_widget(
@@ -425,6 +425,7 @@ mod tests {
             s.repo.join("igris.toml.bak").is_file(),
             "the old file is kept"
         );
+        s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
         assert_eq!(next_step(&s), Step::RunTest);
         let toast = s.toast.as_deref().unwrap();
         assert!(
@@ -620,7 +621,7 @@ mod tests {
         assert_ne!(buf[(x, y)].bg, ratatui::style::Color::Rgb(0xff, 0x30, 0x38));
         assert!(
             text.contains("Nothing to apply yet")
-                && text.contains("Fix this on the Pipeline screen (key 2)."),
+                && text.contains("Fix this on the Pipeline screen (key 3)."),
             "{text}"
         );
     }

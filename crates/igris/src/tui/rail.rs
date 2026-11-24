@@ -1,4 +1,4 @@
-//! The steps: Check, Pipeline, Review, Test. A rail on the left of a wide window, a one-row strip in
+//! The steps: Check, Tools, Pipeline, Review, Test. A rail on the left of a wide window, a one-row strip in
 //! a narrow one. Each step shows whether it is done, to do or blocked, and where you are.
 use super::action::Action;
 use super::hit::HitMap;
@@ -27,6 +27,12 @@ pub fn step_state(s: &State, screen: Screen) -> StepState {
             (None, Some(_)) => StepState::Done,
             (None, None) => StepState::Todo,
         },
+        Screen::Tools => match (&s.snapshot, &s.pipeline.form) {
+            (Some(snap), Some(form)) if super::tools_screen::tools_done(&s.tools, form, snap) => {
+                StepState::Done
+            }
+            _ => StepState::Todo,
+        },
         Screen::Pipeline => {
             if s.pipeline.broken.is_some() || (s.command_set && !s.pipeline.errors.is_empty()) {
                 StepState::Blocked
@@ -52,7 +58,7 @@ pub fn step_state(s: &State, screen: Screen) -> StepState {
     }
 }
 
-/// `(steps done, 4)`.
+/// `(steps done, how many steps)`.
 pub fn setup_progress(s: &State) -> (usize, usize) {
     let done = Screen::ALL
         .iter()
@@ -234,6 +240,14 @@ mod tests {
         );
         s.pipeline.errors.clear();
 
+        assert_eq!(
+            step_state(&s, Screen::Tools),
+            StepState::Todo,
+            "the assistant is not answered yet"
+        );
+        s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
+        assert_eq!(step_state(&s, Screen::Tools), StepState::Done);
+
         assert_eq!(step_state(&s, Screen::Review), StepState::Todo);
         s.applied = true;
         assert_eq!(step_state(&s, Screen::Review), StepState::Done);
@@ -254,15 +268,15 @@ mod tests {
     #[test]
     fn setup_progress_counts_the_done_steps() {
         let mut s = State::new((100, 30));
-        assert_eq!(setup_progress(&s), (0, 4));
+        assert_eq!(setup_progress(&s), (0, 5));
         s.apply(Msg::Detected(Box::new(real())));
         s.command_set = true;
         s.pipeline.errors.clear();
-        assert_eq!(setup_progress(&s), (2, 4));
+        assert_eq!(setup_progress(&s), (2, 5));
     }
 
     #[test]
-    fn the_rail_lists_four_clickable_steps_and_marks_where_you_are() {
+    fn the_rail_lists_five_clickable_steps_and_marks_where_you_are() {
         let mut s = loaded();
         s.screen = Screen::Pipeline;
         let t = Theme::detect(&Env::default());
@@ -273,13 +287,14 @@ mod tests {
         let rows = text(&term, 22, 12);
         assert!(
             rows[0].contains("Check")
-                && rows[1].contains("Pipeline")
-                && rows[2].contains("Review")
-                && rows[3].contains("Test"),
+                && rows[1].contains("Tools")
+                && rows[2].contains("Pipeline")
+                && rows[3].contains("Review")
+                && rows[4].contains("Test"),
             "{rows:?}"
         );
         assert!(
-            rows[1].contains('▌') && !rows[0].contains('▌'),
+            rows[2].contains('▌') && !rows[0].contains('▌'),
             "the bar marks the current step: {rows:?}"
         );
         assert!(rows[0].contains('✓'), "Check is done: {rows:?}");
@@ -287,7 +302,7 @@ mod tests {
             assert_eq!(hits.at(3, y as u16), Some(Action::Goto(*sc)));
         }
         assert!(
-            rows.iter().any(|r| r.contains("Setup")) && rows.iter().any(|r| r.contains("1/4")),
+            rows.iter().any(|r| r.contains("Setup")) && rows.iter().any(|r| r.contains("1/5")),
             "{rows:?}"
         );
     }
@@ -301,7 +316,7 @@ mod tests {
         term.draw(|f| draw_strip(f, f.area(), &s, &t, &mut hits, true))
             .unwrap();
         let row = &text(&term, 78, 1)[0];
-        for label in ["Check", "Pipeline", "Review", "Test", "1/4 done"] {
+        for label in ["Check", "Tools", "Pipeline", "Review", "Test", "1/5 done"] {
             assert!(row.contains(label), "{label}: {row}");
         }
         let col = row[..row.find("Review").unwrap()].chars().count() as u16;

@@ -108,8 +108,6 @@ pub fn pad(t: &Theme, s: &str, width: usize) -> String {
 
 /// An input's line with `caret` at its cursor. A masked input shows one bullet per character
 /// (`*` on ASCII terminals) and never its text.
-// Used by the connect step's key entry (issue #63).
-#[allow(dead_code)]
 pub fn input_line(t: &Theme, i: &Input, caret: &str) -> String {
     let bullet = if t.glyphs == Glyphs::Ascii {
         '*'

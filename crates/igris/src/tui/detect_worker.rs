@@ -7,6 +7,8 @@ pub enum Msg {
     /// The scan is at `(done, total)` and about to probe the named thing.
     Progress(usize, usize, &'static str),
     Detected(Box<Snapshot>),
+    /// Tools the scan has no field for that are on `PATH` (OpenClaw).
+    Found(Vec<&'static str>),
     /// The doctor's checks finished.
     Checked(Vec<crate::doctor::Check>),
     /// The sample task finished: what it ended with, or why it could not run.
@@ -46,12 +48,17 @@ where
 
 /// The real probe: this machine, as `igris doctor --json` sees it.
 pub fn spawn_real(tx: Sender<Msg>) {
-    spawn(tx, |progress| {
-        igris_detect::detect_with_progress(
-            &igris_detect::RealHost::new(),
-            &igris_detect::Options::default(),
-            progress,
-        )
+    let found_tx = tx.clone();
+    spawn(tx, move |progress| {
+        use igris_detect::Host;
+        let host = igris_detect::RealHost::new();
+        let snap =
+            igris_detect::detect_with_progress(&host, &igris_detect::Options::default(), progress);
+        let ids = super::tools_screen::found_on_path(&super::tools_screen::extra_ids(), |n| {
+            host.which(n).is_some()
+        });
+        let _ = found_tx.send(Msg::Found(ids));
+        snap
     });
 }
 

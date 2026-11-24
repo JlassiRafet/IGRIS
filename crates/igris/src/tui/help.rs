@@ -32,11 +32,12 @@ pub fn filter<'a>(entries: &'a [HelpEntry], q: &str) -> Vec<&'a HelpEntry> {
         .collect()
 }
 
-const HOW: [&str; 4] = [
+const HOW: [&str; 5] = [
     "1 Check: see what this machine has and fix what is missing.",
-    "2 Pipeline: choose the agents and the check command.",
-    "3 Review: see the exact change; Apply writes igris.toml.",
-    "4 Test: run the checks and, if you like, one sample task.",
+    "2 Tools: pick the workspace, builder, reviewer, decision layer and assistant.",
+    "3 Pipeline: set the check command that proves a task is done.",
+    "4 Review: see the exact change; Apply writes igris.toml.",
+    "5 Test: run the checks and, if you like, one sample task.",
 ];
 
 const MOUSE: [&str; 6] = [

@@ -29,6 +29,8 @@ mod style;
 mod term;
 mod test_screen;
 mod theme;
+mod tools_draw;
+mod tools_screen;
 mod widgets;
 mod wordmark;
 
@@ -99,6 +101,7 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
         f.render_widget(block, a.panel);
         match s.screen {
             Screen::Check => check::draw(f, body, s, t, hits, clickable),
+            Screen::Tools => tools_draw::draw(f, body, s, t, hits, clickable),
             Screen::Pipeline => pipeline_screen::draw(f, body, s, t, hits, clickable),
             Screen::Review => review::draw(f, body, s, t, hits, clickable),
             Screen::Test => test_screen::draw(f, body, s, t, hits, clickable),
@@ -282,7 +285,7 @@ fn context(s: &State) -> Context {
         Some(Overlay::Fix(_)) => Context::List,
         // Both take typed text (the filter), so plain letters are not commands there.
         Some(Overlay::Palette | Overlay::Help) => Context::Input,
-        None if pipeline_screen::editing(s) => Context::Input,
+        None if pipeline_screen::editing(s) || tools_screen::editing(s) => Context::Input,
         None => Context::List,
     }
 }
@@ -322,12 +325,19 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
                 if typed.is_none() && state.overlay.is_none() && pipeline_screen::editing(&state) {
                     pipeline_screen::edit_key(&mut state, k);
                     None
+                } else if typed.is_none()
+                    && state.overlay.is_none()
+                    && tools_screen::editing(&state)
+                {
+                    tools_screen::edit_key(&mut state, k);
+                    None
                 } else {
                     typed.or_else(|| type_key(&mut state, k))
                 }
             }
             Event::Paste(text) => {
                 pipeline_screen::paste(&mut state, &text);
+                tools_screen::paste(&mut state, &text);
                 None
             }
             Event::Mouse(m) => match m.kind {
@@ -442,7 +452,7 @@ mod tests {
     #[test]
     fn at_80x24_the_steps_are_a_strip_and_each_one_is_clickable() {
         let (text, hits) = render(80, 24, &scanned((80, 24)));
-        for label in ["Check", "Pipeline", "Review", "Test"] {
+        for label in ["Check", "Tools", "Pipeline", "Review", "Test"] {
             assert!(text.contains(label), "{label}:\n{text}");
         }
         let (x, y) = row_of(&text, "Pipeline");
@@ -453,7 +463,7 @@ mod tests {
     #[test]
     fn at_100x30_the_steps_are_a_rail_beside_the_panel() {
         let (text, hits) = render(100, 30, &scanned((100, 30)));
-        let (x, y) = row_of(&text, "3  Review");
+        let (x, y) = row_of(&text, "4  Review");
         assert!(x < 22, "the rail is on the left: {x}");
         assert_eq!(hits.at(x, y), Some(Action::Goto(Screen::Review)));
         assert!(
@@ -465,7 +475,11 @@ mod tests {
 
     #[test]
     fn the_next_step_and_the_key_hints_are_on_screen_and_clickable() {
-        let (text, hits) = render(100, 30, &scanned((100, 30)));
+        let mut s = scanned((100, 30));
+        let (text, _) = render(100, 30, &s);
+        assert!(text.contains("▶ Next  Choose your tools"), "{text}");
+        s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
+        let (text, hits) = render(100, 30, &s);
         assert!(text.contains("▶ Next  Set the check command"), "{text}");
         let last = text.lines().last().unwrap();
         assert!(last.contains("q quit") && last.contains("? help"), "{last}");
@@ -530,7 +544,7 @@ mod tests {
         };
         let mut s = scanned((100, 30));
         let (text, _) = render(100, 30, &s);
-        let (x, y) = row_of(&text, "3  Review");
+        let (x, y) = row_of(&text, "4  Review");
         assert_eq!(
             bg(&s, x, y),
             ratatui::style::Color::Reset,

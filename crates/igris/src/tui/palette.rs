@@ -2,8 +2,9 @@
 use super::action::Action;
 use super::state::Screen;
 
-const RUNNABLE: [Action; 9] = [
+const RUNNABLE: [Action; 10] = [
     Action::Goto(Screen::Check),
+    Action::Goto(Screen::Tools),
     Action::Goto(Screen::Pipeline),
     Action::Goto(Screen::Review),
     Action::Goto(Screen::Test),
@@ -38,6 +39,6 @@ mod tests {
 
     #[test]
     fn screens_can_be_reached_by_name() {
-        assert_eq!(entries("go to").len(), 4);
+        assert_eq!(entries("go to").len(), 5);
     }
 }
