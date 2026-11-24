@@ -4,9 +4,16 @@
 //! human line on stderr. Exit codes: 0 done, 3 the task is not done (needs approval, blocked or
 //! failed), 1 error, 2 bad usage.
 
+// Unused until the jobs and the connect step use them (issues #60, #63); the allows go then.
+#[allow(dead_code)]
+mod activity;
 mod check;
+#[allow(dead_code)]
+mod clean;
 mod doctor;
 mod merge;
+#[allow(dead_code)]
+mod secret;
 mod tui;
 
 use clap::{Parser, Subcommand};
