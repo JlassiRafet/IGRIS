@@ -6,7 +6,7 @@ mod action;
 mod apply;
 mod attached;
 mod check;
-mod detect_worker;
+pub(crate) mod detect_worker;
 pub(crate) mod fix;
 mod footer;
 mod form;
