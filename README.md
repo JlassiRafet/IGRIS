@@ -33,27 +33,34 @@ You run it from a terminal, with the keyboard, the mouse, or both. It checks wha
 
 `IGRIS_VERSION` is only needed while IGRIS has pre-releases and no stable one. With Rust installed you can build it instead: `cargo install --git https://github.com/JlassiRafet/IGRIS igris`.
 
-## Checking your machine
+## Setting up, in six steps
 
-The first screen scans in a second or two and lists what it found: your hardware, [Herdr](https://herdr.dev) (it runs each agent in its own pane), the coding agents on your `PATH` and whether they are logged in, the decision layer, Hermes and any local model servers. Each row says ready, needs a step, or optional. Open a row to see the fix; for a login or the Herdr install, IGRIS runs the tool's own documented command after you say yes.
+The rail on the left lists the steps; keys `1` to `6` jump to one, and the `Next` row under the panel names what to do now.
 
-![Check screen: a list of tools with a status on each row](preview/check.png)
+1. **Scan** finds what you already have in a second or two: your hardware, [Herdr](https://herdr.dev) (it runs each agent in its own pane), the coding agents on your `PATH` and whether they are logged in, the decision layer, Hermes and any local model servers. Each row says ready, needs a step, or optional.
+2. **Tools** is where you choose: the workspace (Herdr), the builder, the reviewer, the decision layer and the assistant that takes your requests from chat. "CLI only" is an answer: you then start tasks from the terminal. Press `Enter` on a tool that is missing to install it, `c` to connect it (a login, or an API key typed into a masked box that goes straight to the tool's own command), `f` to filter. IGRIS runs only the tool's own documented command, after you say yes, and stops it if you quit. On a small machine it suggests local models that fit, judged by [llmfit](https://github.com/AlexsJones/llmfit) when it is installed.
+3. **Pipeline** sets the command that proves a task is done, such as `cargo test` or `npm test`. Every field validates as you type and explains itself underneath.
+4. **Verify** runs one live check per chosen tool and shows how long each took. Review stays locked until they pass. The builder, the reviewer and Herdr cannot be skipped. (A check of an agent is a real, tiny model call.)
+5. **Review** shows the exact change before anything is written.
+6. **Test** runs the same checks as `igris doctor`, and can run a small sample task through your own agents.
 
-## Setting up the pipeline
+![Scan screen: a list of tools with a status on each row](preview/check.png)
 
-Pick the builder and the reviewer from the agents it found, and set the command that proves a task is done, such as `cargo test` or `npm test`. Every field validates as you type and explains itself underneath.
+![Tools screen: the assistant group with CLI only chosen](preview/tools.png)
 
 ![A framed input box asking for the check command](preview/pipeline.png)
 
+![Verify screen: every chosen tool answered, with its time](preview/verify.png)
+
 ## Reviewing before anything is written
 
-Review shows the exact change to `igris.toml`, as a diff, before it writes. If the file already exists, the old one is kept as `igris.toml.bak`. You can write to the repository or to your user config.
+Step 5 shows the exact change to `igris.toml`, as a diff, before it writes. If the file already exists, the old one is kept as `igris.toml.bak`. You can write to the repository or to your user config.
 
 ![Review screen: the new igris.toml as a diff and an Apply button](preview/review.png)
 
 ## Testing it
 
-Test runs the same checks as `igris doctor` and can run a small sample task through your own agents, so you know the pipeline works before you give it real work.
+Step 6 runs the same checks as `igris doctor` and can run a small sample task through your own agents, so you know the pipeline works before you give it real work. When the sample is green, a **Next steps** box lists the commands to use next (`igris run`, `igris doctor`, `igris continue`) and, if you chose Hermes or CLI only, how to add the chat skill.
 
 ![Test screen: every check is ready](preview/test.png)
 
@@ -75,7 +82,7 @@ IGRIS answers its four questions, starts the builder in a Herdr pane in its own 
 
 The first time an agent works in a new folder it asks you a question inside its Herdr pane, for example whether you trust the folder. IGRIS reports the task as `blocked`: answer in Herdr, then run `igris continue <id>`.
 
-## Chat with it (optional)
+## Chat with it
 
 [Hermes](https://hermes-agent.nousresearch.com) can take your requests from a chat app such as Telegram and run them through IGRIS. Copy [`examples/hermes/igris/SKILL.md`](examples/hermes/igris/SKILL.md) to `~/.hermes/skills/igris/SKILL.md`. It tells Hermes how to call `igris run`, what the exit codes mean, and to ask you before anything risky or before a merge.
 

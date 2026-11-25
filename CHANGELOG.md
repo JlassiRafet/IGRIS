@@ -4,6 +4,20 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+- A guided setup in six steps: Scan, Tools, Pipeline, Verify, Review, Test (keys `1` to `6`). Tools lists the workspace, builder, reviewer, decision layer and assistant, with the install and connect methods each tool documents (a login, or an API key typed into a masked box that goes to the tool's own command by stdin, never argv or disk). Installs and model pulls run in the background with a timeout and a clean tail, and quitting or closing the terminal stops them.
+- Local-model suggestions that fit the machine, judged by `llmfit` when it is installed (IGRIS's own list; no command is built from llmfit's output).
+- Verify runs one live check per chosen tool and shows its time. Review stays locked until the chosen tools pass; the builder, reviewer and Herdr cannot be skipped.
+- A **Next steps** box on the Test screen after a green sample run, and a tmux test that walks all six steps with fake agents (`scripts/tui-e2e.sh`).
+- `preview/tools.png` and `preview/verify.png`; the other screenshots and the GIF are rebuilt for the six steps.
+
+### Changed
+- The Check screen is titled Scan. Pipeline no longer lists the builder and the reviewer (Tools chooses them) but still validates them.
+- The assistant is a required answer; "CLI only" is one of them. The README's "Chat with it" section is no longer marked optional.
+
+### Fixed
+- A background job (install, pull, check) no longer outlives a closed terminal.
+
 ## [0.1.0-rc1] - 2026-11-23
 
 The first pre-release: the terminal app, the orchestrator and `igris doctor`, with installers for Linux, macOS and Windows.
