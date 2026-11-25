@@ -14,8 +14,6 @@ pub enum Msg {
     /// The sample task finished: what it ended with, or why it could not run.
     Sampled(Result<String, String>),
     /// A background job (an install or a live check) ended.
-    // Read by the Tools step (issues #63, #64).
-    #[allow(dead_code)]
     Job(crate::job::JobId, crate::job::JobEnd),
 }
 

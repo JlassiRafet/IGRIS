@@ -19,6 +19,8 @@ impl Activity {
         self.entries.push(e);
     }
 
+    // Read by the activity view of the last setup step (issue #66); the allow goes then.
+    #[allow(dead_code)]
     pub fn entries(&self) -> &[Entry] {
         &self.entries
     }

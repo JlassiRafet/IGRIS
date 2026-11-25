@@ -2,6 +2,7 @@
 use super::action::Action;
 use super::apply::Change;
 use super::check::CheckUi;
+use super::connect::Connect;
 use super::detect_worker::Msg;
 use super::fix::{Fix, INSTALL_HERDR_ARGV};
 use super::pipeline_screen::PipelineUi;
@@ -67,6 +68,10 @@ pub enum Overlay {
     Palette,
     Fix(FixDialog),
     Confirm(Confirm),
+    /// The methods of one tool, then the hint or the key entry of the chosen one.
+    Connect(Connect),
+    /// A failed live check of this tool: why, what was left alone, the command that fixes it.
+    Failure(&'static str),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -133,8 +138,10 @@ impl State {
                 self.test.sample = Some(r);
                 return;
             }
-            // Taken in by the Tools step once it starts jobs (issues #63, #64).
-            Msg::Job(..) => return,
+            Msg::Job(id, end) => {
+                super::connect::on_job(self, id, end);
+                return;
+            }
         };
         self.scan = None;
         self.check.set(&snap);
@@ -193,6 +200,10 @@ pub enum Effect {
     RunChecks,
     /// Run the sample task on a worker thread.
     RunSample,
+    /// Run the live check of this tool as a background job.
+    Check(&'static str),
+    /// Hand the typed key to the stdin of this fixed command (the loop takes it from the input).
+    StoreKey(&'static [&'static str]),
 }
 
 pub fn update(s: &mut State, a: Action) -> Effect {
@@ -227,6 +238,10 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
         Action::Yes if s.overlay == Some(Overlay::Confirm(Confirm::Install)) => {
             s.overlay = None;
             Effect::RunAttached(INSTALL_HERDR_ARGV)
+        }
+        // Before the generic close below: Esc here goes back a step, and r and s are answers.
+        _ if matches!(s.overlay, Some(Overlay::Connect(_) | Overlay::Failure(_))) => {
+            super::connect::update(s, a)
         }
         Action::No | Action::Cancel if s.overlay.is_some() => {
             s.overlay = None;
@@ -291,6 +306,7 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
         | Action::Activate
         | Action::Cancel
         | Action::Filter
+        | Action::Connect
         | Action::Select(_)
             if s.screen == Screen::Tools =>
         {
@@ -383,6 +399,9 @@ fn open(s: &mut State, o: Overlay) -> Effect {
 
 /// Keys typed into the help filter or the palette. Returns an action when one is chosen.
 pub fn type_key(s: &mut State, key: KeyEvent) -> Option<Action> {
+    if super::connect::entering(s) {
+        return super::connect::entry_key(s, key);
+    }
     let palette = match s.overlay {
         Some(Overlay::Palette) => true,
         Some(Overlay::Help) => false,

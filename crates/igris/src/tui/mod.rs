@@ -6,6 +6,7 @@ mod action;
 mod apply;
 mod attached;
 mod check;
+mod connect;
 pub(crate) mod detect_worker;
 pub(crate) mod fix;
 mod footer;
@@ -46,8 +47,8 @@ use ratatui::{Frame, Terminal};
 use state::{Effect, Overlay, Screen, State, type_key, update};
 use std::error::Error;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use theme::{Env, Theme};
 
@@ -159,9 +160,9 @@ fn draw_next(f: &mut Frame, row: Rect, s: &State, t: &Theme) {
 
 /// A centred box. A click outside it closes the overlay; a click inside keeps it open.
 fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hits: &mut HitMap) {
-    let (title, lines, w, h): (&str, Vec<Line>, u16, u16) = match o {
+    let (title, lines, w, h): (String, Vec<Line>, u16, u16) = match o {
         Overlay::Help => (
-            "Help",
+            "Help".into(),
             help::lines(&s.query),
             76,
             area.height.saturating_sub(4),
@@ -176,20 +177,20 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
                 lines.push(Line::from("  nothing matches"));
             }
             (
-                "Quick actions",
+                "Quick actions".into(),
                 lines,
                 50,
                 (rows.len() as u16 + 4).min(area.height),
             )
         }
         Overlay::Confirm(state::Confirm::Discard) => (
-            "Discard changes?",
+            "Discard changes?".into(),
             vec![Line::from("You have unsaved changes. Quit anyway? (y / n)")],
             56,
             5,
         ),
         Overlay::Confirm(state::Confirm::SampleTask) => (
-            "Run a sample task?",
+            "Run a sample task?".into(),
             vec![
                 Line::from("This starts your builder and reviewer agents on a throwaway"),
                 Line::from("repository, so it uses your own agent subscriptions or keys."),
@@ -200,7 +201,7 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
             8,
         ),
         Overlay::Confirm(state::Confirm::Install) => (
-            "Install Herdr?",
+            "Install Herdr?".into(),
             vec![
                 Line::from("This runs on your terminal:"),
                 Line::from(format!("  {}", fix::INSTALL_HERDR.0)),
@@ -222,7 +223,17 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
             }));
             lines.push(Line::from(""));
             lines.push(Line::from("Enter runs the chosen one. Esc closes."));
-            (d.title.as_str(), lines, 88, d.fixes.len() as u16 + 6)
+            (d.title.clone(), lines, 88, d.fixes.len() as u16 + 6)
+        }
+        Overlay::Connect(c) => {
+            let (title, text) = connect::overlay_text(s, c, t.glyphs == theme::Glyphs::Ascii);
+            let h = text.len() as u16 + 2;
+            (title, text.into_iter().map(Line::from).collect(), 88, h)
+        }
+        Overlay::Failure(id) => {
+            let (title, text) = connect::failure_text(s, id, t.glyphs == theme::Glyphs::Ascii);
+            let h = text.len() as u16 + 2;
+            (title, text.into_iter().map(Line::from).collect(), 72, h)
         }
     };
     let w = w.min(area.width);
@@ -235,13 +246,16 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
     );
     hits.add(area, Action::Cancel);
     hits.add(r, Action::Stay);
-    if let Overlay::Fix(d) = o {
-        for i in 0..d.fixes.len() {
-            hits.add(
-                Rect::new(r.x + 1, r.y + 3 + i as u16, r.width.saturating_sub(2), 1),
-                Action::Select(i),
-            );
-        }
+    let rows = match o {
+        Overlay::Fix(d) => d.fixes.len(),
+        Overlay::Connect(c) => connect::clickable_rows(s, c),
+        _ => 0,
+    };
+    for i in 0..rows {
+        hits.add(
+            Rect::new(r.x + 1, r.y + 3 + i as u16, r.width.saturating_sub(2), 1),
+            Action::Select(i),
+        );
     }
     f.render_widget(Clear, r);
     let scroll = if matches!(o, Overlay::Help) {
@@ -252,7 +266,7 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
     f.render_widget(
         Paragraph::new(lines)
             .scroll((scroll, 0))
-            .block(widgets::panel(t, title, true)),
+            .block(widgets::panel(t, &title, true)),
         r,
     );
 }
@@ -279,10 +293,24 @@ fn stop_flag() -> std::io::Result<Arc<AtomicBool>> {
     Ok(flag)
 }
 
+/// A paste goes to the key entry when it is open (and only there: a key must never land in a
+/// field that is drawn or saved), otherwise to the field being edited.
+fn route_paste(s: &mut State, text: &str) {
+    if connect::entering(s) {
+        connect::paste(s, text);
+    } else {
+        pipeline_screen::paste(s, text);
+        tools_screen::paste(s, text);
+    }
+}
+
 fn context(s: &State) -> Context {
     match s.overlay {
         Some(Overlay::Confirm(_)) => Context::Dialog,
-        Some(Overlay::Fix(_)) => Context::List,
+        Some(Overlay::Fix(_) | Overlay::Failure(_)) => Context::List,
+        // The key is typed here: plain letters are text, not commands.
+        Some(Overlay::Connect(_)) if connect::entering(s) => Context::Input,
+        Some(Overlay::Connect(_)) => Context::List,
         // Both take typed text (the filter), so plain letters are not commands there.
         Some(Overlay::Palette | Overlay::Help) => Context::Input,
         None if pipeline_screen::editing(s) || tools_screen::editing(s) => Context::Input,
@@ -303,6 +331,9 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let mut hits = HitMap::default();
     let started = std::time::Instant::now();
     let (tx, rx) = std::sync::mpsc::channel();
+    // Background commands: dropping the set (any way out of this function) kills them all.
+    let mut jobs = crate::job::JobSet::default();
+    let activity = Arc::new(Mutex::new(crate::activity::Activity::default()));
     state.detecting = true;
     detect_worker::spawn_real(tx.clone());
     loop {
@@ -336,8 +367,7 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
                 }
             }
             Event::Paste(text) => {
-                pipeline_screen::paste(&mut state, &text);
-                tools_screen::paste(&mut state, &text);
+                route_paste(&mut state, &text);
                 None
             }
             Event::Mouse(m) => match m.kind {
@@ -373,6 +403,16 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
                 state.detecting = true;
                 detect_worker::spawn_real(tx.clone());
             }
+            Some(Effect::Check(id)) => {
+                connect::spawn_check(&mut jobs, &tx, &activity, &state, id);
+            }
+            Some(Effect::StoreKey(argv)) => {
+                if let Some(id) = connect::store_key(&mut state, argv, &activity)
+                    && let Effect::Check(id) = connect::begin_check(&mut state, id)
+                {
+                    connect::spawn_check(&mut jobs, &tx, &activity, &state, id);
+                }
+            }
             Some(Effect::RunChecks) => detect_worker::spawn_checks(tx.clone(), state.repo.clone()),
             Some(Effect::RunSample) => detect_worker::spawn_sample(tx.clone(), state.repo.clone()),
             Some(Effect::Write(change)) => {
@@ -400,6 +440,98 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
     use ratatui::backend::TestBackend;
+
+    #[test]
+    fn a_pasted_key_goes_only_to_the_key_entry() {
+        use crate::tui::tools_screen::{
+            Edit,
+            tests::{app, both},
+        };
+        let mut s = app(both(), None);
+        s.tools.edit = Some(Edit::Filter); // a field was being edited when the box opened
+        connect::open(&mut s, "codex");
+        update(&mut s, Action::Down); // codex rows: Existing login, Log in, API key
+        update(&mut s, Action::Down);
+        update(&mut s, Action::Activate);
+        assert!(connect::entering(&s));
+        route_paste(&mut s, "sk-secret\n");
+        assert_eq!(s.tools.key.value(), "sk-secret");
+        assert_eq!(s.tools.filter.value(), "", "the filter is drawn on screen");
+        s.overlay = None;
+        route_paste(&mut s, "abc");
+        assert_eq!(
+            s.tools.filter.value(),
+            "abc",
+            "other pastes still reach their field"
+        );
+    }
+
+    #[test]
+    fn typing_a_key_makes_every_letter_text_not_a_command() {
+        let at = |step| {
+            let mut s = State::new((100, 30));
+            s.overlay = Some(Overlay::Connect(connect::Connect {
+                tool: "codex",
+                step,
+                cursor: 0,
+            }));
+            s
+        };
+        let entry = at(connect::Step::Entry);
+        assert_eq!(context(&entry), Context::Input);
+        for c in ['q', 'r', 's', 'c', 'f'] {
+            let k = ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char(c),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            );
+            assert_eq!(
+                key_to_action(context(&entry), k),
+                None,
+                "{c} would be a command"
+            );
+        }
+        assert_eq!(context(&at(connect::Step::Methods)), Context::List);
+        assert_eq!(context(&at(connect::Step::Hint)), Context::List);
+        let mut failure = State::new((100, 30));
+        failure.overlay = Some(Overlay::Failure("claude"));
+        assert_eq!(context(&failure), Context::List);
+    }
+
+    #[test]
+    fn the_failure_box_and_the_method_list_are_drawn_and_the_rows_clickable() {
+        use crate::tui::tools_screen::{CheckState, Failure};
+        let mut s =
+            crate::tui::tools_screen::tests::app(crate::tui::tools_screen::tests::both(), None);
+        s.tools.checks.insert(
+            "claude".into(),
+            CheckState::Failed(Failure {
+                reason: "not logged in".into(),
+                unchanged: "no setting was changed.".into(),
+                fix: Some("claude auth login".into()),
+            }),
+        );
+        s.overlay = Some(Overlay::Failure("claude"));
+        let (text, _) = render(100, 30, &s);
+        for want in [
+            "✗ claude: not logged in.",
+            "Unchanged: no setting was changed.",
+            "Fix: claude auth login",
+        ] {
+            assert!(text.contains(want), "{want} missing:\n{text}");
+        }
+        connect::open(&mut s, "claude");
+        let (text, hits) = render(100, 30, &s);
+        assert!(
+            text.contains("Connect Claude Code") && text.contains("1. Existing login"),
+            "{text}"
+        );
+        let clicks = (0..30u16)
+            .flat_map(|y| (0..100u16).map(move |x| (x, y)))
+            .filter_map(|(x, y)| hits.at(x, y))
+            .filter(|a| matches!(a, Action::Select(_)))
+            .count();
+        assert!(clicks > 0, "the method rows can be clicked");
+    }
 
     fn render(w: u16, h: u16, s: &State) -> (String, HitMap) {
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();

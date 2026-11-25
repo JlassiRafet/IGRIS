@@ -4,22 +4,16 @@
 //! human line on stderr. Exit codes: 0 done, 3 the task is not done (needs approval, blocked or
 //! failed), 1 error, 2 bad usage.
 
-// Unused until the jobs and the connect step use them (issues #60, #63); the allows go then.
-#[allow(dead_code)]
 mod activity;
-// The Tools screen reads names, groups and hints; the commands wait for the connect step and the
-// installs (issues #63, #64); the allow goes then.
+// The Tools screen and the connect step read most of it; the installs (issue #64) read the rest,
+// and the allow goes then.
 #[allow(dead_code)]
 mod catalog;
 mod check;
-#[allow(dead_code)]
 mod clean;
 mod doctor;
-// Unused until the Tools step starts installs and checks (issues #63, #64).
-#[allow(dead_code)]
 mod job;
 mod merge;
-#[allow(dead_code)]
 mod secret;
 mod tui;
 

@@ -22,6 +22,10 @@ pub enum Action {
     Toggle,
     /// Type to filter the focused list (the Tools screen).
     Filter,
+    /// Connect or check the focused tool (the Tools screen).
+    Connect,
+    /// Skip the check of a tool that failed.
+    Skip,
     Cancel,
     Yes,
     No,
@@ -55,6 +59,8 @@ impl Action {
         Action::Activate,
         Action::Toggle,
         Action::Filter,
+        Action::Connect,
+        Action::Skip,
         Action::Cancel,
         Action::Yes,
         Action::No,
@@ -83,6 +89,8 @@ impl Action {
             Action::Activate => "Open or press the focused item",
             Action::Toggle => "Fold, unfold or toggle",
             Action::Filter => "Type to filter the list",
+            Action::Connect => "Connect or check the focused tool",
+            Action::Skip => "Skip the check of the tool that failed",
             Action::Cancel => "Close, cancel or go back",
             Action::Yes => "Yes",
             Action::No => "No",

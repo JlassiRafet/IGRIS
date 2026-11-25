@@ -115,6 +115,8 @@ pub const BINDINGS: &[Binding] = &[
     b(Scope::Browse, KeyCode::Enter, NONE, Action::Activate),
     b(Scope::Browse, KeyCode::Char(' '), NONE, Action::Toggle),
     b(Scope::Browse, KeyCode::Char('f'), NONE, Action::Filter),
+    b(Scope::Browse, KeyCode::Char('c'), NONE, Action::Connect),
+    b(Scope::Browse, KeyCode::Char('s'), NONE, Action::Skip),
     b(Scope::Browse, KeyCode::Esc, NONE, Action::Cancel),
     b(Scope::Dialog, KeyCode::Char('y'), NONE, Action::Yes),
     b(Scope::Dialog, KeyCode::Enter, NONE, Action::Yes),

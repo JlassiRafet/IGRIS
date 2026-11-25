@@ -10,6 +10,7 @@ use igris_core::config::KINDS;
 use igris_detect::{Login, Snapshot};
 use ratatui::crossterm::event::KeyEvent;
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Instant;
 
 /// The groups in the order the step walks them. Agents run inside Herdr, so it comes first.
 pub const GROUPS: [Group; 5] = [
@@ -70,9 +71,7 @@ pub enum AssistantChoice {
     CliOnly,
 }
 
-/// A live check of one tool, filled in by the connect and verify steps (issue #63).
-// Built by the live checks of the connect step (issue #63); the allow goes then.
-#[allow(dead_code)]
+/// A live check of one tool, filled in by the connect and verify steps.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CheckState {
     Pending,
@@ -83,8 +82,6 @@ pub enum CheckState {
 }
 
 /// The failure box: why, what was left as it was, and the exact command to fix it.
-// Built by the live checks of the connect step (issue #63); the allow goes then.
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failure {
     pub reason: String,
@@ -111,6 +108,12 @@ pub struct ToolsUi {
     pub checks: BTreeMap<String, CheckState>,
     /// Tools found on `PATH` that the scan does not know (OpenClaw).
     pub found: BTreeSet<&'static str>,
+    /// The key being typed in the connect step: masked, and emptied the moment it is taken.
+    pub key: Input,
+    /// When each running check started, for its latency.
+    pub started: BTreeMap<&'static str, Instant>,
+    /// The tool whose key is being handed to its store command.
+    pub storing: Option<&'static str>,
 }
 
 impl Default for ToolsUi {
@@ -124,6 +127,9 @@ impl Default for ToolsUi {
             assistant: AssistantChoice::Unset,
             checks: BTreeMap::new(),
             found: BTreeSet::new(),
+            key: Input::masked(),
+            started: BTreeMap::new(),
+            storing: None,
         }
     }
 }
@@ -155,6 +161,17 @@ fn installed(t: &Tool, snap: &Snapshot, ui: &ToolsUi) -> bool {
         "herdr" => snap.herdr.found,
         "hermes" => snap.hermes.found,
         id => snap.agents.iter().any(|a| a.kind == id && a.found) || ui.found.contains(id),
+    }
+}
+
+/// Whether the scan read a login (or, for Hermes, a provider) for this tool.
+pub fn login_read(t: &Tool, snap: &Snapshot) -> bool {
+    match t.id {
+        "hermes" => snap.hermes.provider.is_some(),
+        id => snap
+            .agents
+            .iter()
+            .any(|a| a.kind == id && a.login == Login::LoggedIn),
     }
 }
 
@@ -338,6 +355,7 @@ pub fn update(s: &mut State, a: Action) -> Effect {
         Action::NextField => focus(s, (g + 1) % GROUPS.len()),
         Action::PrevField => focus(s, (g + GROUPS.len() - 1) % GROUPS.len()),
         Action::Filter => s.tools.edit = Some(Edit::Filter),
+        Action::Connect => return open_connect(s),
         Action::Cancel => clear_filter(s),
         Action::Select(n) => {
             let (group, row) = (n / 1000, n % 1000);
@@ -397,7 +415,7 @@ fn activate(s: &mut State) -> Effect {
         } else {
             AssistantChoice::Tool(row.id)
         };
-        return Effect::None;
+        return connect_if_needed(s, &row);
     }
     let Some(form) = s.pipeline.form.as_mut() else {
         s.toast = Some(READ_ONLY.into());
@@ -422,6 +440,42 @@ fn activate(s: &mut State) -> Effect {
         Group::Assistant => {}
     }
     super::pipeline_screen::refresh(s);
+    connect_if_needed(s, &row)
+}
+
+/// A tool that is installed but not ready, and has a way to connect, opens its connect overlay.
+fn connect_if_needed(s: &mut State, row: &Row) -> Effect {
+    let needs = matches!(
+        row.status,
+        ToolStatus::NeedsStep | ToolStatus::InstalledLoginUnverified
+    );
+    if needs && tool(row.id).is_some_and(|t| !t.methods.is_empty() || t.check.is_some()) {
+        super::connect::open(s, row.id);
+    }
+    Effect::None
+}
+
+/// `c`: the connect overlay of the focused row, also for a ready tool (to run its live check).
+fn open_connect(s: &mut State) -> Effect {
+    let Some(snap) = &s.snapshot else {
+        return Effect::None;
+    };
+    let g = s.tools.group;
+    let list = rows(g, snap, &s.tools, s.pipeline.form.as_ref());
+    let Some(row) = list.get(s.tools.cursor[index(g)]).cloned() else {
+        return Effect::None;
+    };
+    let Some(t) = tool(row.id).filter(|_| row.pickable) else {
+        s.toast = Some(format!("{}: {}.", row.name, row.status.word()));
+        return Effect::None;
+    };
+    if row.status == ToolStatus::NotInstalled {
+        s.toast = Some(format!("{} is not installed. Install it first.", row.name));
+    } else if t.methods.is_empty() && t.check.is_none() {
+        s.toast = Some(format!("{} has nothing to connect.", row.name));
+    } else {
+        super::connect::open(s, t.id);
+    }
     Effect::None
 }
 
