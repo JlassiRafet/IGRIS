@@ -38,6 +38,16 @@ fn llmfits_ollama_name_is_never_used() {
 }
 
 #[test]
+fn no_command_is_built_from_llmfit_output() {
+    // Hostile text in every field llmfit fills: the pull argv is still the table's, element for element.
+    let hostile = r#"{"models":[{"name":"x; touch /tmp/pwned","ollama_name":"$(touch /tmp/pwned)","fit_level":"Good","runnable":true,"memory_required_gb":1.0}]}"#;
+    let r = recommend(&with_llmfit().cmd(INFO_LINE, hostile));
+    let c = r.suggestions[0].candidate;
+    assert_eq!(c.pull, ["ollama", "pull", "qwen3:4b-instruct-2507-q4_K_M"]);
+    assert!(c.pull.iter().all(|a| !a.contains("pwned")));
+}
+
+#[test]
 fn no_llmfit_gives_every_candidate_with_unknown_fit_and_a_reason() {
     let r = recommend(&FakeHost::linux());
     match &r.source {
@@ -68,11 +78,13 @@ static TWO: &[Candidate] = &[
     Candidate {
         hf_name: "Example/Missing-Model",
         tag: "missing:1b",
+        pull: &["ollama", "pull", "missing:1b"],
         why: "test",
     },
     Candidate {
         hf_name: "Qwen/Qwen3-4B-Instruct-2507",
         tag: "qwen3:4b-instruct-2507-q4_K_M",
+        pull: &["ollama", "pull", "qwen3:4b-instruct-2507-q4_K_M"],
         why: "test",
     },
 ];

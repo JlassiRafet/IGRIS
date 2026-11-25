@@ -13,6 +13,8 @@ pub struct Candidate {
     /// The Ollama tag to pull. Never taken from llmfit's `ollama_name`, which may differ (it
     /// names another quantisation).
     pub tag: &'static str,
+    /// The whole pull command, fixed here: the only argv the app ever runs for a model.
+    pub pull: &'static [&'static str],
     pub why: &'static str,
 }
 
@@ -20,6 +22,7 @@ pub struct Candidate {
 pub static CANDIDATES: &[Candidate] = &[Candidate {
     hf_name: "Qwen/Qwen3-4B-Instruct-2507",
     tag: "qwen3:4b-instruct-2507-q4_K_M",
+    pull: &["ollama", "pull", "qwen3:4b-instruct-2507-q4_K_M"],
     why: "calls tools through Hermes (igris run), checked 2026-11-23",
 }];
 
@@ -41,7 +44,7 @@ pub struct Parsed {
     pub tps: Option<f32>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Suggestion {
     pub candidate: &'static Candidate,
     pub fit: Fit,
@@ -50,13 +53,13 @@ pub struct Suggestion {
     pub tps: Option<f32>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
     Llmfit { version: String },
     Fallback { reason: String },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Report {
     pub source: Source,
     pub suggestions: Vec<Suggestion>,
@@ -197,6 +200,11 @@ mod tests {
         assert!(!CANDIDATES.is_empty() && CANDIDATES.len() <= 5);
         for c in CANDIDATES {
             assert!(!c.hf_name.is_empty() && !c.tag.is_empty() && !c.why.is_empty());
+            assert_eq!(
+                c.pull,
+                ["ollama", "pull", c.tag],
+                "the pull command is the table's tag"
+            );
         }
     }
 }

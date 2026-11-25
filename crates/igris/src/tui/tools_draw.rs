@@ -21,6 +21,8 @@ use ratatui::widgets::Paragraph;
 const SIDE_BY_SIDE: u16 = 100;
 /// The tallest the focused row's detail strip needs, and the least height that shows it.
 const STRIP_H: u16 = 4;
+/// A local model's row has more to say (why, fit, pull command, fallback), so the strip may grow.
+const STRIP_MAX: u16 = 8;
 const STRIP_MIN: u16 = 16;
 
 fn title(g: Group) -> &'static str {
@@ -177,7 +179,11 @@ fn pane(
         return;
     }
     let list = rows(g, snap, &s.tools, s.pipeline.form.as_ref());
-    let all = super::tools_screen::all_rows(g, snap, &s.tools, s.pipeline.form.as_ref()).len();
+    // The local models are suggestions under the assistants, not assistants: they are not counted.
+    let all = super::tools_screen::all_rows(g, snap, &s.tools, s.pipeline.form.as_ref())
+        .iter()
+        .filter(|r| r.model.is_none())
+        .count();
     let head = Rect::new(area.x, area.y, area.width, 1);
     f.render_widget(Paragraph::new(pane_header(t, s, g, list.len(), all)), head);
     if clickable {
@@ -280,11 +286,14 @@ fn detail_lines(t: &Theme, s: &State, width: usize) -> Vec<Line<'static>> {
                 v.push(Line::styled(passed_line(tl, *ms), t.style(Role::Ok)));
             }
             Some(CheckState::Failed(f)) => {
-                let first = failure_lines(tl, f).swap_remove(0);
+                let first = failure_lines(tl.id, f).swap_remove(0);
                 v.push(Line::styled(fit(t, &first, width * 2), t.style(Role::Bad)));
             }
             _ => {}
         }
+    }
+    for line in r.detail.lines() {
+        v.push(Line::styled(fit(t, line, width * 2), t.style(Role::Dim)));
     }
     if r.id == "herdr" {
         v.push(Line::styled(
@@ -354,7 +363,12 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
             1.min(area.height.saturating_sub(1)),
         ),
     );
-    let strip = if area.height >= STRIP_MIN { STRIP_H } else { 0 };
+    let strip = if area.height >= STRIP_MIN {
+        let need = detail_lines(t, s, area.width as usize).len() as u16 + 1; // and the rule
+        need.clamp(STRIP_H, STRIP_MAX).min(area.height / 3)
+    } else {
+        0
+    };
     let top = 3.min(area.height);
     let body = Rect::new(
         area.x,

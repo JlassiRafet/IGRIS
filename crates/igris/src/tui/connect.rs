@@ -5,7 +5,7 @@ use super::action::Action;
 use super::detect_worker::Msg;
 use super::input::{Input, InputEvent};
 use super::state::{Effect, Overlay, State};
-use super::tools_screen::{CheckState, Failure, login_read};
+use super::tools_screen::{CheckState, Failure, Install, login_read};
 use crate::activity::Activity;
 use crate::catalog::{MethodKind, PING, TOOLS, Tool, tool};
 use crate::clean::strip_escapes;
@@ -134,7 +134,7 @@ fn clean(text: &str) -> String {
     one.trim().to_string()
 }
 
-fn reason_of(end: &JobEnd, ms: u64) -> String {
+pub(super) fn reason_of(end: &JobEnd, ms: u64) -> String {
     let last = || {
         end.tail
             .iter()
@@ -180,9 +180,9 @@ pub fn check_outcome(t: &Tool, end: &JobEnd, ms: u64) -> CheckState {
 }
 
 /// The failure box: why, what was left alone, the command that fixes it (when there is one).
-pub fn failure_lines(t: &Tool, f: &Failure) -> Vec<String> {
+pub fn failure_lines(id: &str, f: &Failure) -> Vec<String> {
     let mut v = vec![
-        format!("✗ {}: {}.", t.id, clean(&f.reason).trim_end_matches('.')),
+        format!("✗ {id}: {}.", clean(&f.reason).trim_end_matches('.')),
         format!("Unchanged: {}", clean(&f.unchanged)),
     ];
     if let Some(fix) = &f.fix {
@@ -274,19 +274,53 @@ pub fn overlay_text(s: &State, c: &Connect, ascii: bool) -> (String, Vec<String>
     (title, lines)
 }
 
+/// The failed check of `id`, or else its failed install.
+fn failure_of<'a>(s: &'a State, id: &str) -> Option<&'a Failure> {
+    match (s.tools.checks.get(id), s.tools.installs.get(id)) {
+        (Some(CheckState::Failed(f)), _) | (_, Some(Install::Failed(f))) => Some(f),
+        _ => None,
+    }
+}
+
+fn install_failed(s: &State, id: &str) -> bool {
+    matches!(s.tools.installs.get(id), Some(Install::Failed(_)))
+}
+
 /// The title and lines of the failure box of `id`.
 pub fn failure_text(s: &State, id: &'static str, ascii: bool) -> (String, Vec<String>) {
-    let title = "Check failed".to_string();
-    let (Some(t), Some(CheckState::Failed(f))) = (tool(id), s.tools.checks.get(id)) else {
+    let install = install_failed(s, id);
+    let title = if install {
+        "Install failed"
+    } else {
+        "Check failed"
+    }
+    .to_string();
+    let Some(f) = failure_of(s, id) else {
         return (title, vec!["Nothing failed.".into()]);
     };
-    let mut v: Vec<String> = failure_lines(t, f)
+    let mut v: Vec<String> = failure_lines(id, f)
         .into_iter()
         .map(|l| if ascii { l.replace('✗', "x") } else { l })
         .collect();
     v.push(String::new());
-    v.push("r checks again, s skips this tool, Esc goes back.".into());
+    v.push(
+        if install {
+            "r scans again, s skips this tool, Esc closes."
+        } else {
+            "r checks again, s skips this tool, Esc goes back."
+        }
+        .into(),
+    );
     (title, v)
+}
+
+/// Show the failure of `id`: the box when nothing else is open, else its first line as a toast.
+pub fn show_failure(s: &mut State, id: &'static str) {
+    if s.overlay.is_none() {
+        s.overlay = Some(Overlay::Failure(id));
+    } else {
+        s.toast = failure_of(s, id).and_then(|f| failure_lines(id, f).into_iter().next());
+    }
 }
 
 /// Open the connect overlay of `tool` on its method list.
@@ -318,14 +352,27 @@ pub fn begin_check(s: &mut State, id: &'static str) -> Effect {
 pub fn update(s: &mut State, a: Action) -> Effect {
     match s.overlay.clone() {
         Some(Overlay::Failure(id)) => match a {
+            Action::Rescan if install_failed(s, id) => {
+                s.overlay = None;
+                if s.detecting {
+                    return Effect::None;
+                }
+                s.detecting = true;
+                Effect::Rescan
+            }
             Action::Rescan => begin_check(s, id),
             Action::Skip => {
+                s.tools.installs.remove(id);
                 s.tools.checks.insert(id.to_string(), CheckState::Skipped);
                 s.overlay = None;
                 Effect::None
             }
             Action::Cancel | Action::No => {
-                open(s, id);
+                if install_failed(s, id) {
+                    s.overlay = None;
+                } else {
+                    open(s, id);
+                }
                 Effect::None
             }
             _ => Effect::None,
@@ -416,20 +463,18 @@ pub fn on_job(s: &mut State, id: JobId, end: JobEnd) {
     let outcome = check_outcome(t, &end, ms);
     match &outcome {
         CheckState::Passed { ms } => s.toast = Some(passed_line(t, *ms)),
-        CheckState::Failed(f) => {
-            if s.overlay.is_none() {
-                s.overlay = Some(Overlay::Failure(t.id));
-            } else {
-                s.toast = failure_lines(t, f).into_iter().next();
-            }
-        }
+        CheckState::Failed(_) => {}
         CheckState::Pending => s.toast = Some("Cancelled".into()),
         CheckState::Running | CheckState::Skipped => {}
     }
+    let failed = matches!(outcome, CheckState::Failed(_));
     if outcome == CheckState::Pending {
         s.tools.checks.remove(t.id);
     } else {
         s.tools.checks.insert(t.id.to_string(), outcome);
+    }
+    if failed {
+        show_failure(s, t.id);
     }
 }
 
@@ -725,7 +770,7 @@ mod tests {
             panic!("{:?}", s.tools.checks)
         };
         assert_eq!(
-            failure_lines(t("claude"), &f),
+            failure_lines("claude", &f),
             [
                 "✗ claude: not logged in.",
                 "Unchanged: no setting was changed.",
@@ -881,7 +926,7 @@ mod tests {
             panic!()
         };
         let (_, shown) = failure_text(&s, "claude", false);
-        for line in failure_lines(t("claude"), &f).iter().chain(&shown) {
+        for line in failure_lines("claude", &f).iter().chain(&shown) {
             assert!(!line.chars().any(char::is_control), "{line:?}");
         }
         assert!(f.reason.contains("boom"));

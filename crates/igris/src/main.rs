@@ -5,8 +5,9 @@
 //! failed), 1 error, 2 bad usage.
 
 mod activity;
-// The Tools screen and the connect step read most of it; the installs (issue #64) read the rest,
-// and the allow goes then.
+// Catalog data nothing reads yet: `verified` and each method's `id` and `docs` are the record of
+// what was checked (read by the tests and the audit of issue #66), and `Local` waits for the local
+// server probe (issue #73).
 #[allow(dead_code)]
 mod catalog;
 mod check;

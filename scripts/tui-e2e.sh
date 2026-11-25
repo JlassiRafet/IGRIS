@@ -84,6 +84,25 @@ if [ "$ended" != 1 ]; then pkill -f -- "--repo $HUP_REPO" || true; rm -rf "$HUP_
 rm -rf "$HUP_REPO"
 echo "ok  closing the terminal ends igris"
 
+# Closing the terminal must also kill a running live check. The fake `claude` answers the scan's probes
+# at once and sleeps for its one check call, so a left-over `sleep 60173` means the job outlived igris.
+FAKE=$(mktemp -d)
+printf '#!/bin/sh\ncase "$1" in -p) exec sleep 60173 ;; *) echo claude; exit 1 ;; esac\n' > "$FAKE/claude"
+chmod +x "$FAKE/claude"
+JOB_REPO=$(mktemp -d)
+git -C "$JOB_REPO" init -q -b main
+tmux new-session -d -s "$S-job" -x 100 -y 30 "env PATH=$FAKE:\$PATH HOME=$HOME_DIR COLORTERM=truecolor '$BIN' --repo '$JOB_REPO'; sleep 30"
+for _ in $(seq 1 600); do tmux capture-pane -t "$S-job" -p | grep -q "optional" && break; sleep 0.1; done
+tmux send-keys -t "$S-job" 2 Tab c End Enter
+for _ in $(seq 1 100); do pgrep -f "sleep 60173" >/dev/null && break; sleep 0.1; done
+pgrep -f "sleep 60173" >/dev/null || { tmux capture-pane -t "$S-job" -p; rm -rf "$FAKE" "$JOB_REPO"; echo "FAIL: the live check never started"; exit 1; }
+tmux kill-session -t "$S-job"
+killed=0
+for _ in $(seq 1 50); do pgrep -f "sleep 60173" >/dev/null || { killed=1; break; }; sleep 0.1; done
+if [ "$killed" != 1 ]; then pkill -f "sleep 60173" || true; rm -rf "$FAKE" "$JOB_REPO"; echo "FAIL: a running check outlived its terminal"; exit 1; fi
+rm -rf "$FAKE" "$JOB_REPO"
+echo "ok  closing the terminal kills a running check"
+
 # Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
 distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1
   local sess="igris-e2e-m$$"

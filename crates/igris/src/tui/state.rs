@@ -52,6 +52,10 @@ pub enum Confirm {
     Discard,
     Install,
     SampleTask,
+    /// Install this tool from the Tools step, in the background.
+    InstallTool(&'static str),
+    /// Pull this model (a place in the fit table) with Ollama, in the background.
+    Pull(usize),
 }
 
 /// What a row that needs a step offers, kept whole so a rescan cannot change it under the dialog.
@@ -112,6 +116,8 @@ pub struct State {
     pub toast: Option<String>,
     /// Counts loop turns, for the spinner.
     pub tick: usize,
+    /// A background install or download finished: scan again as soon as no scan is running.
+    pub rescan_wanted: bool,
 }
 
 impl State {
@@ -138,21 +144,34 @@ impl State {
                 self.test.sample = Some(r);
                 return;
             }
+            Msg::Fit(report) => {
+                self.tools.fit = Some(*report);
+                self.show_fit();
+                return;
+            }
             Msg::Job(id, end) => {
-                super::connect::on_job(self, id, end);
+                super::install::dispatch(self, id, end);
                 return;
             }
         };
         self.scan = None;
         self.check.set(&snap);
+        self.show_fit();
         if self.pipeline.form.is_none() && self.pipeline.broken.is_none() {
             // The form starts once, from the first scan; later scans never overwrite edits.
             self.applied = self.pipeline.load(&self.repo, &snap);
             super::pipeline_screen::refresh(self);
         }
         self.snapshot = Some(*snap);
+        super::install::after_scan(self);
         self.blocker = self.check.view.as_ref().and_then(super::check::blocker);
         self.detecting = false;
+    }
+
+    /// Put the fit line under "Your machine" (the view is rebuilt by every scan).
+    fn show_fit(&mut self) {
+        let line = self.tools.fit.as_ref().map(super::install::fit_line);
+        self.check.set_fit(line);
     }
 
     pub fn new(size: (u16, u16)) -> State {
@@ -180,6 +199,7 @@ impl State {
             hover: None,
             toast: None,
             tick: 0,
+            rescan_wanted: false,
         }
     }
 }
@@ -204,6 +224,10 @@ pub enum Effect {
     Check(&'static str),
     /// Hand the typed key to the stdin of this fixed command (the loop takes it from the input).
     StoreKey(&'static [&'static str]),
+    /// Run the install command of this tool as a background job.
+    Install(&'static str),
+    /// Pull this model (a place in the fit table) as a background job.
+    Pull(usize),
 }
 
 pub fn update(s: &mut State, a: Action) -> Effect {
@@ -234,6 +258,12 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
             s.test.sample_running = true;
             s.test.sample = None;
             Effect::RunSample
+        }
+        Action::Yes if matches!(s.overlay, Some(Overlay::Confirm(Confirm::InstallTool(_)))) => {
+            super::install::start_install(s)
+        }
+        Action::Yes if matches!(s.overlay, Some(Overlay::Confirm(Confirm::Pull(_)))) => {
+            super::install::start_pull(s)
         }
         Action::Yes if s.overlay == Some(Overlay::Confirm(Confirm::Install)) => {
             s.overlay = None;
