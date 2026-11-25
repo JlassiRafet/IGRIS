@@ -6,7 +6,7 @@
 
 mod tools;
 
-pub use tools::TOOLS;
+pub use tools::{PING, TOOLS};
 
 /// The five groups of the Tools step, in the order the step shows them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

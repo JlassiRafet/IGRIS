@@ -34,8 +34,6 @@ impl std::fmt::Debug for Input {
 impl Input {
     /// An empty field for a key. It starts with room for a long key so typing does not reallocate
     /// (and leave an older copy of the text behind).
-    // Used by the connect step's key entry (issue #63).
-    #[allow(dead_code)]
     pub fn masked() -> Input {
         Input {
             text: String::with_capacity(256),
@@ -55,8 +53,6 @@ impl Input {
 
     /// Hand the typed text over as a `Secret` and leave the field empty. The text moves; it is not
     /// copied, and the `Secret` overwrites it when dropped.
-    // Used by the connect step's key entry (issue #63).
-    #[allow(dead_code)]
     pub fn take_secret(&mut self) -> Secret {
         self.cursor = 0;
         Secret::new(std::mem::take(&mut self.text))

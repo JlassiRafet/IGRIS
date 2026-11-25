@@ -13,7 +13,7 @@ const DOCS_OPENCLAW: &str = "https://docs.openclaw.ai";
 const DOCS_LLMFIT: &str = "https://github.com/AlexsJones/llmfit";
 
 const DATE: &str = "2026-11-24";
-const PING: &str = "Reply with the single word ok.";
+pub const PING: &str = "Reply with the single word ok.";
 
 /// An agent kind Herdr can start: builder and reviewer, nothing else known about it yet.
 const fn agent(id: &'static str, name: &'static str) -> Tool {

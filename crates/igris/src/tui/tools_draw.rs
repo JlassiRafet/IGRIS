@@ -1,12 +1,15 @@
 //! Draws the Tools screen. The state and keys are in `tools_screen`.
 use super::action::Action;
+use super::connect::{failure_lines, passed_line, running_word};
 use super::hit::HitMap;
 use super::state::State;
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
-use super::tools_screen::{Edit, GROUPS, HEADER, Row, ToolStatus, index, rows, same_agent};
+use super::tools_screen::{
+    CheckState, Edit, GROUPS, HEADER, Row, ToolStatus, index, rows, same_agent,
+};
 use super::widgets::{detail_strip, fit, input_line, pad, status_glyph};
-use crate::catalog::Group;
+use crate::catalog::{Group, tool};
 use crate::check::view::Status;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -153,7 +156,7 @@ fn pane_header(t: &Theme, s: &State, g: Group, shown: usize, total: usize) -> Li
         };
         spans.push(Span::styled(format!("  {word}"), t.style(Role::Dim)));
     } else if focused {
-        spans.push(Span::styled("  f filters", t.style(Role::Dim)));
+        spans.push(Span::styled("  f filters · c connects", t.style(Role::Dim)));
     }
     Line::from(spans)
 }
@@ -260,12 +263,29 @@ fn detail_lines(t: &Theme, s: &State, width: usize) -> Vec<Line<'static>> {
         fit(t, &head, width),
         t.style(Role::Text).add_modifier(Modifier::BOLD),
     )];
+    let word = match (r.status, tool(r.id)) {
+        (ToolStatus::Checking, Some(tl)) => running_word(tl, snap),
+        _ => r.status.word(),
+    };
     let how = if r.connects.is_empty() {
-        r.status.word().to_string()
+        word.to_string()
     } else {
-        format!("{} · {}", r.connects, r.status.word())
+        format!("{} · {word}", r.connects)
     };
     v.push(Line::styled(fit(t, &how, width * 2), t.style(Role::Dim)));
+    // The last live check of this tool: how fast it answered, or why it did not.
+    if let Some(tl) = tool(r.id) {
+        match s.tools.checks.get(r.id) {
+            Some(CheckState::Passed { ms }) => {
+                v.push(Line::styled(passed_line(tl, *ms), t.style(Role::Ok)));
+            }
+            Some(CheckState::Failed(f)) => {
+                let first = failure_lines(tl, f).swap_remove(0);
+                v.push(Line::styled(fit(t, &first, width * 2), t.style(Role::Bad)));
+            }
+            _ => {}
+        }
+    }
     if r.id == "herdr" {
         v.push(Line::styled(
             fit(
