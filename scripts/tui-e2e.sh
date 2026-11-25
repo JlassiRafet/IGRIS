@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end check of the terminal app in a real (detached) tmux terminal: keys, mouse, help, resize,
-# quit. No agent is started and nothing outside a temporary folder is written.
+# quit. Nothing outside a temporary folder is written, and no real agent runs: the main session has
+# fake `herdr`, `claude` and `codex` first on PATH, so the Verify step's live checks are a
+# `sleep 60174` that quitting must kill.
 # Usage: cargo build && scripts/tui-e2e.sh      (IGRIS=/path/to/igris to test another binary)
 set -euo pipefail
 BIN=${IGRIS:-target/debug/igris}
@@ -9,7 +11,14 @@ BIN=$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")
 S=igris-e2e-$$
 REPO=$(mktemp -d)
 HOME_DIR=$(mktemp -d)
-trap 'tmux kill-session -t "$S" 2>/dev/null || true; rm -rf "$REPO" "$HOME_DIR"' EXIT
+FAKES=$(mktemp -d)
+trap 'tmux kill-session -t "$S" 2>/dev/null || true; rm -rf "$REPO" "$HOME_DIR" "$FAKES"' EXIT
+# Fakes: the scan's probes answer at once (not logged in); the live check of an agent sleeps; Herdr
+# answers its version.
+printf '#!/bin/sh\ncase "$1" in -p) exec sleep 60174 ;; *) echo claude; exit 1 ;; esac\n' > "$FAKES/claude"
+printf '#!/bin/sh\ncase "$1" in exec) exec sleep 60174 ;; *) echo codex; exit 1 ;; esac\n' > "$FAKES/codex"
+printf '#!/bin/sh\necho "herdr 0.9.1"\n' > "$FAKES/herdr"
+chmod +x "$FAKES/claude" "$FAKES/codex" "$FAKES/herdr"
 git -C "$REPO" init -q -b main
 
 screen() { tmux capture-pane -t "$S" -p; }
@@ -32,7 +41,7 @@ code=0
 echo "ok  no terminal: usage and exit 2"
 
 tmux new-session -d -s "$S" -x 100 -y 30 \
-  "env HOME=$HOME_DIR COLORTERM=truecolor '$BIN' --repo '$REPO'; echo EXIT=\$?; sleep 60"
+  "env PATH=$FAKES:\$PATH HOME=$HOME_DIR COLORTERM=truecolor '$BIN' --repo '$REPO'; echo EXIT=\$?; sleep 60"
 
 wait_for "▀█▀ █▀▀ █▀█" 10   # the wordmark
 wait_for "Pipeline" 5       # the tab strip
@@ -44,33 +53,46 @@ echo "ok  the privacy line and the step rail"
 
 tmux send-keys -t "$S" 2;   wait_for "managers" 5
 echo "ok  2 opens the Tools step"
-tmux send-keys -t "$S" 3;   wait_for "Builder agent" 5
+tmux send-keys -t "$S" 3;   wait_for "Check command" 5
 echo "ok  3 opens the Pipeline form"
 tmux send-keys -t "$S" '?'; wait_for "How setup works" 5
 tmux send-keys -t "$S" Escape; gone "How setup works" 5
 echo "ok  ? opens help, Esc closes it"
-tmux send-keys -t "$S" ']'; wait_for "Write to" 5
-tmux send-keys -t "$S" '[';  wait_for "Builder agent" 5
-echo "ok  ] and [ change screen"
+tmux send-keys -t "$S" ']'; wait_for "Verify ·" 5
+tmux send-keys -t "$S" '[';  wait_for "Check command" 5
+echo "ok  ] and [ change screen (] from Pipeline opens Verify)"
 
-# Mouse. At 100x30 the steps are a rail: rows 6 to 10 (the wordmark band takes rows 1 to 4, then a rule).
-click 10 9; wait_for "Write to" 5              # Review
-click 10 10; wait_for "Run the checks again" 5   # Test
-click 10 6; wait_for "optional" 5                   # Check
-echo "ok  click on a tab switches screen"
-tmux send-keys -t "$S" 3; wait_for "Builder agent" 5
-wheel_down 20 12; wait_for "▌ Reviewer agent" 5
+# Mouse. At 100x30 the steps are a rail: rows 6 to 11 (the wordmark band takes rows 1 to 4, then a rule).
+click 10 9; wait_for "Verify ·" 5                       # Verify
+click 10 10; wait_for "Review is locked" 5              # Review stays locked until the tools pass
+click 10 11; wait_for "Run the checks again" 5          # Test is not locked
+click 10 6; wait_for "optional" 5                       # Scan
+echo "ok  click on a step switches screen, and Review is locked until the tools pass"
+tmux send-keys -t "$S" 3; wait_for "Check command" 5
+wheel_down 20 12; wait_for "▌ Base branch" 5
 echo "ok  the wheel moves the focus"
 
 tmux resize-window -t "$S" -x 70 -y 20; wait_for "at least 80x24" 5
-tmux resize-window -t "$S" -x 100 -y 30; wait_for "Builder agent" 5
+tmux resize-window -t "$S" -x 100 -y 30; wait_for "Check command" 5
 echo "ok  too small a window says so, and recovers"
-tmux resize-window -t "$S" -x 90 -y 30; wait_for "/5 done" 5   # under 100 columns the rail is a strip
+tmux resize-window -t "$S" -x 90 -y 30; wait_for "/6 done" 5   # under 100 columns the rail is a strip
 tmux resize-window -t "$S" -x 100 -y 30; wait_for "Setup" 5
 echo "ok  under 100 columns the rail becomes a strip, and back"
 
+# Verify started the live checks of the chosen agents (the fakes sleep): they are running now.
+started=0
+for _ in $(seq 1 100); do pgrep -f "sleep 60174" >/dev/null && { started=1; break; }; sleep 0.1; done
+[ "$started" = 1 ] || fail "Verify never started its live checks"
+echo "ok  Verify starts the live checks of the chosen tools"
 tmux send-keys -t "$S" q;   wait_for "EXIT=0" 5
 echo "ok  q exits with code 0"
+# The live checks that Verify started are still running when q is pressed: quitting must kill them.
+gone_process() { # pattern, seconds
+  for _ in $(seq 1 $((${2:-5} * 10))); do pgrep -f "$1" >/dev/null || return 0; sleep 0.1; done
+  return 1
+}
+gone_process "sleep 60174" 5 || { pkill -f "sleep 60174" || true; echo "FAIL: a live check outlived q"; exit 1; }
+echo "ok  quitting kills the live checks Verify started"
 
 # Closing the terminal must end igris. It once kept running at about 45% CPU on a dead terminal.
 HUP_REPO=$(mktemp -d)

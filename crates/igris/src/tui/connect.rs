@@ -4,7 +4,7 @@
 use super::action::Action;
 use super::detect_worker::Msg;
 use super::input::{Input, InputEvent};
-use super::state::{Effect, Overlay, State};
+use super::state::{Effect, Overlay, Screen, State};
 use super::tools_screen::{CheckState, Failure, Install, login_read};
 use crate::activity::Activity;
 use crate::catalog::{MethodKind, PING, TOOLS, Tool, tool};
@@ -314,9 +314,13 @@ pub fn failure_text(s: &State, id: &'static str, ascii: bool) -> (String, Vec<St
     (title, v)
 }
 
-/// Show the failure of `id`: the box when nothing else is open, else its first line as a toast.
+/// Show the failure of `id`: the box when nothing else is open and the user is on Tools or Verify
+/// and not typing, else its first line as a toast (the row shows it too). A background check must
+/// never take over a key the user is typing, or a screen they are on for something else.
 pub fn show_failure(s: &mut State, id: &'static str) {
-    if s.overlay.is_none() {
+    let here = matches!(s.screen, Screen::Tools | Screen::Verify);
+    let typing = super::pipeline_screen::editing(s) || super::tools_screen::editing(s);
+    if s.overlay.is_none() && here && !typing {
         s.overlay = Some(Overlay::Failure(id));
     } else {
         s.toast = failure_of(s, id).and_then(|f| failure_lines(id, f).into_iter().next());
@@ -336,6 +340,11 @@ pub fn open(s: &mut State, tool: &'static str) {
 /// Start the live check of `id`. A check that is already running is not started twice.
 pub fn begin_check(s: &mut State, id: &'static str) -> Effect {
     s.overlay = None;
+    start_check(s, id)
+}
+
+/// `begin_check` without touching an overlay that is open (the queue of the Verify step uses it).
+pub fn start_check(s: &mut State, id: &'static str) -> Effect {
     if tool(id).and_then(|t| t.check).is_none() {
         s.toast = Some("This tool has no live check.".into());
         return Effect::None;
@@ -361,6 +370,11 @@ pub fn update(s: &mut State, a: Action) -> Effect {
                 Effect::Rescan
             }
             Action::Rescan => begin_check(s, id),
+            Action::Skip if super::verify_screen::refuse_skip(s, id).is_some() => {
+                // Your builder, reviewer and Herdr cannot be skipped: the box stays open.
+                s.toast = super::verify_screen::refuse_skip(s, id);
+                Effect::None
+            }
             Action::Skip => {
                 s.tools.installs.remove(id);
                 s.tools.checks.insert(id.to_string(), CheckState::Skipped);
@@ -792,9 +806,21 @@ mod tests {
             (None, Some(&CheckState::Running))
         );
         s.apply(Msg::Job(job("claude"), ended(Some(1), &["Not logged in"])));
+        // Claude Code is the chosen builder: the box refuses the skip and stays open.
+        step(&mut s, Action::Skip);
+        assert_eq!(s.overlay, Some(Overlay::Failure("claude")));
+        assert!(s.toast.as_deref().unwrap().contains("cannot be skipped"));
+        // A tool nobody chose can be skipped.
+        failed(&mut s, "hermes", &["boom"]);
+        assert_eq!(
+            s.overlay,
+            Some(Overlay::Failure("claude")),
+            "one box at a time"
+        );
+        s.overlay = Some(Overlay::Failure("hermes"));
         step(&mut s, Action::Skip);
         assert_eq!(
-            (s.overlay.clone(), s.tools.checks.get("claude")),
+            (s.overlay.clone(), s.tools.checks.get("hermes")),
             (None, Some(&CheckState::Skipped))
         );
         failed(&mut s, "claude", &["boom"]);
@@ -839,6 +865,37 @@ mod tests {
             "{got:?}"
         );
         assert_eq!(s.tools.checks.len(), 1);
+    }
+
+    #[test]
+    fn a_background_failure_never_takes_over_what_the_user_is_typing() {
+        use crate::tui::state::Screen;
+        use crate::tui::tools_screen::Edit;
+        // On another screen: a toast, no box.
+        let mut s = app(both(), None);
+        s.screen = Screen::Pipeline;
+        failed(&mut s, "claude", &["Not logged in"]);
+        assert_eq!(s.overlay, None);
+        assert!(s.toast.as_deref().unwrap().contains("✗ claude"));
+        // On Tools while the filter is being typed: the key stays in the filter.
+        let mut s = app(both(), None);
+        s.tools.edit = Some(Edit::Filter);
+        failed(&mut s, "claude", &["Not logged in"]);
+        assert_eq!(s.overlay, None);
+        crate::tui::tools_screen::edit_key(&mut s, key('s'));
+        assert_eq!(
+            s.tools.filter.value(),
+            "s",
+            "the s went to the field, not to Skip"
+        );
+        assert!(matches!(
+            s.tools.checks.get("claude"),
+            Some(CheckState::Failed(_))
+        ));
+        // On Tools with nothing being typed: the box.
+        let mut s = app(both(), None);
+        failed(&mut s, "claude", &["Not logged in"]);
+        assert_eq!(s.overlay, Some(Overlay::Failure("claude")));
     }
 
     #[test]

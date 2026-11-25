@@ -33,6 +33,7 @@ mod test_screen;
 mod theme;
 mod tools_draw;
 mod tools_screen;
+mod verify_screen;
 mod widgets;
 mod wordmark;
 
@@ -105,6 +106,7 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
             Screen::Check => check::draw(f, body, s, t, hits, clickable),
             Screen::Tools => tools_draw::draw(f, body, s, t, hits, clickable),
             Screen::Pipeline => pipeline_screen::draw(f, body, s, t, hits, clickable),
+            Screen::Verify => verify_screen::draw(f, body, s, t, hits, clickable),
             Screen::Review => review::draw(f, body, s, t, hits, clickable),
             Screen::Test => test_screen::draw(f, body, s, t, hits, clickable),
         }
@@ -384,6 +386,13 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
             state.apply(m);
         }
         // An install or a download finished: scan again once no scan is running.
+        // Checks the Verify step queued after its scan: start them all.
+        for id in std::mem::take(&mut state.verify.queue) {
+            if let Effect::Check(id) = connect::start_check(&mut state, id) {
+                let mut set = jobs.lock().unwrap_or_else(PoisonError::into_inner);
+                connect::spawn_check(&mut set, &tx, &activity, &state, id);
+            }
+        }
         if state.rescan_wanted && !state.detecting {
             state.rescan_wanted = false;
             state.detecting = true;
@@ -756,7 +765,7 @@ mod tests {
     #[test]
     fn at_80x24_the_steps_are_a_strip_and_each_one_is_clickable() {
         let (text, hits) = render(80, 24, &scanned((80, 24)));
-        for label in ["Check", "Tools", "Pipeline", "Review", "Test"] {
+        for label in ["Scan", "Tools", "Pipeline", "Verify", "Review", "Test"] {
             assert!(text.contains(label), "{label}:\n{text}");
         }
         let (x, y) = row_of(&text, "Pipeline");
@@ -765,13 +774,72 @@ mod tests {
     }
 
     #[test]
+    fn digits_1_to_6_jump_to_the_screens() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut s = scanned((100, 30));
+        verify_screen::clear_all(&mut s); // Review opens only after the checks
+        for (digit, screen) in ['1', '2', '3', '4', '5', '6'].into_iter().zip(Screen::ALL) {
+            let k = KeyEvent::new(KeyCode::Char(digit), KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(Context::List, k),
+                Some(Action::Goto(screen)),
+                "{digit}"
+            );
+            update(&mut s, Action::Goto(screen));
+            assert_eq!(s.screen, screen, "{digit}");
+        }
+    }
+
+    #[test]
+    fn the_verify_screen_lists_each_chosen_tool_and_its_rows_are_clickable() {
+        let mut s =
+            crate::tui::tools_screen::tests::app(crate::tui::tools_screen::tests::both(), None);
+        s.screen = Screen::Verify;
+        let (text, hits) = render(100, 30, &s);
+        for want in [
+            "Verify · 3 tools",
+            "Herdr",
+            "Claude Code",
+            "Codex",
+            "Builder",
+            "Reviewer",
+            "not checked yet",
+        ] {
+            assert!(text.contains(want), "{want}:\n{text}");
+        }
+        let (x, y) = row_of(&text, "Codex");
+        assert_eq!(hits.at(x, y), Some(Action::Select(2)));
+        assert!(
+            text.contains("5  Review") && text.contains("6  Test"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn at_100x24_the_six_steps_and_the_progress_all_fit_in_the_rail() {
+        let (text, _) = render(100, 24, &scanned((100, 24)));
+        for want in [
+            "1  Scan",
+            "2  Tools",
+            "3  Pipeline",
+            "4  Verify",
+            "5  Review",
+            "6  Test",
+            "Setup",
+            "1/6",
+        ] {
+            assert!(text.contains(want), "{want}:\n{text}");
+        }
+    }
+
+    #[test]
     fn at_100x30_the_steps_are_a_rail_beside_the_panel() {
         let (text, hits) = render(100, 30, &scanned((100, 30)));
-        let (x, y) = row_of(&text, "4  Review");
+        let (x, y) = row_of(&text, "5  Review");
         assert!(x < 22, "the rail is on the left: {x}");
         assert_eq!(hits.at(x, y), Some(Action::Goto(Screen::Review)));
         assert!(
-            text.contains("╭") && text.contains(" Check "),
+            text.contains("╭") && text.contains(" Scan "),
             "the panel is framed and titled:\n{text}"
         );
         assert!(text.contains("Runs on your machine"), "{text}");
@@ -781,7 +849,7 @@ mod tests {
     fn the_next_step_and_the_key_hints_are_on_screen_and_clickable() {
         let mut s = scanned((100, 30));
         let (text, _) = render(100, 30, &s);
-        assert!(text.contains("▶ Next  Choose your tools"), "{text}");
+        assert!(text.contains("▶ Next  Choose your assistant"), "{text}");
         s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
         let (text, hits) = render(100, 30, &s);
         assert!(text.contains("▶ Next  Set the check command"), "{text}");
@@ -848,7 +916,7 @@ mod tests {
         };
         let mut s = scanned((100, 30));
         let (text, _) = render(100, 30, &s);
-        let (x, y) = row_of(&text, "4  Review");
+        let (x, y) = row_of(&text, "5  Review");
         assert_eq!(
             bg(&s, x, y),
             ratatui::style::Color::Reset,
@@ -892,7 +960,7 @@ mod tests {
         update(&mut s, Action::Palette);
         let (text, _) = render(100, 30, &s);
         assert!(
-            text.contains("> _") && text.contains("> Go to Check"),
+            text.contains("> _") && text.contains("> Go to Scan"),
             "{text}"
         );
     }
