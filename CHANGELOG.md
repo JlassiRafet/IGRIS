@@ -4,6 +4,10 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.0-rc2] - 2026-11-25
+
+The guided setup: six steps from a scan to a tested pipeline. Pre-release: it has passed CI and a scripted walk with fake agents, not yet a live run with real accounts.
+
 ### Added
 - A guided setup in six steps: Scan, Tools, Pipeline, Verify, Review, Test (keys `1` to `6`). Tools lists the workspace, builder, reviewer, decision layer and assistant, with the install and connect methods each tool documents (a login, or an API key typed into a masked box that goes to the tool's own command by stdin, never argv or disk). Installs and model pulls run in the background with a timeout and a clean tail, and quitting or closing the terminal stops them.
 - Local-model suggestions that fit the machine, judged by `llmfit` when it is installed (IGRIS's own list; no command is built from llmfit's output).

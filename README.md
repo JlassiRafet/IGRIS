@@ -15,13 +15,13 @@ You run it from a terminal, with the keyboard, the mouse, or both. It checks wha
    macOS and Linux:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/JlassiRafet/IGRIS/main/scripts/install.sh | IGRIS_VERSION=v0.1.0-rc1 sh
+   curl -fsSL https://raw.githubusercontent.com/JlassiRafet/IGRIS/main/scripts/install.sh | IGRIS_VERSION=v0.1.0-rc2 sh
    ```
 
    Windows (PowerShell):
 
    ```powershell
-   $env:IGRIS_VERSION = "v0.1.0-rc1"; irm https://raw.githubusercontent.com/JlassiRafet/IGRIS/main/scripts/install.ps1 | iex
+   $env:IGRIS_VERSION = "v0.1.0-rc2"; irm https://raw.githubusercontent.com/JlassiRafet/IGRIS/main/scripts/install.ps1 | iex
    ```
 
 2. **Open a terminal in a git repository.**
