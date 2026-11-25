@@ -16,6 +16,7 @@ mod help;
 mod hero;
 mod hit;
 mod input;
+mod install;
 mod keymap;
 mod layout;
 mod next_step;
@@ -48,7 +49,7 @@ use state::{Effect, Overlay, Screen, State, type_key, update};
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use theme::{Env, Theme};
 
@@ -107,7 +108,8 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
             Screen::Review => review::draw(f, body, s, t, hits, clickable),
             Screen::Test => test_screen::draw(f, body, s, t, hits, clickable),
         }
-        if let Some(msg) = &s.toast {
+        let busy = install::progress_line(s, t.glyphs == theme::Glyphs::Ascii);
+        if let Some(msg) = s.toast.as_ref().or(busy.as_ref()) {
             let text = widgets::fit(t, msg, a.toast.width as usize);
             f.render_widget(Paragraph::new(text), a.toast);
         }
@@ -211,6 +213,11 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
             72,
             8,
         ),
+        Overlay::Confirm(c @ (state::Confirm::InstallTool(_) | state::Confirm::Pull(_))) => {
+            let (title, text) = install::dialog_text(c);
+            let h = text.len() as u16 + 2;
+            (title, text.into_iter().map(Line::from).collect(), 88, h)
+        }
         Overlay::Fix(d) => {
             let mut lines = vec![Line::from(d.detail.clone()), Line::from("")];
             lines.extend(d.fixes.iter().enumerate().map(|(i, x)| {
@@ -271,26 +278,61 @@ fn draw_overlay(f: &mut Frame, area: Rect, o: &Overlay, s: &State, t: &Theme, hi
     );
 }
 
-/// SIGINT and SIGTERM set this flag; the loop sees it and returns, so `TermGuard` drops.
-/// SIGHUP (the terminal went away) ends the process at once: there is no terminal left to restore, and
-/// reading from a dead one can spin inside the event reader, where the loop would never see a flag.
-fn stop_flag() -> std::io::Result<Arc<AtomicBool>> {
-    let flag = Arc::new(AtomicBool::new(false));
+/// Stop every background command and what it started (the one place the loop's exits share).
+pub fn shutdown(jobs: &mut crate::job::JobSet) {
+    jobs.kill_all();
+}
+
+/// Dropped on every way out of `run` (including an error return), it stops the background commands.
+struct JobGuard(Arc<Mutex<crate::job::JobSet>>);
+
+impl Drop for JobGuard {
+    fn drop(&mut self) {
+        shutdown(&mut self.0.lock().unwrap_or_else(PoisonError::into_inner));
+    }
+}
+
+/// SIGINT and SIGTERM set the returned flag; the loop sees it and returns, so `TermGuard` drops and
+/// `JobGuard` stops the jobs. SIGHUP (the terminal went away) cannot wait for the loop: reading from
+/// a dead terminal can spin inside the event reader, where the loop would never see a flag. A watcher
+/// thread stops the jobs (each runs in its own process group, which a hangup does not reach) and
+/// ends the process. Windows has no SIGTERM or SIGHUP; Ctrl-C arrives as a key event there.
+fn watch_signals(jobs: &Arc<Mutex<crate::job::JobSet>>) -> std::io::Result<Arc<AtomicBool>> {
+    let stop = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
     {
+        let hup = Arc::new(AtomicBool::new(false));
+        let (watched, jobs) = (hup.clone(), jobs.clone());
+        std::thread::spawn(move || {
+            while !watched.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            // A lock held for good must not keep the process alive: try for a second, then go.
+            for _ in 0..20 {
+                match jobs.try_lock() {
+                    Ok(mut set) => {
+                        shutdown(&mut set);
+                        break;
+                    }
+                    Err(std::sync::TryLockError::Poisoned(p)) => {
+                        shutdown(&mut p.into_inner());
+                        break;
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }
+            }
+            std::process::exit(129);
+        });
+        signal_hook::flag::register(signal_hook::consts::SIGHUP, hup)?;
         for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-            signal_hook::flag::register(sig, Arc::clone(&flag))?;
-        }
-        let hup = signal_hook::consts::SIGHUP;
-        // SAFETY: the handler only calls `emulate_default_handler`, which is async-signal-safe.
-        unsafe {
-            signal_hook::low_level::register(hup, move || {
-                let _ = signal_hook::low_level::emulate_default_handler(hup);
-            })?;
+            signal_hook::flag::register(sig, Arc::clone(&stop))?;
         }
     }
-    // Windows has no SIGTERM or SIGHUP; Ctrl-C arrives as a key event while the app owns the console.
-    Ok(flag)
+    #[cfg(not(unix))]
+    let _ = jobs;
+    Ok(stop)
 }
 
 /// A paste goes to the key entry when it is open (and only there: a key must never land in a
@@ -321,7 +363,10 @@ fn context(s: &State) -> Context {
 pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let mouse = !opts.no_mouse && std::env::var("IGRIS_NO_MOUSE").as_deref() != Ok("1");
     let theme = Theme::detect(&Env::from_process());
-    let stop = stop_flag()?;
+    // Background commands: the guard stops them on every way out of this function.
+    let jobs = Arc::new(Mutex::new(crate::job::JobSet::default()));
+    let _jobs_guard = JobGuard(jobs.clone());
+    let stop = watch_signals(&jobs)?;
     let _guard = term::TermGuard::enter(mouse)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
     let size = ratatui::crossterm::terminal::size()?;
@@ -331,14 +376,18 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let mut hits = HitMap::default();
     let started = std::time::Instant::now();
     let (tx, rx) = std::sync::mpsc::channel();
-    // Background commands: dropping the set (any way out of this function) kills them all.
-    let mut jobs = crate::job::JobSet::default();
     let activity = Arc::new(Mutex::new(crate::activity::Activity::default()));
     state.detecting = true;
     detect_worker::spawn_real(tx.clone());
     loop {
         while let Ok(m) = rx.try_recv() {
             state.apply(m);
+        }
+        // An install or a download finished: scan again once no scan is running.
+        if state.rescan_wanted && !state.detecting {
+            state.rescan_wanted = false;
+            state.detecting = true;
+            detect_worker::spawn_real(tx.clone());
         }
         // Time, not loop turns: mouse movement must not speed the animation up.
         state.tick = (started.elapsed().as_millis() / 100) as usize;
@@ -404,13 +453,23 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
                 detect_worker::spawn_real(tx.clone());
             }
             Some(Effect::Check(id)) => {
-                connect::spawn_check(&mut jobs, &tx, &activity, &state, id);
+                let mut set = jobs.lock().unwrap_or_else(PoisonError::into_inner);
+                connect::spawn_check(&mut set, &tx, &activity, &state, id);
+            }
+            Some(Effect::Install(id)) => {
+                let mut set = jobs.lock().unwrap_or_else(PoisonError::into_inner);
+                install::spawn_install(&mut set, &tx, &activity, id);
+            }
+            Some(Effect::Pull(i)) => {
+                let mut set = jobs.lock().unwrap_or_else(PoisonError::into_inner);
+                install::spawn_pull(&mut set, &tx, &activity, i);
             }
             Some(Effect::StoreKey(argv)) => {
                 if let Some(id) = connect::store_key(&mut state, argv, &activity)
                     && let Effect::Check(id) = connect::begin_check(&mut state, id)
                 {
-                    connect::spawn_check(&mut jobs, &tx, &activity, &state, id);
+                    let mut set = jobs.lock().unwrap_or_else(PoisonError::into_inner);
+                    connect::spawn_check(&mut set, &tx, &activity, &state, id);
                 }
             }
             Some(Effect::RunChecks) => detect_worker::spawn_checks(tx.clone(), state.repo.clone()),
@@ -464,6 +523,119 @@ mod tests {
             "abc",
             "other pastes still reach their field"
         );
+    }
+
+    #[test]
+    fn a_model_row_shows_its_pull_command_and_the_dialogs_show_the_exact_command() {
+        use crate::catalog::Group;
+        use crate::tui::tools_screen::tests::{app, both};
+        use igris_detect::fit::{CANDIDATES, Fit, Report, Source, Suggestion};
+        let mut s = app(both(), None);
+        s.apply(detect_worker::Msg::Fit(Box::new(Report {
+            source: Source::Llmfit {
+                version: "1.1.21".into(),
+            },
+            suggestions: vec![Suggestion {
+                candidate: &CANDIDATES[0],
+                fit: Fit::Good,
+                needs_gb: Some(3.0),
+                available_gb: Some(8.0),
+                tps: None,
+            }],
+        })));
+        s.tools.group = Group::Assistant;
+        let at = tools_screen::rows(
+            Group::Assistant,
+            s.snapshot.as_ref().unwrap(),
+            &s.tools,
+            None,
+        )
+        .iter()
+        .position(|r| r.model.is_some())
+        .unwrap();
+        s.tools.cursor[tools_screen::index(Group::Assistant)] = at;
+        let (text, _) = render(100, 30, &s);
+        assert!(
+            text.contains("Pull: ollama pull qwen3:4b-instruct-2507-q4_K_M"),
+            "{text}"
+        );
+        s.overlay = Some(Overlay::Confirm(state::Confirm::Pull(0)));
+        let (text, _) = render(100, 30, &s);
+        assert!(
+            text.contains("Download qwen3:4b-instruct-2507-q4_K_M?"),
+            "{text}"
+        );
+        s.overlay = Some(Overlay::Confirm(state::Confirm::InstallTool("herdr")));
+        let (text, _) = render(100, 30, &s);
+        let cmd = install::quote_cmd(crate::catalog::tool("herdr").unwrap().install.unwrap());
+        assert!(
+            text.contains("Install Herdr?") && text.contains(&cmd),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_scan_screen_shows_the_fit_line_even_while_your_machine_is_folded() {
+        use igris_detect::fit::{CANDIDATES, Fit, Report, Source, Suggestion};
+        let mut s =
+            crate::tui::tools_screen::tests::app(crate::tui::tools_screen::tests::both(), None);
+        s.screen = Screen::Check;
+        s.apply(detect_worker::Msg::Fit(Box::new(Report {
+            source: Source::Llmfit {
+                version: "1.1.21".into(),
+            },
+            suggestions: vec![Suggestion {
+                candidate: &CANDIDATES[0],
+                fit: Fit::Marginal,
+                needs_gb: None,
+                available_gb: None,
+                tps: None,
+            }],
+        })));
+        let machine = s
+            .check
+            .view
+            .as_ref()
+            .and_then(|v| v.groups.iter().position(|g| g.id == "machine"))
+            .unwrap();
+        assert!(!s.check.open[machine], "the group is folded");
+        let (text, _) = render(100, 30, &s);
+        assert!(
+            text.contains("Local models: Qwen3-4B-Instruct-2507 fits tightly"),
+            "{text}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn quitting_during_an_install_kills_the_child() {
+        use std::process::Command;
+        static SLOW: &[&str] = &["sh", "-c", "sleep 60177 & wait"];
+        let alive = || {
+            Command::new("pgrep")
+                .args(["-f", "sleep 60177"])
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        let until = |want: bool| {
+            (0..100).any(|_| {
+                std::thread::sleep(Duration::from_millis(50));
+                alive() == want
+            })
+        };
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let log = Arc::new(Mutex::new(crate::activity::Activity::default()));
+        let mut jobs = crate::job::JobSet::default();
+        jobs.spawn(
+            tx,
+            crate::job::JobId(install::INSTALL_BASE),
+            SLOW,
+            Duration::from_secs(600),
+            log,
+        );
+        assert!(until(true), "the install never started");
+        shutdown(&mut jobs);
+        assert!(until(false), "the install outlived shutdown");
     }
 
     #[test]

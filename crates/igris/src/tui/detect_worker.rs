@@ -13,6 +13,8 @@ pub enum Msg {
     Checked(Vec<crate::doctor::Check>),
     /// The sample task finished: what it ended with, or why it could not run.
     Sampled(Result<String, String>),
+    /// Which local models fit this machine (the fit adapter's answer, after the scan).
+    Fit(Box<igris_detect::fit::Report>),
     /// A background job (an install or a live check) ended.
     Job(crate::job::JobId, crate::job::JobEnd),
 }
@@ -46,6 +48,12 @@ where
 
 /// The real probe: this machine, as `igris doctor --json` sees it.
 pub fn spawn_real(tx: Sender<Msg>) {
+    // The fit asks `llmfit` a few questions, which takes seconds: it has its own thread.
+    let fit_tx = tx.clone();
+    std::thread::spawn(move || {
+        let report = igris_detect::fit::recommend(&igris_detect::RealHost::new());
+        let _ = fit_tx.send(Msg::Fit(Box::new(report)));
+    });
     let found_tx = tx.clone();
     spawn(tx, move |progress| {
         use igris_detect::Host;

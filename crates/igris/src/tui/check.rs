@@ -6,13 +6,16 @@ use super::state::{Effect, FixDialog, Overlay, State};
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
 use super::widgets::{chip, detail_strip, fit, pad, progress, status_cell, status_width};
-use crate::check::view::{Status, View, build};
+use crate::check::view::{Fact, Status, View, build};
 use igris_detect::Snapshot;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
+
+/// The label of the fit line: it shows under "Your machine" even when that group is folded.
+const FIT_LABEL: &str = "Local models";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CheckUi {
@@ -31,6 +34,24 @@ pub enum Item {
 
 impl CheckUi {
     /// Show a new snapshot. A group the user opened stays open; one that now needs a step opens.
+    /// The one fit line under "Your machine" (replaced when the fit changes).
+    pub fn set_fit(&mut self, line: Option<String>) {
+        let Some(group) = self
+            .view
+            .as_mut()
+            .and_then(|v| v.groups.iter_mut().find(|g| g.id == "machine"))
+        else {
+            return;
+        };
+        group.facts.retain(|f| f.label != FIT_LABEL);
+        if let Some(value) = line {
+            group.facts.push(Fact {
+                label: FIT_LABEL,
+                value,
+            });
+        }
+    }
+
     pub fn set(&mut self, snap: &Snapshot) {
         let v = build(snap);
         let old = std::mem::take(&mut self.open);
@@ -281,15 +302,20 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
             Item::Header(g) => (g, view.groups[g].rows.is_empty()),
             Item::Row(g, r) => (g, r + 1 == view.groups[g].rows.len()),
         };
-        if ends && s.check.open[g] {
+        if ends {
             let group = &view.groups[g];
+            let open = s.check.open[g];
+            // A folded group still shows its fit line.
             let mut extra: Vec<String> = group
                 .facts
                 .iter()
+                .filter(|x| open || x.label == FIT_LABEL)
                 .map(|x| format!("{}: {}", x.label, x.value))
                 .collect();
-            extra.extend(group.hint.iter().cloned());
-            extra.extend(group.more.iter().map(|m| format!("+ {}", m.title)));
+            if open {
+                extra.extend(group.hint.iter().cloned());
+                extra.extend(group.more.iter().map(|m| format!("+ {}", m.title)));
+            }
             for text in extra {
                 let shown = fit(t, &text, width.saturating_sub(5));
                 lines.push((

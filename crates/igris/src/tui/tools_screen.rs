@@ -7,6 +7,7 @@ use super::pipeline::PipelineForm;
 use super::state::{Effect, Screen, State};
 use crate::catalog::{Group, TOOLS, Tool, tool, tools_in};
 use igris_core::config::KINDS;
+use igris_detect::fit::Report;
 use igris_detect::{Login, Snapshot};
 use ratatui::crossterm::event::KeyEvent;
 use std::collections::{BTreeMap, BTreeSet};
@@ -89,6 +90,22 @@ pub struct Failure {
     pub fix: Option<String>,
 }
 
+/// An install started from the Tools step.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Install {
+    Running(Instant),
+    /// The installer exited 0 with this output; the next scan says whether the tool is there.
+    Done(Vec<String>),
+    Failed(Failure),
+}
+
+/// A model download started from the Assistant group.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pull {
+    Running(Instant),
+    Failed(String),
+}
+
 /// What is typed into: the filter of the focused list, or Herdr's machine label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Edit {
@@ -114,6 +131,12 @@ pub struct ToolsUi {
     pub started: BTreeMap<&'static str, Instant>,
     /// The tool whose key is being handed to its store command.
     pub storing: Option<&'static str>,
+    /// Which local models fit this machine, from the fit adapter (arrives after the scan).
+    pub fit: Option<Report>,
+    /// Installs, by tool id.
+    pub installs: BTreeMap<&'static str, Install>,
+    /// Model downloads, by Ollama tag.
+    pub pulls: BTreeMap<&'static str, Pull>,
 }
 
 impl Default for ToolsUi {
@@ -130,6 +153,9 @@ impl Default for ToolsUi {
             key: Input::masked(),
             started: BTreeMap::new(),
             storing: None,
+            fit: None,
+            installs: BTreeMap::new(),
+            pulls: BTreeMap::new(),
         }
     }
 }
@@ -148,6 +174,10 @@ pub struct Row {
     pub chosen: bool,
     /// False for a dimmed row: it cannot be picked.
     pub pickable: bool,
+    /// More lines for the detail strip (a local model's fit, size and pull command).
+    pub detail: String,
+    /// A local model: the place of its candidate in the fit report.
+    pub model: Option<usize>,
 }
 
 pub fn index(g: Group) -> usize {
@@ -155,7 +185,7 @@ pub fn index(g: Group) -> usize {
 }
 
 /// Whether the tool is on this machine, from the scan or the extra `PATH` look.
-fn installed(t: &Tool, snap: &Snapshot, ui: &ToolsUi) -> bool {
+pub(super) fn installed(t: &Tool, snap: &Snapshot, ui: &ToolsUi) -> bool {
     match t.id {
         "rules" => true,
         "herdr" => snap.herdr.found,
@@ -184,6 +214,11 @@ pub fn status_of(t: &Tool, snap: &Snapshot, ui: &ToolsUi) -> ToolStatus {
         } else {
             NotSupportedYet
         };
+    }
+    match ui.installs.get(t.id) {
+        Some(Install::Running(_) | Install::Done(_)) => return Checking,
+        Some(Install::Failed(_)) => return NeedsStep,
+        None => {}
     }
     match ui.checks.get(t.id) {
         Some(CheckState::Running) => return Checking,
@@ -253,6 +288,8 @@ pub fn all_rows(g: Group, snap: &Snapshot, ui: &ToolsUi, form: Option<&PipelineF
                 default: false,
                 chosen,
                 pickable: t.selectable,
+                detail: String::new(),
+                model: None,
             };
             (class, rank(g, t.id), i, row)
         })
@@ -272,8 +309,12 @@ pub fn all_rows(g: Group, snap: &Snapshot, ui: &ToolsUi, form: Option<&PipelineF
                 default: false,
                 chosen: ui.assistant == AssistantChoice::CliOnly,
                 pickable: true,
+                detail: String::new(),
+                model: None,
             },
         );
+        // Local models that fit this machine, after the answers a user can pick.
+        out.splice(at + 1..at + 1, super::install::model_rows(snap, ui));
     } else if let Some(first) = out.first_mut().filter(|r| r.pickable) {
         first.default = true;
     }
@@ -398,16 +439,15 @@ fn activate(s: &mut State) -> Effect {
     let Some(row) = list.get(s.tools.cursor[index(g)]).cloned() else {
         return Effect::None;
     };
+    if let Some(i) = row.model {
+        return super::install::pick_model(s, i);
+    }
     if !row.pickable {
         s.toast = Some(format!("{}: {}.", row.name, row.status.word()));
         return Effect::None;
     }
-    if row.status == ToolStatus::NotInstalled {
-        s.toast = Some(format!(
-            "{} is not installed. Install it, then press r to scan again.",
-            row.name
-        ));
-        return Effect::None;
+    if let Some(t) = tool(row.id).filter(|t| !installed(t, snap, &s.tools)) {
+        return super::install::offer(s, t);
     }
     if g == Group::Assistant {
         s.tools.assistant = if row.id == CLI_ONLY {
@@ -469,8 +509,16 @@ fn open_connect(s: &mut State) -> Effect {
         s.toast = Some(format!("{}: {}.", row.name, row.status.word()));
         return Effect::None;
     };
-    if row.status == ToolStatus::NotInstalled {
-        s.toast = Some(format!("{} is not installed. Install it first.", row.name));
+    if !installed(t, snap, &s.tools) {
+        let how = if matches!(
+            super::install::install_offer(t),
+            super::install::Offer::None
+        ) {
+            "Install it first."
+        } else {
+            "Press Enter to install it."
+        };
+        s.toast = Some(format!("{} is not installed. {how}", row.name));
     } else if t.methods.is_empty() && t.check.is_none() {
         s.toast = Some(format!("{} has nothing to connect.", row.name));
     } else {
