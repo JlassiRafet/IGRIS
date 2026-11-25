@@ -81,11 +81,17 @@ pub const BINDINGS: &[Binding] = &[
         Scope::Anywhere,
         KeyCode::Char('4'),
         NONE,
-        Action::Goto(Screen::Review),
+        Action::Goto(Screen::Verify),
     ),
     b(
         Scope::Anywhere,
         KeyCode::Char('5'),
+        NONE,
+        Action::Goto(Screen::Review),
+    ),
+    b(
+        Scope::Anywhere,
+        KeyCode::Char('6'),
         NONE,
         Action::Goto(Screen::Test),
     ),

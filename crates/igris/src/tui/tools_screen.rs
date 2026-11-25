@@ -339,14 +339,27 @@ pub fn same_agent(form: &PipelineForm) -> bool {
 /// Every group is answered with something on this machine: Herdr, the builder and the reviewer
 /// installed, and the assistant answered (CLI only counts).
 pub fn tools_done(ui: &ToolsUi, form: &PipelineForm, snap: &Snapshot) -> bool {
+    first_unsettled(ui, form, snap).is_none()
+}
+
+/// The first group, in the order the step walks them, that is not answered yet. The decision layer
+/// is never unsettled: `rules` is built in.
+pub fn first_unsettled(ui: &ToolsUi, form: &PipelineForm, snap: &Snapshot) -> Option<Group> {
     let has = |item: Option<&SelectItem>| {
         item.and_then(|i| tool(&i.label))
             .is_some_and(|t| installed(t, snap, ui))
     };
-    snap.herdr.found
-        && has(form.builder.current())
-        && has(form.reviewer.current())
-        && ui.assistant != AssistantChoice::Unset
+    if !snap.herdr.found {
+        Some(Group::Workspace)
+    } else if !has(form.builder.current()) {
+        Some(Group::Builder)
+    } else if !has(form.reviewer.current()) {
+        Some(Group::Reviewer)
+    } else if ui.assistant == AssistantChoice::Unset {
+        Some(Group::Assistant)
+    } else {
+        None
+    }
 }
 
 /// The catalog tools the scan has no field for: they need their own look at `PATH`.

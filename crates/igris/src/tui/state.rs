@@ -9,33 +9,38 @@ use super::pipeline_screen::PipelineUi;
 use super::review::ReviewUi;
 use super::test_screen::TestUi;
 use super::tools_screen::ToolsUi;
+use super::verify_screen::VerifyUi;
 use igris_detect::Snapshot;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
+    /// Titled "Scan": the variant keeps its first name.
     Check,
     Tools,
     Pipeline,
+    Verify,
     Review,
     Test,
 }
 
 impl Screen {
-    pub const ALL: [Screen; 5] = [
+    pub const ALL: [Screen; 6] = [
         Screen::Check,
         Screen::Tools,
         Screen::Pipeline,
+        Screen::Verify,
         Screen::Review,
         Screen::Test,
     ];
 
     pub fn title(self) -> &'static str {
         match self {
-            Screen::Check => "Check",
+            Screen::Check => "Scan",
             Screen::Tools => "Tools",
             Screen::Pipeline => "Pipeline",
+            Screen::Verify => "Verify",
             Screen::Review => "Review",
             Screen::Test => "Test",
         }
@@ -99,6 +104,7 @@ pub struct State {
     pub cursor: usize,
     pub check: CheckUi,
     pub tools: ToolsUi,
+    pub verify: VerifyUi,
     pub pipeline: PipelineUi,
     pub review: ReviewUi,
     pub test: TestUi,
@@ -164,6 +170,7 @@ impl State {
         }
         self.snapshot = Some(*snap);
         super::install::after_scan(self);
+        super::verify_screen::after_scan(self);
         self.blocker = self.check.view.as_ref().and_then(super::check::blocker);
         self.detecting = false;
     }
@@ -189,6 +196,7 @@ impl State {
             cursor: 0,
             check: CheckUi::default(),
             tools: ToolsUi::default(),
+            verify: VerifyUi::default(),
             pipeline: PipelineUi::default(),
             review: ReviewUi::default(),
             test: TestUi::default(),
@@ -233,12 +241,28 @@ pub enum Effect {
 pub fn update(s: &mut State, a: Action) -> Effect {
     let before = s.screen;
     let mut effect = update_inner(s, a);
+    // Review opens only when every chosen tool is clear. One place, so a digit, `]`, `[` (Test
+    // wraps back to Review), a click and the palette are all covered. Only Review is locked.
+    if s.screen == Screen::Review && before != Screen::Review {
+        let pending = super::verify_screen::pending_names(s);
+        if !pending.is_empty() {
+            s.screen = before;
+            s.toast = Some(format!(
+                "Review is locked until these pass or are skipped (key 4, Verify): {}.",
+                pending.join(", ")
+            ));
+        }
+    }
     if s.screen == Screen::Review {
         super::review::refresh(s);
     }
     // Opening the Test screen runs the checks, so what it shows is always fresh.
     if s.screen == Screen::Test && before != Screen::Test && effect == Effect::None {
         effect = super::test_screen::rerun(s);
+    }
+    // Opening Verify scans again, then checks the tools that have no result yet.
+    if s.screen == Screen::Verify && before != Screen::Verify && effect == Effect::None {
+        effect = super::verify_screen::enter(s);
     }
     effect
 }
@@ -307,6 +331,8 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
             s.screen = s.screen.step(Screen::ALL.len() - 1);
             Effect::None
         }
+        // On Verify, `r` also checks every tool again once the scan lands.
+        Action::Rescan if s.screen == Screen::Verify => super::verify_screen::recheck_all(s),
         Action::Rescan if !s.detecting => {
             s.detecting = true;
             Effect::Rescan
@@ -372,6 +398,18 @@ fn update_inner(s: &mut State, a: Action) -> Effect {
             if s.screen == Screen::Review =>
         {
             super::review::update(s, a)
+        }
+        Action::Up
+        | Action::Down
+        | Action::Home
+        | Action::End
+        | Action::Toggle
+        | Action::Activate
+        | Action::Skip
+        | Action::Select(_)
+            if s.screen == Screen::Verify =>
+        {
+            super::verify_screen::update(s, a)
         }
         Action::Up
         | Action::Down

@@ -267,7 +267,10 @@ mod tests {
         s.apply(Msg::Checked(vec![check("config", true)]));
         assert!(!s.test.running);
         assert_eq!(
-            app_update(&mut s, Action::Goto(Screen::Review)),
+            {
+                crate::tui::verify_screen::clear_all(&mut s);
+                app_update(&mut s, Action::Goto(Screen::Review))
+            },
             Effect::None
         );
         assert_eq!(
@@ -352,6 +355,7 @@ mod tests {
         s.command_set = true;
         s.applied = true;
         s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
+        crate::tui::verify_screen::clear_all(&mut s); // the tools were checked this session
         assert_eq!(next_step(&s), Step::RunTest);
         s.apply(Msg::Checked(vec![check("config", true)]));
         s.apply(Msg::Sampled(Ok("done".into())));

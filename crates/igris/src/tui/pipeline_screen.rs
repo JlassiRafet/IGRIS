@@ -68,6 +68,11 @@ impl Field {
         )
     }
 
+    /// Chosen on the Tools screen, not on this one.
+    pub fn is_agent(self) -> bool {
+        matches!(self, Field::Builder | Field::Reviewer)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Field::Builder => "Builder agent",
@@ -184,12 +189,13 @@ pub struct PipelineUi {
 }
 
 impl PipelineUi {
-    /// The focusable items, top to bottom: the four essentials, the Advanced fold, and when it is
-    /// open the other twelve fields.
+    /// The focusable items, top to bottom: the essentials, the Advanced fold, and when it is open
+    /// the other fields. The builder and the reviewer are chosen on the Tools screen, so they are
+    /// not here; they are still validated, and an error in one is shown with where to fix it.
     pub fn items(&self) -> Vec<PItem> {
         let mut v: Vec<PItem> = Field::ALL
             .iter()
-            .filter(|f| f.is_essential())
+            .filter(|f| f.is_essential() && !f.is_agent())
             .map(|f| PItem::Field(*f))
             .collect();
         v.push(PItem::Advanced);
@@ -707,15 +713,6 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
                     ]),
                     Some(i),
                 ));
-                if *fl == Field::Reviewer && form.same_agent() {
-                    lines.push((
-                        Line::styled(
-                            format!("    {}", fit(t, "The builder and the reviewer are the same agent; a different reviewer catches more.", width.saturating_sub(4))),
-                            t.style(Role::Info),
-                        ),
-                        None,
-                    ));
-                }
                 for e in ui.errors.iter().filter(|e| e.field == fl.key()) {
                     lines.push((
                         Line::styled(
@@ -727,6 +724,23 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
                 }
             }
         }
+    }
+    // The agents are chosen on the Tools screen, so their errors have no field here: say where to fix.
+    for e in ui.errors.iter().filter(|e| {
+        Field::ALL
+            .iter()
+            .any(|f| f.is_agent() && f.key() == e.field)
+    }) {
+        lines.push((
+            Line::styled(
+                format!(
+                    "! {} Fix it on the Tools screen (key 2).",
+                    fit(t, &e.message, width.saturating_sub(40))
+                ),
+                t.style(Role::Bad),
+            ),
+            None,
+        ));
     }
     for e in ui
         .errors
@@ -1112,16 +1126,8 @@ mod tests {
     }
 
     #[test]
-    fn a_picker_changes_the_agent_and_cannot_land_on_soon() {
+    fn a_picker_changes_the_value_and_cannot_land_on_soon() {
         let mut s = on_pipeline(None);
-        focus(&mut s, Field::Reviewer);
-        app_update(&mut s, Action::Activate);
-        press(&mut s, KeyCode::Down);
-        press(&mut s, KeyCode::Enter);
-        let f = s.pipeline.form.as_ref().unwrap();
-        assert_ne!(value_text(f, Field::Reviewer), "codex (logged in)");
-        assert!(s.dirty);
-
         focus(&mut s, Field::Backend);
         app_update(&mut s, Action::Activate);
         press(&mut s, KeyCode::Down);
@@ -1203,7 +1209,7 @@ mod tests {
         let mut s = on_pipeline(None);
         let (_, hits) = render(&s, 100, 30);
         let row = (0..30u16)
-            .find(|y| hits.at(2, *y) == Some(Action::Select(2)))
+            .find(|y| hits.at(2, *y) == Some(Action::Select(0)))
             .expect("the command line is clickable");
         app_update(&mut s, hits.at(2, row).unwrap());
         assert!(matches!(
@@ -1260,17 +1266,15 @@ mod tests {
     }
 
     #[test]
-    fn the_first_view_is_four_essentials_and_a_fold_for_the_rest() {
+    fn the_first_view_is_two_essentials_and_a_fold_for_the_rest() {
         let s = on_pipeline(None);
         let (text, _) = render(&s, 100, 30);
         assert!(text.contains("Essentials"), "{text}");
-        for label in [
-            "Builder agent",
-            "Reviewer agent",
-            "Check command",
-            "Base branch",
-        ] {
+        for label in ["Check command", "Base branch"] {
             assert!(text.contains(label), "{label}:\n{text}");
+        }
+        for gone in ["Builder agent", "Reviewer agent"] {
+            assert!(!text.contains(gone), "{gone} is chosen on Tools:\n{text}");
         }
         assert!(
             text.contains("Advanced") && text.contains("(12 more)"),
@@ -1279,15 +1283,46 @@ mod tests {
         for hidden in ["Risky paths", "Herdr program", "Decision layer"] {
             assert!(!text.contains(hidden), "{hidden} should be folded:\n{text}");
         }
-        assert_eq!(s.pipeline.items().len(), 5);
+        assert_eq!(s.pipeline.items().len(), 3);
+    }
+
+    #[test]
+    fn pipeline_no_longer_lists_builder_and_reviewer_but_still_validates_them() {
+        let s = on_pipeline(None);
+        assert!(
+            s.pipeline
+                .items()
+                .iter()
+                .all(|i| !matches!(i, PItem::Field(f) if f.is_agent())),
+            "{:?}",
+            s.pipeline.items()
+        );
+        // A cloned file names an agent this machine does not have: the error is still found, and
+        // it is on screen with where to fix it, not only in `errors`.
+        let s = on_pipeline(Some(
+            "[agents]\nbuilder = \"nope\"\n[checks]\ncommand = \"t\"\n",
+        ));
+        assert!(
+            s.pipeline
+                .errors
+                .iter()
+                .any(|e| e.field == "agents.builder"),
+            "{:?}",
+            s.pipeline.errors
+        );
+        let (text, _) = render(&s, 100, 30);
+        assert!(
+            flat(&text).contains("Fix it on the Tools screen (key 2)"),
+            "{text}"
+        );
     }
 
     #[test]
     fn enter_on_advanced_unfolds_the_other_twelve_and_again_folds_them() {
         let mut s = on_pipeline(None);
-        s.pipeline.focus = 4;
+        s.pipeline.focus = 2;
         app_update(&mut s, Action::Activate);
-        assert!(s.pipeline.show_advanced && s.pipeline.items().len() == 17);
+        assert!(s.pipeline.show_advanced && s.pipeline.items().len() == 15);
         let (text, _) = render(&s, 100, 40);
         assert!(
             text.contains("Risky paths") && text.contains("Herdr program"),
@@ -1361,14 +1396,6 @@ mod tests {
     #[test]
     fn the_picker_lists_detected_agents_first_and_soon_items_stay_dim_and_unchoosable() {
         let mut s = on_pipeline(None);
-        focus(&mut s, Field::Reviewer);
-        app_update(&mut s, Action::Activate);
-        let (text, _) = render(&s, 100, 30);
-        assert!(
-            text.contains("Reviewer agent") && text.contains("logged in"),
-            "{text}"
-        );
-        press(&mut s, KeyCode::Esc);
         focus(&mut s, Field::Backend);
         app_update(&mut s, Action::Activate);
         let (text, _) = render(&s, 100, 40);
@@ -1387,23 +1414,21 @@ mod tests {
     #[test]
     fn a_click_on_a_picker_item_chooses_it() {
         let mut s = on_pipeline(None);
-        focus(&mut s, Field::Reviewer);
+        focus(&mut s, Field::Backend);
         app_update(&mut s, Action::Activate);
-        let (text, hits) = render(&s, 100, 30);
+        let (text, hits) = render(&s, 100, 40);
         let (y, line) = text
             .lines()
             .enumerate()
-            .filter(|(_, l)| l.contains("claude"))
+            .filter(|(_, l)| l.contains("rules"))
             .last()
-            .expect("claude is listed");
-        let x = line[..line.find("claude").unwrap()].chars().count() as u16;
+            .expect("rules is listed");
+        let x = line[..line.find("rules").unwrap()].chars().count() as u16;
         let a = hits.at(x, y as u16).expect("the item is clickable");
         assert!(matches!(a, Action::Select(_)));
         app_update(&mut s, a);
         assert_eq!(s.pipeline.edit, None, "choosing closes the box");
-        assert!(
-            value_text(s.pipeline.form.as_ref().unwrap(), Field::Reviewer).starts_with("claude")
-        );
+        assert!(value_text(s.pipeline.form.as_ref().unwrap(), Field::Backend).starts_with("rules"));
     }
 
     #[test]
@@ -1433,9 +1458,6 @@ mod tests {
             text.contains("checks.command") && flat(&text).contains("exit code 0 means pass"),
             "{text}"
         );
-        focus(&mut s, Field::Builder);
-        let (text, _) = render(&s, 100, 30);
-        assert!(flat(&text).contains("Writes the code."), "{text}");
     }
 
     #[test]
@@ -1456,17 +1478,11 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        for want in [
-            "Essentials",
-            "Builder agent",
-            "Check command",
-            "Base branch",
-            "Advanced",
-        ] {
+        for want in ["Essentials", "Check command", "Base branch", "Advanced"] {
             assert!(text.contains(want), "{want}:\n{text}");
         }
         assert!(
-            flat(&text).contains("Writes the code."),
+            flat(&text).contains("exit code 0 means pass"),
             "the strip fits at 80x24:\n{text}"
         );
     }

@@ -43,6 +43,7 @@ impl Action {
         Action::Goto(Screen::Check),
         Action::Goto(Screen::Tools),
         Action::Goto(Screen::Pipeline),
+        Action::Goto(Screen::Verify),
         Action::Goto(Screen::Review),
         Action::Goto(Screen::Test),
         Action::NextScreen,

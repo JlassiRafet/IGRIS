@@ -1,4 +1,4 @@
-//! The steps: Check, Tools, Pipeline, Review, Test. A rail on the left of a wide window, a one-row strip in
+//! The steps: Scan, Tools, Pipeline, Verify, Review, Test. A rail on the left of a wide window, a one-row strip in
 //! a narrow one. Each step shows whether it is done, to do or blocked, and where you are.
 use super::action::Action;
 use super::hit::HitMap;
@@ -37,6 +37,22 @@ pub fn step_state(s: &State, screen: Screen) -> StepState {
             if s.pipeline.broken.is_some() || (s.command_set && !s.pipeline.errors.is_empty()) {
                 StepState::Blocked
             } else if s.command_set {
+                StepState::Done
+            } else {
+                StepState::Todo
+            }
+        }
+        Screen::Verify => {
+            let list = super::verify_screen::chosen(s);
+            let failed = list.iter().any(|c| {
+                matches!(
+                    s.tools.checks.get(c.id),
+                    Some(super::tools_screen::CheckState::Failed(_))
+                )
+            });
+            if failed {
+                StepState::Blocked
+            } else if !list.is_empty() && super::verify_screen::verify_ready(s) {
                 StepState::Done
             } else {
                 StepState::Todo
@@ -163,10 +179,16 @@ pub fn draw_strip(
         if clickable {
             hits.add(r, Action::Goto(*screen));
         }
-        x += width + 2;
+        x += width + 1;
     }
     let (done, total) = setup_progress(s);
-    let tail = format!("{done}/{total} done");
+    // The words go first when the window is only 80 columns wide.
+    let words = format!("{done}/{total} done");
+    let tail = if x + words.chars().count() as u16 <= area.right() {
+        words
+    } else {
+        format!("{done}/{total}")
+    };
     let w = tail.chars().count() as u16;
     if x + w <= area.right() {
         f.render_widget(
@@ -266,17 +288,17 @@ mod tests {
     }
 
     #[test]
-    fn setup_progress_counts_the_done_steps() {
+    fn setup_progress_counts_six() {
         let mut s = State::new((100, 30));
-        assert_eq!(setup_progress(&s), (0, 5));
+        assert_eq!(setup_progress(&s), (0, 6));
         s.apply(Msg::Detected(Box::new(real())));
         s.command_set = true;
         s.pipeline.errors.clear();
-        assert_eq!(setup_progress(&s), (2, 5));
+        assert_eq!(setup_progress(&s), (2, 6));
     }
 
     #[test]
-    fn the_rail_lists_five_clickable_steps_and_marks_where_you_are() {
+    fn the_rail_lists_six_clickable_steps_and_marks_where_you_are() {
         let mut s = loaded();
         s.screen = Screen::Pipeline;
         let t = Theme::detect(&Env::default());
@@ -286,23 +308,24 @@ mod tests {
             .unwrap();
         let rows = text(&term, 22, 12);
         assert!(
-            rows[0].contains("Check")
+            rows[0].contains("Scan")
                 && rows[1].contains("Tools")
                 && rows[2].contains("Pipeline")
-                && rows[3].contains("Review")
-                && rows[4].contains("Test"),
+                && rows[3].contains("Verify")
+                && rows[4].contains("Review")
+                && rows[5].contains("Test"),
             "{rows:?}"
         );
         assert!(
             rows[2].contains('▌') && !rows[0].contains('▌'),
             "the bar marks the current step: {rows:?}"
         );
-        assert!(rows[0].contains('✓'), "Check is done: {rows:?}");
+        assert!(rows[0].contains('✓'), "Scan is done: {rows:?}");
         for (y, sc) in Screen::ALL.iter().enumerate() {
             assert_eq!(hits.at(3, y as u16), Some(Action::Goto(*sc)));
         }
         assert!(
-            rows.iter().any(|r| r.contains("Setup")) && rows.iter().any(|r| r.contains("1/5")),
+            rows.iter().any(|r| r.contains("Setup")) && rows.iter().any(|r| r.contains("1/6")),
             "{rows:?}"
         );
     }
@@ -316,7 +339,9 @@ mod tests {
         term.draw(|f| draw_strip(f, f.area(), &s, &t, &mut hits, true))
             .unwrap();
         let row = &text(&term, 78, 1)[0];
-        for label in ["Check", "Tools", "Pipeline", "Review", "Test", "1/5 done"] {
+        for label in [
+            "Scan", "Tools", "Pipeline", "Verify", "Review", "Test", "1/6",
+        ] {
             assert!(row.contains(label), "{label}: {row}");
         }
         let col = row[..row.find("Review").unwrap()].chars().count() as u16;

@@ -173,11 +173,6 @@ impl PipelineForm {
         s.current().map(|i| i.label.clone()).unwrap_or_default()
     }
 
-    /// Set when the same agent builds and reviews: legal, but the weaker choice.
-    pub fn same_agent(&self) -> bool {
-        Self::label(&self.builder) == Self::label(&self.reviewer)
-    }
-
     /// The config these fields describe, or every problem in it, in the doctor's own words.
     pub fn to_config(&self) -> Result<Config, Vec<FieldError>> {
         let mut errors = vec![];
@@ -309,7 +304,8 @@ mod tests {
             },
             &snap,
         );
-        assert!(f.same_agent());
+        // The Tools screen calls this out (`tools_screen::same_agent`).
+        assert!(crate::tui::tools_screen::same_agent(&f));
     }
 
     #[test]

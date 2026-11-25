@@ -353,6 +353,7 @@ mod tests {
         s.repo = repo;
         s.home = Some(home);
         s.apply(Msg::Detected(Box::new(real())));
+        crate::tui::verify_screen::clear_all(&mut s);
         app_update(&mut s, Action::Goto(Screen::Review));
         s
     }
