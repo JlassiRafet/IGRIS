@@ -35,7 +35,7 @@ else
   case "$tag" in
     v*) ;;
     *)
-      echo "igris: no stable release found. For a pre-release: IGRIS_VERSION=v0.1.0-rc1 sh install.sh" >&2
+      echo "igris: no stable release found. For a pre-release: IGRIS_VERSION=v0.1.0-rc2 sh install.sh" >&2
       exit 1
       ;;
   esac
