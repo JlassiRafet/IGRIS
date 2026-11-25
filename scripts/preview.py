@@ -8,7 +8,7 @@ throwaway git repo in /tmp/igris-demo, captures the screens with their colours a
 font in site/src/assets/fonts:
 
     wordmark.png                                                 the IGRIS wordmark (README header)
-    check.png, pipeline.png, review.png, test.png                one screenshot per screen
+    check.png, tools.png, pipeline.png, verify.png, review.png, test.png   one screenshot per screen
     igris.gif                                                    the app in use, recorded live
     how-it-runs.gif                                              the pipeline page, one task start to finish
 
@@ -169,31 +169,46 @@ def demo_repo():
         sh(*git, "commit", "-q", "--allow-empty", "-m", "init")
     sh(*git, "reset", "-q", "--hard", sh(*git, "rev-list", "--max-parents=0", "HEAD").strip())
     (repo / "igris.toml").unlink(missing_ok=True)
-    for tool in ("claude", "codex"):
-        if found := shutil.which(tool):
-            (shim / tool).unlink(missing_ok=True)
-            (shim / tool).symlink_to(found)
+    # Each tool is found through a short wrapper. Verify's live check (`claude -p`, `codex exec`) answers at once
+    # instead of spending a real model call; every other command goes to the real tool when there is one.
+    quick = {"claude": "-p", "codex": "exec", "herdr": "--version"}
+    for tool, arg in quick.items():
+        (shim / tool).unlink(missing_ok=True)  # never write through an old symlink to the real tool
+        if not (real := shutil.which(tool)):
+            continue
+        (shim / tool).write_text(f'#!/bin/sh\nif [ "$1" = {arg} ]; then echo {"herdr 0.9.1" if tool == "herdr" else "ok"}; exit 0; fi\n'
+                                 f'exec {real} "$@"\n')
+        (shim / tool).chmod(0o755)
     return repo, shim, git
 
 
 def walk_through(t, git, repo, record=None):
-    """The same session for the screenshots and the GIF: Check, set the check command, Review, Apply, Test."""
+    """The same session for the screenshots and the GIF: Scan, Tools (CLI only), Pipeline, Verify, Review, Test."""
     t.wait("optional"); time.sleep(1.2)
     if record:
         record("check")
-    t.keys("2"); t.wait("Builder agent"); time.sleep(0.8)
-    t.keys("Down", "Down", pause=0.5); t.keys("Enter"); t.wait("e.g. cargo test"); time.sleep(0.6)
+    t.keys("2"); t.wait("managers"); time.sleep(0.8)
+    t.keys("Tab", "Tab", "Tab", "Tab", pause=0.4); t.wait("Assistant ·")
+    t.keys("Down", "Down", pause=0.5); t.keys("Enter"); t.wait("CLI only"); time.sleep(0.8)
+    if record:
+        record("tools")
+    t.keys("3"); t.wait("Check command"); time.sleep(0.8)
+    t.keys("Enter"); t.wait("e.g. cargo test"); time.sleep(0.6)
     for ch in "cargo test":
         t.keys(ch, literal=True, pause=0.09)
     time.sleep(0.5)
     if record:
         record("pipeline")
-    t.keys("Enter", pause=1.0); t.keys("3"); t.wait("Write to"); time.sleep(1.8)
+    t.keys("Enter", pause=1.0)
+    t.keys("4"); t.wait("replied in", 30); time.sleep(1.5)
+    if record:
+        record("verify")
+    t.keys("5"); t.wait("Write to"); time.sleep(1.8)
     if record:
         record("review")
     t.keys("Tab", pause=0.6); t.keys("Enter", pause=1.8)
     sh(*git, "add", "igris.toml"); sh(*git, "commit", "-q", "-m", "Add igris.toml")
-    t.keys("4"); t.wait("Run the checks again"); time.sleep(1.0); t.keys("Enter", pause=0.2)
+    t.keys("6"); t.wait("Run the checks again"); time.sleep(1.0); t.keys("Enter", pause=0.2)
     t.wait("All checks pass", 20); time.sleep(2.2)
     if record:
         record("test")

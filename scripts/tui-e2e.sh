@@ -125,6 +125,46 @@ if [ "$killed" != 1 ]; then pkill -f "sleep 60173" || true; rm -rf "$FAKE" "$JOB
 rm -rf "$FAKE" "$JOB_REPO"
 echo "ok  closing the terminal kills a running check"
 
+# The whole walk, with fakes that answer at once: Scan, Tools (CLI only), Pipeline (a command), Verify
+# (every check passes and shows its latency), Review (unlocked: it writes igris.toml) and Test.
+PASS=$(mktemp -d)
+WALK=$(mktemp -d)
+WHOME=$(mktemp -d)
+git -C "$WALK" init -q -b main
+printf '#!/bin/sh\ncase "$1" in -p) echo ok ;; *) echo claude; exit 1 ;; esac\n' > "$PASS/claude"
+printf '#!/bin/sh\ncase "$1" in exec) echo ok ;; *) echo codex; exit 1 ;; esac\n' > "$PASS/codex"
+printf '#!/bin/sh\necho "herdr 0.9.1"\n' > "$PASS/herdr"
+chmod +x "$PASS/claude" "$PASS/codex" "$PASS/herdr"
+W="$S-walk"
+tmux new-session -d -s "$W" -x 100 -y 30 "env PATH=$PASS:\$PATH HOME=$WHOME COLORTERM=truecolor '$BIN' --repo '$WALK'; sleep 30"
+walk_fail() { echo "FAIL: walk: $1"; tmux capture-pane -t "$W" -p; tmux kill-session -t "$W" 2>/dev/null || true; rm -rf "$PASS" "$WALK" "$WHOME"; exit 1; }
+walk_wait() { # pattern, seconds
+  for _ in $(seq 1 $((${2:-10} * 10))); do tmux capture-pane -t "$W" -p | grep -q -- "$1" && return 0; sleep 0.1; done
+  walk_fail "waited for '$1'"
+}
+walk_wait "optional" 60
+tmux send-keys -t "$W" 2;                 walk_wait "managers" 5
+tmux send-keys -t "$W" Tab Tab Tab Tab;   walk_wait "Assistant ·" 5
+tmux send-keys -t "$W" Down Down Enter;   walk_wait "(•) ✓ CLI only" 5
+tmux send-keys -t "$W" 3;                 walk_wait "Check command" 5
+tmux send-keys -t "$W" Enter;             sleep 0.3
+tmux send-keys -t "$W" -l "true";         tmux send-keys -t "$W" Enter
+walk_wait "true" 5
+tmux send-keys -t "$W" 4;                 walk_wait "Claude Code replied in" 20
+walk_wait "Codex replied in" 5
+tmux send-keys -t "$W" 5;                 walk_wait "Write to" 5
+tmux send-keys -t "$W" Tab; sleep 0.3;    tmux send-keys -t "$W" Enter
+for _ in $(seq 1 50); do [ -f "$WALK/igris.toml" ] && break; sleep 0.1; done
+[ -f "$WALK/igris.toml" ] || walk_fail "Apply did not write igris.toml"
+grep -q 'command = "true"' "$WALK/igris.toml" || walk_fail "igris.toml lacks the command"
+tmux send-keys -t "$W" 6;                 walk_wait "Run the checks again" 10
+tmux kill-session -t "$W"
+ended=0
+for _ in $(seq 1 30); do pgrep -f -- "--repo $WALK" >/dev/null || { ended=1; break; }; sleep 0.1; done
+[ "$ended" = 1 ] || { pkill -f -- "--repo $WALK" || true; rm -rf "$PASS" "$WALK" "$WHOME"; echo "FAIL: igris kept running after the walk"; exit 1; }
+rm -rf "$PASS" "$WALK" "$WHOME"
+echo "ok  the whole walk: Tools, Pipeline, Verify (latency), Review unlocked and written, Test; no orphan"
+
 # Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
 distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1
   local sess="igris-e2e-m$$"

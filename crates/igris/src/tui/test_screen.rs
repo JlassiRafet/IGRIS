@@ -61,6 +61,77 @@ pub fn rerun(s: &mut State) -> Effect {
     Effect::RunChecks
 }
 
+/// Where the chat skill is kept in this repository, and where Hermes reads it.
+const SKILL: &str = "examples/hermes/igris/SKILL.md";
+const SKILL_TARGET: &str = "~/.hermes/skills/igris/SKILL.md";
+
+/// Every check passes and a sample task ran: setup is finished.
+fn finished(s: &State) -> bool {
+    s.tested
+        && s.test
+            .checks
+            .as_ref()
+            .is_some_and(|c| c.iter().all(|c| c.ok))
+}
+
+fn name_of(label: Option<String>) -> String {
+    label
+        .and_then(|l| crate::catalog::tool(&l).map(|t| t.name.to_string()))
+        .unwrap_or_else(|| "?".into())
+}
+
+/// What was set up, in words. The assistant line says plainly when there is none.
+pub fn summary_lines(s: &State) -> Vec<String> {
+    use super::tools_screen::AssistantChoice;
+    let pick =
+        |sel: Option<&super::form::Select>| sel.and_then(|x| x.current()).map(|i| i.label.clone());
+    let form = s.pipeline.form.as_ref();
+    let line = format!(
+        "Herdr runs the agents · {} builds · {} reviews · {} decides",
+        name_of(pick(form.map(|f| &f.builder))),
+        name_of(pick(form.map(|f| &f.reviewer))),
+        pick(form.map(|f| &f.backend)).unwrap_or_else(|| "rules".into()),
+    );
+    let assistant = match s.tools.assistant {
+        AssistantChoice::CliOnly => {
+            "Assistant: CLI only. You start tasks from the terminal; there is no chat app."
+                .to_string()
+        }
+        AssistantChoice::Tool(id) => format!(
+            "Assistant: {}. Chat with it once its chat app is linked.",
+            crate::catalog::tool(id).map_or(id, |t| t.name)
+        ),
+        AssistantChoice::Unset => "Assistant: not chosen yet (key 2, Tools).".to_string(),
+    };
+    vec![line, assistant]
+}
+
+/// The commands to use now, then (without a chat assistant) how to add one later.
+pub fn next_steps_lines(s: &State) -> Vec<String> {
+    use super::tools_screen::AssistantChoice;
+    let mut v = vec![
+        "Next steps".to_string(),
+        "  igris run --task \"<your task>\"   start a task".to_string(),
+        "  igris doctor                     check this machine again".to_string(),
+        "  igris continue <id>              carry on after you answer an agent in Herdr"
+            .to_string(),
+    ];
+    match s.tools.assistant {
+        AssistantChoice::CliOnly => {
+            v.push(format!(
+                "Chat later: copy {SKILL} to {SKILL_TARGET}, then set up a chat app in Hermes."
+            ));
+        }
+        AssistantChoice::Tool("hermes") => {
+            v.push(format!(
+                "Chat: copy {SKILL} to {SKILL_TARGET}, then link a chat app in Hermes."
+            ));
+        }
+        _ => {}
+    }
+    v
+}
+
 pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, clickable: bool) {
     let width = area.width as usize;
     let ascii = t.glyphs == Glyphs::Ascii;
@@ -100,7 +171,33 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
     // The table: id, detail, status in one column at the right edge; a failing check says how to fix it.
     let table_bottom = area.height.saturating_sub(5);
     let mut row = 2u16;
-    if let Some(checks) = &s.test.checks {
+    // Once setup is finished the table has said its piece: the summary and the next steps replace it.
+    let table = if finished(s) {
+        None
+    } else {
+        s.test.checks.as_ref()
+    };
+    if finished(s) {
+        let mut lines = summary_lines(s);
+        lines.push(String::new());
+        lines.extend(next_steps_lines(s));
+        for (i, text) in lines.iter().enumerate() {
+            let y = 2 + i as u16;
+            if y >= table_bottom {
+                break;
+            }
+            let style = if text == "Next steps" {
+                t.style(Role::Text).add_modifier(bold)
+            } else {
+                dim
+            };
+            f.render_widget(
+                Paragraph::new(Line::styled(fit(t, text, width.saturating_sub(2)), style)),
+                at(y),
+            );
+        }
+    }
+    if let Some(checks) = table {
         let sw = status_width(t);
         let detail_w = width.saturating_sub(2 + 10 + 1 + 1 + sw);
         for c in checks {
@@ -230,13 +327,17 @@ mod tests {
     }
 
     fn render(s: &State) -> (String, HitMap) {
-        let mut term = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        render_h(s, 24)
+    }
+
+    fn render_h(s: &State, h: u16) -> (String, HitMap) {
+        let mut term = Terminal::new(TestBackend::new(100, h)).unwrap();
         let mut hits = HitMap::default();
         let t = Theme::detect(&Env::default());
         term.draw(|f| draw(f, f.area(), s, &t, &mut hits, true))
             .unwrap();
         let buf = term.backend().buffer().clone();
-        let text = (0..24u16)
+        let text = (0..h)
             .map(|y| {
                 (0..100u16)
                     .map(|x| buf[(x, y)].symbol().to_string())
@@ -245,6 +346,90 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         (text, hits)
+    }
+
+    /// Setup is finished: the checks pass and the sample task ran.
+    fn green() -> State {
+        let mut s = on_test();
+        s.blocker = None;
+        s.test.checks = Some(vec![check("config", true)]);
+        s.tested = true;
+        s.tools.assistant = crate::tui::tools_screen::AssistantChoice::CliOnly;
+        s
+    }
+
+    #[test]
+    fn the_next_steps_box_lists_run_doctor_and_continue_after_a_green_sample() {
+        let (text, _) = render(&green());
+        for want in [
+            "Next steps",
+            "igris run --task \"<your task>\"",
+            "igris doctor",
+            "igris continue <id>",
+        ] {
+            assert!(text.contains(want), "{want}:\n{text}");
+        }
+        // Not before the sample ran, and not while a check fails.
+        let mut s = green();
+        s.tested = false;
+        assert!(!render(&s).0.contains("Next steps"));
+        let mut s = green();
+        s.test.checks = Some(vec![check("config", true), check("clean", false)]);
+        let (text, _) = render(&s);
+        assert!(
+            !text.contains("Next steps") && text.contains("fix for clean"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn cli_only_adds_the_chat_later_line() {
+        use crate::tui::tools_screen::AssistantChoice;
+        let (text, _) = render(&green());
+        assert!(
+            text.contains("Chat later:") && text.contains("examples/hermes/igris/SKILL.md"),
+            "{text}"
+        );
+        let mut s = green();
+        s.tools.assistant = AssistantChoice::Tool("openclaw");
+        assert!(
+            !render(&s).0.contains("SKILL.md"),
+            "no Hermes skill for another assistant"
+        );
+        s.tools.assistant = AssistantChoice::Tool("hermes");
+        assert!(
+            render(&s)
+                .0
+                .contains("Chat: copy examples/hermes/igris/SKILL.md")
+        );
+    }
+
+    #[test]
+    fn the_summary_says_cli_only_plainly() {
+        let (text, _) = render(&green());
+        assert!(
+            text.contains(
+                "Assistant: CLI only. You start tasks from the terminal; there is no chat app."
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("Herdr runs the agents ·") && text.contains("builds ·"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_summary_and_the_steps_fit_the_smallest_panel() {
+        // The smallest window (80x24) leaves a panel about 15 rows high.
+        let (text, _) = render_h(&green(), 15);
+        for want in ["Assistant: CLI only", "igris continue <id>", "Chat later:"] {
+            assert!(text.contains(want), "{want}:\n{text}");
+        }
+        assert!(
+            text.contains("Run a sample task"),
+            "the buttons stay:\n{text}"
+        );
     }
 
     #[test]
