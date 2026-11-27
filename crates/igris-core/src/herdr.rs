@@ -23,9 +23,9 @@ impl HerdrError {
     fn new(code: &str, message: impl Into<String>) -> Self {
         let hint = match code {
             "agent_not_ready" | "agent_blocked" => {
-                "the agent is waiting for input, often a folder-trust prompt: resolve it in Herdr \
-                 (Claude Code asks once per new folder, so trust the parent folder of your \
-                 worktrees), then run `igris continue <id>`"
+                "the agent is waiting for input (a folder-trust prompt, an update prompt or a \
+                 question): resolve it in Herdr with key presses in its pane, then run \
+                 `igris continue <id>`. Each agent keeps its own trust list"
             }
             "timeout" => {
                 "the command timed out but may still be running: check the pane before retrying"
@@ -71,6 +71,14 @@ pub struct Worktree {
     pub workspace_id: String,
     pub root_pane: String,
     pub path: PathBuf,
+}
+
+/// What Herdr says about one agent (`herdr agent get`): its kind, its folder and its pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentInfo {
+    pub kind: String,
+    pub cwd: PathBuf,
+    pub pane_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -262,6 +270,16 @@ impl Herdr {
             "--timeout",
             &t,
         ])?))
+    }
+
+    /// The agent's kind, folder and pane as Herdr reports them.
+    pub fn agent_info(&self, name: &str) -> Result<AgentInfo, HerdrError> {
+        let v = self.call(&["agent", "get", name])?;
+        Ok(AgentInfo {
+            kind: text_at(&v, &["agent", "agent"])?,
+            cwd: text_at(&v, &["agent", "cwd"])?.into(),
+            pane_id: text_at(&v, &["agent", "pane_id"])?,
+        })
     }
 
     pub fn read(&self, name: &str, lines: u32) -> Result<String, HerdrError> {

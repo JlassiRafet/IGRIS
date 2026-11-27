@@ -488,3 +488,29 @@ fn setup_command_is_gone() {
         .unwrap();
     assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
 }
+
+#[test]
+fn doctor_does_not_promise_that_parent_folder_trust_works() {
+    let e = env();
+    fs::remove_file(e.bin.join("codex")).unwrap();
+    e.fake.on("agent-list", "agent-list.json");
+    // A PATH with the fake agents and git only, so a codex installed on this machine cannot count.
+    let tools = tmp("tools");
+    let git_bin = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|d| d.join("git"))
+        .find(|p| p.exists())
+        .unwrap();
+    std::os::unix::fs::symlink(git_bin, tools.join("git")).unwrap();
+    let path = format!("{}:{}", e.bin.display(), tools.display());
+    let v = json_of(&e.igris_with(&["doctor", "--repo", e.repo()], &[("PATH", &path)]));
+    let c = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "reviewer")
+        .unwrap();
+    assert_eq!(c["ok"], false, "{v}");
+    let fix = c["fix"].as_str().unwrap();
+    assert!(!fix.contains("parent folder"), "{fix}");
+    assert!(fix.contains("install codex"), "{fix}");
+}
