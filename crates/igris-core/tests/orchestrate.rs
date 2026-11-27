@@ -391,6 +391,42 @@ fn a_builder_that_leaves_uncommitted_work_is_asked_once_then_fails() {
         .filter(|c| c[1] == "prompt" && c[2].starts_with("ib-"))
         .count();
     assert_eq!(builder_prompts, 2, "the task, then one ask to commit");
+    assert!(r.reason.contains("?? b.txt"), "{}", r.reason);
+    let nudge = w
+        .fake
+        .calls()
+        .into_iter()
+        .filter(|c| c[1] == "prompt" && c[2].starts_with("ib-"))
+        .nth(1)
+        .unwrap();
+    assert!(nudge[3].contains("?? b.txt"), "{}", nudge[3]);
+    assert!(nudge[3].contains(".gitignore"), "{}", nudge[3]);
+}
+
+#[test]
+fn dirty_files_names_a_file_with_a_space_and_non_ascii_characters() {
+    let w = world(true);
+    fs::write(w.wt.join("my file é.txt"), "x").unwrap();
+    fs::write(w.wt.join("a.txt"), "changed").unwrap();
+    let files = igris_core::git::dirty_files(&w.wt).unwrap();
+    assert_eq!(files, [" M a.txt", "?? my file é.txt"]);
+}
+
+#[test]
+fn more_than_ten_leftover_files_are_summarised() {
+    let w = world(true);
+    for i in 1..=12 {
+        fs::write(w.wt.join(format!("f{i:02}.txt")), "x").unwrap();
+    }
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!(r.status, Status::Failed);
+    assert!(r.reason.contains("?? f01.txt"), "{}", r.reason);
+    assert!(r.reason.contains("?? f10.txt"), "{}", r.reason);
+    assert!(!r.reason.contains("f11.txt"), "{}", r.reason);
+    assert!(r.reason.ends_with("and 2 more"), "{}", r.reason);
 }
 
 #[test]
