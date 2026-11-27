@@ -124,6 +124,8 @@ pub struct State {
     pub tick: usize,
     /// A background install or download finished: scan again as soon as no scan is running.
     pub rescan_wanted: bool,
+    /// The guided chain (`IGRIS_CHAIN=1`); `None` is the dashboard.
+    pub chain: Option<super::chain::model::ChainUi>,
 }
 
 impl State {
@@ -169,6 +171,9 @@ impl State {
             super::pipeline_screen::refresh(self);
         }
         self.snapshot = Some(*snap);
+        if let (Some(c), Some(s)) = (self.chain.as_mut(), self.snapshot.as_ref()) {
+            c.settle(s);
+        }
         super::install::after_scan(self);
         super::verify_screen::after_scan(self);
         self.blocker = self.check.view.as_ref().and_then(super::check::blocker);
@@ -208,6 +213,7 @@ impl State {
             toast: None,
             tick: 0,
             rescan_wanted: false,
+            chain: None,
         }
     }
 }

@@ -19,7 +19,6 @@ struct Marks {
     on: &'static str,
     off: &'static str,
     warn: &'static str,
-    dot: &'static str,
     hint: &'static str,
 }
 
@@ -33,7 +32,6 @@ fn marks(t: &Theme) -> Marks {
             on: "(*)",
             off: "( )",
             warn: "!",
-            dot: "-",
             hint: "up/down choose - Enter confirm - Left back - r re-scan",
         }
     } else {
@@ -45,13 +43,12 @@ fn marks(t: &Theme) -> Marks {
             on: "●",
             off: "○",
             warn: "⚠",
-            dot: "·",
             hint: "↑/↓ choose · Enter confirm · ← back · r re-scan",
         }
     }
 }
 
-const QUESTION_ROWS: usize = 3; // the blank line above, the question, the hint
+const QUESTION_ROWS: usize = 4; // the blank line above, the question, the hint, the closing mark
 const BOX_ROWS: u16 = 5;
 
 pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme, tick: usize) {
@@ -114,6 +111,7 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
                 Span::styled(format!("{}  ", m.rail), t.style(Role::Dim)),
                 Span::styled(keys, t.style(Role::Dim)),
             ]));
+            lines.push(Line::styled(m.close, t.style(Role::Dim)));
         }
     }
     let n = lines.len() as u16;

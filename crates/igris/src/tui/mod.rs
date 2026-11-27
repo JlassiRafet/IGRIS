@@ -5,7 +5,6 @@
 mod action;
 mod apply;
 mod attached;
-#[allow(dead_code)] // wired in by the chain slice's third task
 mod chain;
 mod check;
 mod connect;
@@ -73,6 +72,10 @@ pub fn draw(f: &mut Frame, s: &State, t: &Theme, hits: &mut HitMap) {
             area.width, area.height
         );
         f.render_widget(Paragraph::new(msg).wrap(Wrap { trim: true }), area);
+        return;
+    }
+    if let (Some(c), Some(snap)) = (&s.chain, &s.snapshot) {
+        chain::draw::draw(f, area, c, snap, t, s.tick);
         return;
     }
     let big = area.height >= layout::TALL_HEIGHT && t.glyphs == theme::Glyphs::Unicode;
@@ -377,6 +380,9 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     let mut state = State::new(size);
     state.repo = opts.repo.clone();
     state.home = igris_core::platform::home();
+    if chain::enabled(std::env::var("IGRIS_CHAIN").ok().as_deref()) {
+        state.chain = Some(chain::model::ChainUi::new());
+    }
     let mut hits = HitMap::default();
     let started = std::time::Instant::now();
     let (tx, rx) = std::sync::mpsc::channel();
@@ -410,6 +416,13 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
             continue;
         }
         let action = match event::read()? {
+            Event::Key(k) if k.kind != KeyEventKind::Release && state.chain.is_some() => {
+                match state.chain.as_mut() {
+                    Some(c) => chain::key(c, state.snapshot.as_ref(), k),
+                    None => None,
+                }
+            }
+            Event::Mouse(_) | Event::Paste(_) if state.chain.is_some() => None,
             Event::Key(k) if k.kind != KeyEventKind::Release => {
                 let ctx = context(&state);
                 let typed = key_to_action(ctx, k);
