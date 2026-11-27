@@ -1,0 +1,1 @@
+{"error":{"code":"agent_prompt_stalled","message":"agent builder did not become working or blocked within 5000ms of the accepted prompt"},"id":"cli:agent:prompt"}

@@ -222,6 +222,56 @@ fn a_folder_trust_prompt_at_startup_is_reported_not_crashed() {
     assert!(r.next.contains("igris continue"), "{}", r.next);
 }
 
+// The error code is from `herdr agent prompt --help`; the JSON shape copies the recorded
+// `agent_blocked` fixture, so the message text is a stand-in, not a recording (#95).
+const LIMIT_SCREEN: &str = "You've hit your usage limit. Try again at 7:56 PM.\n";
+
+#[test]
+fn a_prompt_herdr_reports_as_stalled_blocks_the_task_instead_of_leaving_it_running() {
+    let w = world(true);
+    w.fake
+        .fail("agent-prompt", "error-agent-prompt-stalled.txt");
+    w.fake.on_raw("agent-read", LIMIT_SCREEN);
+    let c = cfg();
+    let r = w.orch(&c).run(&w.repo, "add a login page", false).unwrap();
+    assert_eq!((r.status, r.stage), (Status::Blocked, Stage::Build));
+    assert!(r.reason.contains("did not start working"), "{}", r.reason);
+    assert!(r.reason.contains("usage limit"), "{}", r.reason);
+    assert_eq!(
+        r.pending, None,
+        "the prompt is not pending: it is sent again"
+    );
+    assert!(r.next.contains("sends the task again"), "{}", r.next);
+    assert!(
+        r.next.contains(&format!("igris continue {}", r.id)),
+        "{}",
+        r.next
+    );
+    let saved = w.orch(&c).load(&r.id).unwrap();
+    assert_eq!(saved.status, Status::Blocked, "the saved report agrees");
+}
+
+#[test]
+fn continue_after_a_stalled_prompt_sends_the_task_again() {
+    let w = world(true);
+    w.fake
+        .queue_fail("agent-prompt", "error-agent-prompt-stalled.txt");
+    w.fake.on_raw("agent-read", LIMIT_SCREEN);
+    let c = cfg();
+    let first = w.orch(&c).run(&w.repo, "add a login page", false).unwrap();
+    assert_eq!(first.status, Status::Blocked);
+    w.fake.queue_raw_ok("agent-read", APPROVE);
+    let r = w.orch(&c).resume(&first.id).unwrap();
+    assert_eq!(r.status, Status::Done);
+    let cards = w
+        .fake
+        .calls()
+        .iter()
+        .filter(|c| c[1] == "prompt" && c.iter().any(|a| a.contains("Task: add a login page")))
+        .count();
+    assert_eq!(cards, 2, "the task card goes out again after the stall");
+}
+
 fn blocked_run(w: &World, c: &Config, config: Option<&str>) -> igris_core::orchestrate::Report {
     w.fake.fail("agent-start", "error-agent-not-ready.txt");
     w.fake.on_raw("agent-read", UNKNOWN_DIALOG); // not a recorded dialog: the plain next line

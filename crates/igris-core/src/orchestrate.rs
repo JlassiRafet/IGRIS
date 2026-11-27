@@ -568,6 +568,26 @@ impl Orchestrator<'_> {
                 self.blocked(r, who)?;
                 Ok(false)
             }
+            // Herdr took the prompt but saw no work within 5 s (a usage limit, a lost prompt). The
+            // prompt is not pending: `continue` sends it again, after the user looked at the pane.
+            Err(e) if !resuming && e.code == "agent_prompt_stalled" => {
+                r.pending = None;
+                self.blocked(r, who)?;
+                let seen = sanitize(&r.checks.tail);
+                r.reason = if seen.is_empty() {
+                    format!("the {who} did not start working within 5 s of the task prompt")
+                } else {
+                    format!(
+                        "the {who} did not start working within 5 s of the task prompt; on screen: {seen}"
+                    )
+                };
+                r.next = format!(
+                    "look at the pane in Herdr, then run `{}`: it sends the task again",
+                    continue_command(r)
+                );
+                self.save(r)?;
+                Ok(false)
+            }
             Err(e) if e.code == "timeout" => {
                 let why = format!(
                     "timed out waiting for the {who}; it may still be working: `{}` waits for it",
