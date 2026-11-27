@@ -5,6 +5,8 @@
 mod action;
 mod apply;
 mod attached;
+#[allow(dead_code)] // wired in by the chain slice's third task
+mod chain;
 mod check;
 mod connect;
 pub(crate) mod detect_worker;
