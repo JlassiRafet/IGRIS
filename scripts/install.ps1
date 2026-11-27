@@ -23,7 +23,7 @@ if ($env:IGRIS_VERSION) {
     $Tag = $env:IGRIS_VERSION
 } else {
     $Tag = (Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing).tag_name
-    if (-not $Tag) { throw 'igris: no stable release found. For a pre-release: $env:IGRIS_VERSION = "v0.1.0-rc2"' }
+    if (-not $Tag) { throw 'igris: no stable release found. For a pre-release: $env:IGRIS_VERSION = "v0.1.0-rc3"' }
 }
 
 $Asset = "igris-$Tag-$Target.zip"
