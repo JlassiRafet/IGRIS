@@ -3,6 +3,7 @@
 use super::model::{ChainUi, Choice, Mark, Step};
 use crate::tui::style::{GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
 use crate::tui::theme::{ColorDepth, Glyphs, Theme};
+use crate::tui::widgets::{Glint, glint};
 use crate::tui::{header, layout, widgets};
 use igris_detect::Snapshot;
 use ratatui::Frame;
@@ -241,26 +242,22 @@ fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme, tick: usize) -> Lin
     Line::from(spans)
 }
 
-/// Ticks of rest between two glints (a tick is 100 ms).
-const GLINT_REST: usize = 14;
-
-/// The label of the call to action. With motion on, a glint slides over its letters one step per
-/// tick and then rests, like the effort slider in Claude Code: the letter under it is the sheen,
-/// its neighbours the glow, the rest the plain blue. Without motion it is one steady span.
+/// The label of the call to action. With motion on, the shared glint slides over its letters: the
+/// letter under it is the sheen, its neighbours the glow, the rest the plain blue. Without motion
+/// it is one steady span.
 fn shine(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
     let steady = t.style(Role::Cta);
     if !t.motion || t.depth != ColorDepth::True {
         return vec![Span::styled(text.to_string(), steady)];
     }
     let len = text.chars().count();
-    let at = (tick % (len + 4 + GLINT_REST)) as isize - 2;
     text.chars()
         .enumerate()
         .map(|(i, ch)| {
-            let colour = match (i as isize - at).abs() {
-                0 => SHEEN,
-                1 => GLOW,
-                _ => LIGHT_BLUE,
+            let colour = match glint(tick, len, i) {
+                Glint::Sheen => SHEEN,
+                Glint::Glow => GLOW,
+                Glint::Off => LIGHT_BLUE,
             };
             Span::styled(ch.to_string(), steady.fg(rgb(colour)))
         })

@@ -2,7 +2,7 @@
 //! progress bar. Every string from outside the binary is shortened here before it is drawn.
 
 use super::input::Input;
-use super::style::{ACCENT, GLOW, Role, SHEEN, rgb};
+use super::style::{ACCENT, GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
 use super::theme::{ColorDepth, Glyphs, Theme};
 use crate::check::view::Status;
 use ratatui::style::{Color, Modifier, Style};
@@ -224,22 +224,62 @@ pub fn status_cell(t: &Theme, st: Status) -> Span<'static> {
     Span::styled(" ".repeat(fill) + &text, t.style(status_role(st)))
 }
 
-/// A button. The primary one (the thing to do next) is a light-blue chip; the others are light-blue text in
-/// brackets. A focused one is also bold and underlined, so focus never relies on colour.
-pub fn button(t: &Theme, label: &str, primary: bool, focused: bool) -> Span<'static> {
-    let mut style = if primary {
-        t.style(Role::Primary)
-    } else {
-        t.style(Role::Link)
-    };
+/// A secondary button: light-blue text in brackets. A focused one is also bold and underlined, so
+/// focus never relies on colour. The primary one is `primary_button`.
+pub fn button(t: &Theme, label: &str, focused: bool) -> Span<'static> {
+    let mut style = t.style(Role::Link);
     if focused {
         style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
     }
-    if primary {
-        Span::styled(format!(" {label} "), style)
-    } else {
-        Span::styled(format!("[ {label} ]"), style)
+    Span::styled(format!("[ {label} ]"), style)
+}
+
+/// How bright one letter of a call to action is while the glint passes over it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Glint {
+    Off,
+    Glow,
+    Sheen,
+}
+
+/// Ticks of rest between two glints (a tick is 100 ms).
+pub const GLINT_REST: usize = 14;
+
+/// The glint of a call to action: one letter of `len` is the sheen, its neighbours the glow, and
+/// it moves one letter per tick, then rests, like the effort slider in Claude Code. It starts
+/// left of the first letter and leaves right of the last.
+pub fn glint(tick: usize, len: usize, i: usize) -> Glint {
+    let at = (tick % (len + 4 + GLINT_REST)) as isize - 2;
+    match (i as isize - at).abs() {
+        0 => Glint::Sheen,
+        1 => Glint::Glow,
+        _ => Glint::Off,
     }
+}
+
+/// The primary button: dark text on the light blue, with the glint passing over the chip's
+/// background when motion is on. Steady otherwise. A focused one is also bold and underlined.
+pub fn primary_button(t: &Theme, label: &str, focused: bool, tick: usize) -> Vec<Span<'static>> {
+    let mut style = t.style(Role::Primary);
+    if focused {
+        style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+    }
+    let text = format!(" {label} ");
+    if !t.motion || t.depth != ColorDepth::True {
+        return vec![Span::styled(text, style)];
+    }
+    let len = text.chars().count();
+    text.chars()
+        .enumerate()
+        .map(|(i, ch)| {
+            let bg = match glint(tick, len, i) {
+                Glint::Off => LIGHT_BLUE,
+                Glint::Glow => GLOW,
+                Glint::Sheen => SHEEN,
+            };
+            Span::styled(ch.to_string(), style.bg(rgb(bg)))
+        })
+        .collect()
 }
 
 /// A progress bar exactly `width` cells wide. `Some(fraction)` fills from the left; `None` is a
@@ -327,6 +367,80 @@ mod tests {
         let mut i = Input::masked();
         i.paste("sk-test-123");
         i
+    }
+
+    fn motion() -> Theme {
+        Theme {
+            depth: ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: true,
+        }
+    }
+
+    #[test]
+    fn the_glint_is_one_bright_letter_with_a_glow_either_side_then_a_rest() {
+        assert_eq!(glint(2, 9, 0), Glint::Sheen);
+        assert_eq!(glint(2, 9, 1), Glint::Glow);
+        assert_eq!(glint(2, 9, 2), Glint::Off);
+        assert_eq!(
+            glint(0, 9, 0),
+            Glint::Off,
+            "it starts left of the first letter"
+        );
+        assert!((0..9).all(|i| glint(14, 9, i) == Glint::Off), "at rest");
+        assert_eq!(glint(27, 9, 0), glint(0, 9, 0), "the cycle repeats");
+    }
+
+    #[test]
+    fn a_primary_button_glints_its_background_and_keeps_its_dark_text() {
+        let t = motion();
+        let plain = t.style(Role::Primary);
+        for tick in 0..30 {
+            for sp in primary_button(&t, "Apply", false, tick) {
+                assert_eq!(sp.style.fg, plain.fg, "tick {tick}");
+                assert!(sp.style.add_modifier.contains(Modifier::BOLD));
+            }
+        }
+        let bgs = |tick| {
+            primary_button(&t, "Apply", false, tick)
+                .iter()
+                .map(|s| s.style.bg)
+                .collect::<Vec<_>>()
+        };
+        assert!(bgs(3).contains(&Some(rgb(SHEEN))), "{:?}", bgs(3));
+        assert!(
+            bgs(20).iter().all(|b| *b == plain.bg),
+            "at rest: {:?}",
+            bgs(20)
+        );
+    }
+
+    #[test]
+    fn without_motion_a_primary_button_is_one_steady_chip_and_the_text_never_changes() {
+        let calm = Theme {
+            motion: false,
+            ..motion()
+        };
+        let spans = primary_button(&calm, "Apply", false, 5);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style, calm.style(Role::Primary));
+        let text = |t: &Theme, tick| {
+            primary_button(t, "Apply", true, tick)
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        for tick in 0..30 {
+            assert_eq!(text(&motion(), tick), " Apply ");
+        }
+        for sp in primary_button(&motion(), "Apply", true, 4) {
+            assert!(
+                sp.style
+                    .add_modifier
+                    .contains(Modifier::BOLD | Modifier::UNDERLINED),
+                "focus is bold and underlined on every letter"
+            );
+        }
     }
 
     #[test]

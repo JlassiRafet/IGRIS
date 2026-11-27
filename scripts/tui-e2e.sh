@@ -153,6 +153,13 @@ walk_wait "true" 5
 tmux send-keys -t "$W" 4;                 walk_wait "Claude Code replied in" 20
 walk_wait "Codex replied in" 5
 tmux send-keys -t "$W" 5;                 walk_wait "Write to" 5
+# The Apply button glints: its colours move while its text stays the same.
+apply_line=$(tmux capture-pane -t "$W" -p | grep -n "Apply" | head -1 | cut -d: -f1)
+[ -n "$apply_line" ] || walk_fail "no Apply button on the Review screen"
+apply_row() { tmux capture-pane -t "$W" -e -p | sed -n "${apply_line}p"; }
+apply_frames=$(for _ in $(seq 1 40); do apply_row | md5sum; sleep 0.1; done | sort -u | wc -l)
+[ "$apply_frames" -gt 1 ] || walk_fail "the Apply button does not glint"
+echo "ok  the Apply button glints"
 tmux send-keys -t "$W" Tab; sleep 0.3;    tmux send-keys -t "$W" Enter
 for _ in $(seq 1 50); do [ -f "$WALK/igris.toml" ] && break; sleep 0.1; done
 [ -f "$WALK/igris.toml" ] || walk_fail "Apply did not write igris.toml"

@@ -5,7 +5,7 @@ use super::hit::HitMap;
 use super::state::{Effect, State};
 use super::style::Role;
 use super::theme::{Glyphs, Theme};
-use super::widgets::{button, fit, fit_path};
+use super::widgets::{button, fit, fit_path, primary_button};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -274,10 +274,10 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
                 );
             }
             if same {
-                (button(t, "Nothing to apply", false, r.focus == 1), "")
+                (vec![button(t, "Nothing to apply", r.focus == 1)], "")
             } else {
                 (
-                    button(t, "Apply", true, r.focus == 1),
+                    primary_button(t, "Apply", r.focus == 1, s.tick),
                     "Enter applies; Tab moves between the two controls",
                 )
             }
@@ -307,12 +307,13 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
                 Rect::new(area.x, area.y + 4, area.width, area.height - 6),
             );
             (
-                button(t, "Apply", false, r.focus == 1),
+                vec![button(t, "Apply", r.focus == 1)],
                 "not available until this is fixed",
             )
         }
     };
-    let mut row = vec![focus_mark(1), Span::raw(" "), button];
+    let mut row = vec![focus_mark(1), Span::raw(" ")];
+    row.extend(button);
     if !note.is_empty() {
         row.push(Span::styled(format!("  {note}"), dim));
     }
