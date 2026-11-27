@@ -4,6 +4,9 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+- The task report has a `reviewed_by` field: the reviewer's agent, with "(same agent, new session)" when the builder and the reviewer are the same agent. The check command stays the final judge (#85).
+
 ### Fixed
 - A task that fails with "the builder left uncommitted changes" now names the files (up to ten, then `and N more`), and so does the one reminder sent to the builder, which also offers `.gitignore` for generated files. A check that leaves `__pycache__/` no longer fails without saying why.
 - A blocked report names the agent that is waiting (from Herdr, else the configured one) and quotes the last lines of its screen, cleaned of escape sequences. It no longer says "Claude Code" for a Codex update prompt, and it says the answer is a key press in the Herdr pane (#82).
