@@ -22,7 +22,7 @@ fn codexs_worktree_dialog_matches_with_enter_and_names_the_repository_root() {
 
 #[test]
 fn codexs_plain_dialog_without_the_repository_note_matches_too() {
-    let plain = "  Trust this folder? Codex can read, edit, and run files here, subject to your\n\n› 1. Trust and continue\n  2. Back to Agent Command Center\n";
+    let plain = "  Trust this folder? Codex can read, edit, and run files here, subject to your\n\n› 1. Trust and continue\n  2. Back to Agent Command Center\n\n  enter continue · esc back\n";
     assert!(match_dialog("codex", plain).is_some());
     assert!(!names_repo_root(plain));
 }
@@ -52,4 +52,20 @@ fn an_unknown_screen_or_agent_never_matches() {
         match_dialog("codex", CLAUDE).is_none(),
         "another agent's dialog"
     );
+}
+
+const ANOTHER_QUESTION: &str = "Do you want to run `rm -rf build`?\n❯ 1. Yes\n  2. No\n";
+
+#[test]
+fn a_dialog_quoted_above_another_question_does_not_match() {
+    // The trust text is still in the visible text, but the active question is another one.
+    assert!(match_dialog("codex", &format!("{CODEX_ROOT}\n{ANOTHER_QUESTION}")).is_none());
+    assert!(match_dialog("claude", &format!("{CLAUDE}\n{ANOTHER_QUESTION}")).is_none());
+}
+
+#[test]
+fn two_dialogs_with_the_same_footer_are_ambiguous_and_do_not_match() {
+    let second =
+        "Do you want to proceed?\n❯ 1. Yes\n  2. No\n\n Enter to confirm · Esc to cancel\n";
+    assert!(match_dialog("claude", &format!("{CLAUDE}\n{second}")).is_none());
 }
