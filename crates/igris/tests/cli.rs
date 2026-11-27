@@ -514,3 +514,36 @@ fn doctor_does_not_promise_that_parent_folder_trust_works() {
     assert!(!fix.contains("parent folder"), "{fix}");
     assert!(fix.contains("install codex"), "{fix}");
 }
+
+#[test]
+fn continue_yes_on_an_unknown_task_fails_clearly() {
+    let e = env();
+    let o = e.igris(&["continue", "t0-dead", "--yes"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(json_of(&o)["error"].as_str().unwrap().contains("no task"));
+}
+
+#[test]
+fn continue_yes_refuses_with_exit_3_and_presses_nothing_when_herdr_cannot_say_who_waits() {
+    let e = env();
+    let id =
+        json_of(&e.igris(&["run", "--repo", e.repo(), "--task", "run the db migration"]))["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    edit_report(&e, &id, |r| {
+        r["status"] = json!("blocked");
+        r["stage"] = json!("build");
+        r["waiting"] = json!("builder");
+        r["panes"]["builder"] = json!("w2:p1");
+    });
+    let o = e.igris(&["continue", &id, "--yes"]);
+    let v = json_of(&o);
+    assert_eq!(o.status.code(), Some(3), "{v} {}", stderr(&o));
+    assert_eq!(v["status"], "blocked");
+    assert!(
+        v["reason"].as_str().unwrap().contains("cannot ask Herdr"),
+        "{v}"
+    );
+    assert!(!e.fake.calls().iter().any(|c| c[1] == "send-keys"));
+}

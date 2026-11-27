@@ -8,11 +8,12 @@
 use crate::config::Config;
 use crate::decide::{self, Decision};
 use crate::herdr::{AgentState, Herdr, HerdrError};
+use crate::trust;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrchError {
@@ -246,6 +247,17 @@ fn changed_files(dir: &Path, base: &str) -> Result<Vec<String>, OrchError> {
     crate::git::changed_files(dir, base).map_err(OrchError::Git)
 }
 
+/// Time for an agent to redraw between two key presses.
+const KEY_GAP: Duration = Duration::from_millis(300);
+
+/// Time for an agent to become ready for input after its trust dialog is answered. Measured live
+/// (Claude Code 2.1.332): a task prompt sent right after the keys was typed but not submitted.
+const TRUST_SETTLE: Duration = Duration::from_secs(3);
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
+}
+
 fn last_lines(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     lines[lines.len().saturating_sub(n)..].join("\n")
@@ -416,6 +428,84 @@ impl Orchestrator<'_> {
         Ok(r)
     }
 
+    /// Like `resume`; with `yes`, first answer the blocked agent's folder-trust dialog, but only
+    /// when it is a recorded one (see `trust`) in this task's own worktree. Every other case is
+    /// reported as it is, with no key pressed.
+    pub fn resume_with(&self, id: &str, yes: bool) -> Result<Report, OrchError> {
+        if !yes {
+            return self.resume(id);
+        }
+        let mut r = self.load(id)?;
+        if r.status != Status::Blocked {
+            return Err(OrchError::Invalid(format!(
+                "task {id} is not blocked: --yes only answers the folder-trust dialog of a blocked task"
+            )));
+        }
+        if let Some(why) = self.press_trust_keys(&r)? {
+            r.reason = format!("--yes: {why}");
+            r.next = format!(
+                "answer it with key presses in the Herdr pane (not a shell command), then run `{}`",
+                continue_command(&r)
+            );
+            self.save(&r)?;
+            return Ok(r);
+        }
+        self.resume(id)
+    }
+
+    /// `None` when the keys were pressed and the dialog is gone; otherwise why nothing (more) was
+    /// sent.
+    fn press_trust_keys(&self, r: &Report) -> Result<Option<String>, OrchError> {
+        let Some(who) = r.waiting.as_deref() else {
+            return Ok(Some(
+                "the report does not say which agent is waiting".into(),
+            ));
+        };
+        let name = Self::agent_name(r, who);
+        let info = match self.herdr.agent_info(&name) {
+            Ok(i) => i,
+            Err(e) => return Ok(Some(format!("cannot ask Herdr about the {who}: {e}"))),
+        };
+        if !same_dir(&info.cwd, &r.worktree) {
+            return Ok(Some(format!(
+                "the {who}'s pane is in {}, which is not the task's worktree {}",
+                info.cwd.display(),
+                r.worktree.display()
+            )));
+        }
+        let screen = match self.herdr.read_visible(&name, 40) {
+            Ok(s) => s,
+            Err(e) => return Ok(Some(format!("cannot read the {who}'s screen: {e}"))),
+        };
+        let Some(dialog) = trust::match_dialog(&info.kind, &screen) else {
+            return Ok(Some(format!(
+                "what the {who} ({}) shows is not a recorded folder-trust dialog; on screen: {}",
+                info.kind,
+                sanitize(&screen)
+            )));
+        };
+        for key in dialog.keys {
+            if let Err(e) = self.herdr.send_key(&name, key) {
+                return Ok(Some(format!(
+                    "pressing {key} in the {who}'s pane failed ({e}); check the pane before retrying"
+                )));
+            }
+            std::thread::sleep(KEY_GAP);
+        }
+        std::thread::sleep(TRUST_SETTLE);
+        let still = self
+            .herdr
+            .read_visible(&name, 40)
+            .is_ok_and(|s| trust::match_dialog(&info.kind, &s).is_some());
+        Ok(still.then(|| {
+            format!(
+                "the {} dialog is still on screen after pressing {}; nothing more was sent",
+                dialog.label,
+                dialog.keys.join(", ")
+            )
+        }))
+    }
+
     fn drive(&self, r: &mut Report) -> Result<(), OrchError> {
         r.status = Status::Running;
         r.reason.clear();
@@ -507,6 +597,7 @@ impl Orchestrator<'_> {
             .filter(|k| !k.is_empty())
             .unwrap_or_else(|| configured.clone());
         let seen = sanitize(&screen);
+        let visible = self.herdr.read_visible(&name, 40).unwrap_or_default();
         r.checks.tail = screen;
         r.status = Status::Blocked;
         r.waiting = Some(who.into());
@@ -515,10 +606,25 @@ impl Orchestrator<'_> {
         } else {
             format!("the {who} ({kind}) is waiting for input; on screen: {seen}")
         };
-        r.next = format!(
-            "answer it with key presses in the Herdr pane (not a shell command), then run `{}`",
-            continue_command(r)
-        );
+        r.next = match trust::match_dialog(&kind, &visible) {
+            // Built from fixed fields, never from the screen text.
+            Some(d) => {
+                let target = if trust::names_repo_root(&visible) {
+                    format!("the repository root {}", r.repo.display())
+                } else {
+                    r.worktree.display().to_string()
+                };
+                format!(
+                    "{} asks to trust {target}. Answer it in the Herdr pane, or, if the user agrees, run `{} --yes`",
+                    d.label,
+                    continue_command(r)
+                )
+            }
+            None => format!(
+                "answer it with key presses in the Herdr pane (not a shell command), then run `{}`",
+                continue_command(r)
+            ),
+        };
         self.save(r)?;
         Ok(false)
     }

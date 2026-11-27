@@ -282,6 +282,17 @@ impl Herdr {
         })
     }
 
+    /// What is on the screen now (no scrollback): the text a dialog is matched against.
+    pub fn read_visible(&self, name: &str, lines: u32) -> Result<String, HerdrError> {
+        let n = lines.to_string();
+        self.call_text(&["agent", "read", name, "--source", "visible", "--lines", &n])
+    }
+
+    /// Press one key in the agent's pane (`herdr agent send-keys`), by Herdr's key name.
+    pub fn send_key(&self, name: &str, key: &str) -> Result<(), HerdrError> {
+        self.call(&["agent", "send-keys", name, key]).map(|_| ())
+    }
+
     pub fn read(&self, name: &str, lines: u32) -> Result<String, HerdrError> {
         let n = lines.to_string();
         self.call_text(&[

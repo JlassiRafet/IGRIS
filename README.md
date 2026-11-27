@@ -80,7 +80,7 @@ igris run --task "fix the failing cart test"
 
 IGRIS answers its four questions, starts the builder in a Herdr pane in its own git worktree, has the reviewer read the diff, then runs your check command. The result is one JSON document, and the exit code says where it ended: `0` done, `3` not done (it needs your yes, or an agent is waiting on a question), `1` failed. When it is done, `igris merge <id>` merges it.
 
-The first time an agent works in a new folder it asks you a question inside its Herdr pane, for example whether you trust the folder. IGRIS reports the task as `blocked`: answer in Herdr, then run `igris continue <id>`.
+The first time an agent works in a new folder it asks you a question inside its Herdr pane, for example whether you trust the folder. IGRIS reports the task as `blocked`: answer in Herdr, then run `igris continue <id>`. For the folder-trust dialog of Claude Code or Codex you can let IGRIS answer it: `igris continue <id> --yes` presses the keys only when the screen is that exact dialog in this task's own worktree, and tells you what it saw otherwise. The agent's own trust list is not touched by IGRIS, and an update prompt or any other question is always yours to answer.
 
 ## Chat with it
 
@@ -107,7 +107,7 @@ Every check has a command, for scripts and CI. Results are JSON on stdout, and t
 | `igris doctor` | Checks the config, Herdr, both agents and the repository. `--json` adds the machine report: hardware, local models, agents and their logins. |
 | `igris run --task "…"` | Runs one task through build, review and your check command. Risky changes wait unless you pass `--approved`. |
 | `igris status [id]` | Lists tasks, or shows one in full. |
-| `igris continue` | Continues a task that was waiting for you in Herdr. |
+| `igris continue` | Continues a task that was waiting for you in Herdr. `--yes` first answers a recorded folder-trust dialog. |
 | `igris merge` | Merges an approved, green task into its base branch (fast-forward only). |
 
 `igris --no-mouse` keeps your terminal's own text selection. `?` in the app shows every key and `q` quits. A font with Braille and block characters looks best; `IGRIS_NO_MOTION=1` stops the animation.
