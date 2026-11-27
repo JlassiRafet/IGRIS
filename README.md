@@ -82,6 +82,8 @@ IGRIS answers its four questions, starts the builder in a Herdr pane in its own 
 
 The first time an agent works in a new folder it asks you a question inside its Herdr pane, for example whether you trust the folder. IGRIS reports the task as `blocked`: answer in Herdr, then run `igris continue <id>`. For the folder-trust dialog of Claude Code or Codex you can let IGRIS answer it: `igris continue <id> --yes` presses the keys only when the screen is that exact dialog in this task's own worktree, and tells you what it saw otherwise. The agent's own trust list is not touched by IGRIS, and an update prompt or any other question is always yours to answer.
 
+An agent in its default permission mode also asks before running shell commands, so a builder can stop at its first command (seen with Claude Code 2.1.332 in a new folder: "This command requires approval"). IGRIS reports that as `blocked` too and never answers it. It sets no permission mode for you: to change what the builder may do without asking, put the agent's own flags in `agents.builder_args` (for Claude Code, see `claude --help`), or answer in the pane.
+
 ## Chat with it
 
 [Hermes](https://hermes-agent.nousresearch.com) can take your requests from a chat app such as Telegram and run them through IGRIS. Copy [`examples/hermes/igris/SKILL.md`](examples/hermes/igris/SKILL.md) to `~/.hermes/skills/igris/SKILL.md`. It tells Hermes how to call `igris run`, what the exit codes mean, and to ask you before anything risky or before a merge.

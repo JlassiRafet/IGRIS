@@ -4,7 +4,7 @@
 [agents]
 builder = "claude"        # any agent kind Herdr supports: claude, codex, gemini, opencode, cursor, ...
 reviewer = "codex"        # a different agent than the builder catches more
-builder_args = []         # extra arguments for the builder, after `--`
+builder_args = []         # extra arguments for the builder, after `--`. An agent in its default permission mode asks before shell commands and the task is reported as blocked; IGRIS sets no mode, so use the agent's own flags here
 # reviewer_args = ["--sandbox", "read-only"]   # default depends on the reviewer: codex and claude are read-only
 
 [checks]
