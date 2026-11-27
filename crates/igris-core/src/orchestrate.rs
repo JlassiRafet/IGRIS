@@ -220,8 +220,22 @@ fn hex4() -> String {
     format!("{:04x}", n & 0xffff)
 }
 
-fn is_dirty(dir: &Path) -> Result<bool, OrchError> {
-    crate::git::is_dirty(dir).map_err(OrchError::Git)
+fn dirty_files(dir: &Path) -> Result<Vec<String>, OrchError> {
+    crate::git::dirty_files(dir).map_err(OrchError::Git)
+}
+
+/// Up to ten leftover files, as git names them, then `and N more`.
+fn leftovers(files: &[String]) -> String {
+    let mut s = files
+        .iter()
+        .take(10)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if files.len() > 10 {
+        s.push_str(&format!(" and {} more", files.len() - 10));
+    }
+    s
 }
 
 fn changed_files(dir: &Path, base: &str) -> Result<Vec<String>, OrchError> {
@@ -575,13 +589,24 @@ impl Orchestrator<'_> {
         if !self.ask(r, "builder", &card, timeout)? {
             return Ok(false);
         }
-        if is_dirty(&r.worktree)? {
-            let nudge = "You left uncommitted changes. Commit all of your work now with git commit (do not push), then reply DONE.";
-            if !self.ask(r, "builder", nudge, timeout)? {
+        let dirty = dirty_files(&r.worktree)?;
+        if !dirty.is_empty() {
+            let nudge = format!(
+                "You left uncommitted changes: {}. Commit your work with git commit (do not push), or add generated files to .gitignore, then reply DONE.",
+                leftovers(&dirty)
+            );
+            if !self.ask(r, "builder", &nudge, timeout)? {
                 return Ok(false);
             }
-            if is_dirty(&r.worktree)? {
-                return self.fail(r, "the builder left uncommitted changes".into());
+            let still = dirty_files(&r.worktree)?;
+            if !still.is_empty() {
+                return self.fail(
+                    r,
+                    format!(
+                        "the builder left uncommitted changes: {}",
+                        leftovers(&still)
+                    ),
+                );
             }
         }
         r.files_changed = changed_files(&r.worktree, &r.base)?;
