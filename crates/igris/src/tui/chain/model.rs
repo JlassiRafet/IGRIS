@@ -425,13 +425,16 @@ mod tests {
             .iter()
             .position(|c| c.id == "pi")
             .unwrap();
-        // The scan finds the same agents again, and Codex is now logged out, so the order changes.
+        // The scan no longer finds Codex, so Pi moves from index 2 to index 1: a cursor that kept
+        // only its number would now sit on the missing Codex.
         let after = snap(&[
             ("claude", true, LoggedIn),
-            ("codex", true, LoggedOut),
+            ("codex", false, LoggedIn),
             ("pi", true, Unknown),
         ]);
+        assert_eq!(u.cursor, 2, "before: Pi is third");
         u.resettle(&after, &before);
+        assert_eq!(u.cursor, 1, "after: Pi is second");
         assert_eq!(on(&u, &after), "pi");
     }
 

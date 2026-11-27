@@ -258,10 +258,10 @@ def screens(binary, out, scrub, chrome):
         print("wrote", out / f"{name}.png")
 
 
-def login_shim():
-    """Fake `claude` and `codex` that answer "logged in", so the chain shows its best case."""
-    shim = DEMO / "bin-logged-in"
-    shim.mkdir(parents=True, exist_ok=True)
+def login_shim(parent):
+    """Fake `claude` and `codex` that answer "logged in", so the chain shows its best case. They live
+    in a private folder under `parent`, never in a shared path another user could pre-create."""
+    shim = Path(tempfile.mkdtemp(dir=parent))
     (shim / "claude").write_text('#!/bin/sh\necho \'{"loggedIn":true,"authMethod":"claude.ai"}\'\n')
     (shim / "codex").write_text('#!/bin/sh\necho "Logged in using ChatGPT" >&2\n')
     for tool in ("claude", "codex"):
@@ -273,7 +273,8 @@ def chain_screens(binary, out, scrub, chrome):
     """The guided chain (IGRIS_CHAIN=1, slice 1): the Builder, Reviewer and end screens in the usual
     terminal, on a machine where the agents are logged in, in 16 colours and in an ASCII terminal."""
     repo, shim, git = demo_repo()
-    runs = [("", "", shim), ("-logged-in", "", login_shim()), ("-16-colour", "COLORTERM=", shim), ("-ascii", "LC_ALL=C", shim)]
+    private = tempfile.mkdtemp()
+    runs = [("", "", shim), ("-logged-in", "", login_shim(private)), ("-16-colour", "COLORTERM=", shim), ("-ascii", "LC_ALL=C", shim)]
     shots = {}
     for name, env, bin_dir in runs:
         home = tempfile.mkdtemp()
@@ -289,6 +290,7 @@ def chain_screens(binary, out, scrub, chrome):
                 shots["chain-end"] = t.text(True)
         finally:
             t.kill(); shutil.rmtree(home, ignore_errors=True)
+    shutil.rmtree(private, ignore_errors=True)
     for name, ansi in shots.items():
         render(ansi, out / f"{name}.png", scrub, chrome)
         print("wrote", out / f"{name}.png")
