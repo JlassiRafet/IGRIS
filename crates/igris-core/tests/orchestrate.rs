@@ -224,7 +224,7 @@ fn a_folder_trust_prompt_at_startup_is_reported_not_crashed() {
 
 fn blocked_run(w: &World, c: &Config, config: Option<&str>) -> igris_core::orchestrate::Report {
     w.fake.fail("agent-start", "error-agent-not-ready.txt");
-    w.fake.on("agent-read", "agent-read-blocked.txt");
+    w.fake.on_raw("agent-read", UNKNOWN_DIALOG); // not a recorded dialog: the plain next line
     w.orch_with(c, config.map(PathBuf::from))
         .run(&w.repo, "add a login page", false)
         .unwrap()
@@ -238,6 +238,25 @@ fn blocked_next_line_repeats_the_config_path() {
     assert!(
         r.next.ends_with(&format!(
             "`igris continue {} --config '/cfg/solo.toml'`",
+            r.id
+        )),
+        "{}",
+        r.next
+    );
+}
+
+#[test]
+fn the_yes_sentence_repeats_the_config_path_before_the_flag() {
+    let w = world(true);
+    w.fake.fail("agent-start", "error-agent-not-ready.txt");
+    w.fake.on("agent-read", "agent-read-blocked.txt");
+    let r = w
+        .orch_with(&cfg(), Some(PathBuf::from("/cfg/solo.toml")))
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert!(
+        r.next.ends_with(&format!(
+            "igris continue {} --config '/cfg/solo.toml' --yes`",
             r.id
         )),
         "{}",
@@ -572,4 +591,224 @@ fn a_resume_with_a_changed_config_keeps_the_reviewer_that_started() {
     let r = w.orch(&changed).resume(&r.id).unwrap();
     assert_eq!(r.status, Status::Done);
     assert_eq!(r.reviewed_by.as_deref(), Some("codex"));
+}
+
+// ---- `continue --yes`: answering a recorded folder-trust dialog ----
+
+const KEYS_OK: &str = r#"{"id":"cli:agent:send-keys","result":{"type":"ok"}}"#;
+const UNKNOWN_DIALOG: &str = "Do you want to run `rm -rf build`?\n❯ 1. Yes\n  2. No\n";
+
+fn fixture(name: &str) -> String {
+    fs::read_to_string(format!("{FIXTURES}/{name}")).unwrap()
+}
+
+/// Herdr's answer for `agent get`; `same_folder` puts the pane in the task's own worktree.
+fn agent_get(w: &World, name: &str, same_folder: bool) {
+    let text = fixture(name);
+    let text = if same_folder {
+        text.replace(
+            "/home/user/.herdr/worktrees/repo/igris-fx1",
+            w.wt.to_str().unwrap(),
+        )
+    } else {
+        text
+    };
+    w.fake.on_raw("agent-get", &text);
+}
+
+fn keys_sent(w: &World) -> Vec<String> {
+    w.fake
+        .calls()
+        .into_iter()
+        .filter(|c| c[1] == "send-keys")
+        .map(|c| c[3].clone())
+        .collect()
+}
+
+/// The builder (Claude) stops at startup on the given screen.
+fn builder_blocked(w: &World, screen: &str, same_folder: bool) -> igris_core::orchestrate::Report {
+    w.fake.fail("agent-start", "error-agent-not-ready.txt");
+    w.fake.on_raw("agent-read", screen);
+    agent_get(w, "agent-get-blocked.json", same_folder);
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!(
+        (r.status, r.waiting.as_deref()),
+        (Status::Blocked, Some("builder"))
+    );
+    r
+}
+
+/// The reviewer (Codex) stops at startup on the given screen.
+fn reviewer_blocked(w: &World, screen: &str) -> igris_core::orchestrate::Report {
+    w.fake.queue_ok("agent-start", "agent-start-ok.json");
+    w.fake
+        .queue_fail("agent-start", "error-agent-not-ready.txt");
+    w.fake.on_raw("agent-read", screen);
+    agent_get(w, "agent-get-codex-blocked.json", true);
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!(
+        (r.status, r.waiting.as_deref()),
+        (Status::Blocked, Some("reviewer"))
+    );
+    r
+}
+
+fn dialog_then_ready(w: &World, dialog: &str) {
+    w.fake.on("agent-start", "agent-start-ok.json");
+    w.fake.on_raw("agent-send-keys", KEYS_OK);
+    w.fake.queue_raw_ok("agent-read", dialog); // the screen before the keys
+    w.fake.on_raw("agent-read", APPROVE); // after the keys, and the reviewer's answer
+}
+
+#[test]
+fn a_matched_dialog_gets_a_sentence_built_from_fixed_fields() {
+    let w = world(true);
+    let r = builder_blocked(&w, &fixture("agent-read-blocked.txt"), true);
+    assert!(r.next.contains("Claude Code asks to trust"), "{}", r.next);
+    assert!(r.next.contains(w.wt.to_str().unwrap()), "{}", r.next);
+    assert!(
+        r.next.contains(&format!("igris continue {} --yes", r.id)),
+        "{}",
+        r.next
+    );
+}
+
+#[test]
+fn yes_presses_down_then_enter_for_a_claude_trust_dialog() {
+    let w = world(true);
+    let claude = fixture("agent-read-blocked.txt");
+    let r = builder_blocked(&w, &claude, true);
+    dialog_then_ready(&w, &claude);
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Done, "{}", r.reason);
+    assert_eq!(keys_sent(&w), ["down", "enter"]);
+}
+
+#[test]
+fn yes_presses_enter_for_codex_and_the_sentence_names_the_repository_root() {
+    let w = world(true);
+    let codex = fixture("codex-trust-root.txt");
+    let r = reviewer_blocked(&w, &codex);
+    assert!(
+        r.next.contains("Codex asks to trust the repository root"),
+        "{}",
+        r.next
+    );
+    assert!(r.next.contains(w.repo.to_str().unwrap()), "{}", r.next);
+    dialog_then_ready(&w, &codex);
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Done, "{}", r.reason);
+    assert_eq!(keys_sent(&w), ["enter"]);
+}
+
+#[test]
+fn yes_refuses_on_an_update_prompt_and_sends_nothing() {
+    let w = world(true);
+    let r = reviewer_blocked(&w, &fixture("codex-update.txt"));
+    w.fake.on_raw("agent-send-keys", KEYS_OK);
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Blocked);
+    assert!(
+        r.reason.contains("not a recorded folder-trust dialog"),
+        "{}",
+        r.reason
+    );
+    assert!(r.reason.contains("Update now"), "{}", r.reason);
+    assert!(keys_sent(&w).is_empty());
+}
+
+#[test]
+fn yes_refuses_on_an_unknown_dialog() {
+    let w = world(true);
+    let r = builder_blocked(&w, UNKNOWN_DIALOG, true);
+    w.fake.on_raw("agent-send-keys", KEYS_OK);
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Blocked);
+    assert!(
+        r.reason.contains("not a recorded folder-trust dialog"),
+        "{}",
+        r.reason
+    );
+    assert!(keys_sent(&w).is_empty());
+}
+
+#[test]
+fn yes_refuses_when_the_pane_is_not_the_tasks_worktree() {
+    let w = world(true);
+    let claude = fixture("agent-read-blocked.txt");
+    let r = builder_blocked(&w, &claude, false); // Herdr says another folder
+    w.fake.on_raw("agent-send-keys", KEYS_OK);
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Blocked);
+    assert!(r.reason.contains("not the task's worktree"), "{}", r.reason);
+    assert!(keys_sent(&w).is_empty());
+}
+
+#[test]
+fn yes_refuses_when_herdr_cannot_say_which_agent_is_in_the_pane() {
+    let w = world(true);
+    let claude = fixture("agent-read-blocked.txt");
+    let r = builder_blocked(&w, &claude, true);
+    w.fake.fail_raw(
+        "agent-get",
+        "{\"error\":{\"code\":\"agent_not_found\",\"message\":\"gone\"}}",
+    );
+    w.fake.on_raw("agent-send-keys", KEYS_OK);
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Blocked);
+    assert!(r.reason.contains("cannot ask Herdr"), "{}", r.reason);
+    assert!(keys_sent(&w).is_empty());
+}
+
+#[test]
+fn yes_refuses_when_the_task_is_not_blocked() {
+    let w = world(true);
+    w.fake.queue_raw_ok("agent-read", APPROVE);
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!(r.status, Status::Done);
+    w.fake.on_raw("agent-send-keys", KEYS_OK);
+    let e = w.orch(&cfg()).resume_with(&r.id, true).unwrap_err();
+    assert!(e.to_string().contains("is not blocked"), "{e}");
+    assert!(keys_sent(&w).is_empty());
+}
+
+#[test]
+fn yes_reports_a_dialog_that_is_still_on_screen_after_the_keys_and_does_not_retry() {
+    let w = world(true);
+    let claude = fixture("agent-read-blocked.txt");
+    let r = builder_blocked(&w, &claude, true);
+    w.fake.on("agent-start", "agent-start-ok.json");
+    w.fake.on_raw("agent-send-keys", KEYS_OK);
+    w.fake.on_raw("agent-read", &claude); // the dialog never goes away
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Blocked);
+    assert!(r.reason.contains("still on screen"), "{}", r.reason);
+    assert_eq!(keys_sent(&w), ["down", "enter"], "one attempt, no retry");
+}
+
+#[test]
+fn yes_gives_the_agent_time_to_settle_before_the_task_prompt_is_sent() {
+    // Live probe, 2026-11-27: Claude Code typed the task into its input but lost the Enter when the
+    // prompt came right after the trust keys.
+    let w = world(true);
+    let claude = fixture("agent-read-blocked.txt");
+    let r = builder_blocked(&w, &claude, true);
+    dialog_then_ready(&w, &claude);
+    let t = std::time::Instant::now();
+    let r = w.orch(&cfg()).resume_with(&r.id, true).unwrap();
+    assert_eq!(r.status, Status::Done, "{}", r.reason);
+    assert!(
+        t.elapsed() >= std::time::Duration::from_millis(2500),
+        "only {:?} between the keys and the next prompt",
+        t.elapsed()
+    );
 }

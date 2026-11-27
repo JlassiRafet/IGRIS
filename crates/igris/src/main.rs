@@ -74,6 +74,10 @@ enum Cmd {
         id: String,
         #[arg(long)]
         config: Option<PathBuf>,
+        /// First answer the agent's folder-trust dialog (Claude Code and Codex, recorded
+        /// versions only), then continue. Any other screen is reported and nothing is pressed.
+        #[arg(long)]
+        yes: bool,
     },
     /// List tasks, or show one in full.
     Status { id: Option<String> },
@@ -127,7 +131,7 @@ fn run(repo: &Path, task: &str, approved: bool, config: Option<&Path>) -> Out {
     report(o.run(&top, task, approved)?)
 }
 
-fn resume(id: &str, config: Option<&Path>) -> Out {
+fn resume(id: &str, config: Option<&Path>, yes: bool) -> Out {
     let home = igris_home();
     let r = load_report(&home, id)?;
     let cfg = Config::load(&r.repo, config)?;
@@ -138,7 +142,7 @@ fn resume(id: &str, config: Option<&Path>) -> Out {
             home,
             config_path: config.map(absolute_config),
         }
-        .resume(id)?,
+        .resume_with(id, yes)?,
     )
 }
 
@@ -165,7 +169,7 @@ fn dispatch(cmd: Cmd) -> Out {
             approved,
             config,
         } => run(&repo, &task, approved, config.as_deref()),
-        Cmd::Continue { id, config } => resume(&id, config.as_deref()),
+        Cmd::Continue { id, config, yes } => resume(&id, config.as_deref(), yes),
         Cmd::Status { id } => status(id.as_deref()),
         Cmd::Merge { id, config } => {
             merge::run(&igris_home(), &id, config.as_deref()).map(|v| (v, 0))

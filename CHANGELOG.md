@@ -5,6 +5,7 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 ## [Unreleased]
 
 ### Added
+- `igris continue <id> --yes` answers the folder-trust dialog of a blocked task, then continues. It presses keys only when the agent is Claude Code (2.1.332) or Codex (0.171.0), the screen shows that exact dialog, and the pane is in the task's own worktree; an update prompt, an unknown screen or another agent is reported with what is on screen and nothing is pressed. A blocked report that shows such a dialog now says what is asked (for Codex in a worktree: the repository root) and prints the `--yes` command (#84).
 - The task report has a `reviewed_by` field: the reviewer's agent, with "(same agent, new session)" when the builder and the reviewer are the same agent. The check command stays the final judge (#85).
 
 ### Fixed

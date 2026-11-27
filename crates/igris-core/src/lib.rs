@@ -5,3 +5,4 @@ pub mod git;
 pub mod herdr;
 pub mod orchestrate;
 pub mod platform;
+pub mod trust;
