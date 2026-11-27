@@ -1,6 +1,7 @@
 //! The chain's state and rules, with no drawing and no I/O: what is asked, what the defaults are,
 //! what a re-scan does to the answers.
 use crate::catalog::tool;
+use crate::tui::install::quote_cmd;
 use igris_detect::{Agent, Login, Snapshot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -216,10 +217,10 @@ fn install_line(id: &str) -> String {
         Some(argv) if t.install_needs_admin => {
             format!(
                 "Needs administrator rights, run it yourself: {}",
-                argv.join(" ")
+                quote_cmd(argv)
             )
         }
-        Some(argv) => format!("Install command: {}", argv.join(" ")),
+        Some(argv) => format!("Install command: {}", quote_cmd(argv)),
         None => format!("See {}", t.docs),
     }
 }
@@ -314,7 +315,7 @@ mod tests {
         let b = u.blocker(&s).unwrap();
         assert!(b.contains("No coding agent is installed"), "{b}");
         let t = tool("claude").unwrap();
-        let want = t.install.map_or(t.docs.to_string(), |a| a.join(" "));
+        let want = t.install.map_or(t.docs.to_string(), quote_cmd);
         assert!(b.contains(&want), "{b}");
         u.enter(&s);
         assert_eq!(u.step, Step::Builder, "a missing agent cannot be chosen");
