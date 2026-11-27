@@ -4,6 +4,10 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.0-rc3] - 2026-11-27
+
+Small fixes found while running the chain for real. Pre-release: `continue --yes` was proven live on Claude Code 2.1.332 only; the Codex dialog entry rests on a screen captured on 2026-11-27 (Codex 0.171.0) and was not run end to end, and Windows, macOS and other agents were not probed. 493 tests.
+
 ### Added
 - `igris continue <id> --yes` answers the folder-trust dialog of a blocked task, then continues. It presses keys only when the agent is Claude Code (2.1.332) or Codex (0.171.0), the screen shows that exact dialog, and the pane is in the task's own worktree; an update prompt, an unknown screen or another agent is reported with what is on screen and nothing is pressed. A blocked report that shows such a dialog now says what is asked (for Codex in a worktree: the repository root) and prints the `--yes` command (#84).
 - The task report has a `reviewed_by` field: the reviewer's agent, with "(same agent, new session)" when the builder and the reviewer are the same agent. The check command stays the final judge (#85).
