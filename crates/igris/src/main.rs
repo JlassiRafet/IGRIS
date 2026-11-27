@@ -218,9 +218,7 @@ mod tests {
         let rel = absolute_config(Path::new("cfg/custom.toml"));
         assert!(rel.is_absolute(), "{}", rel.display());
         assert!(rel.ends_with("cfg/custom.toml"));
-        assert_eq!(
-            absolute_config(Path::new("/etc/igris.toml")),
-            Path::new("/etc/igris.toml")
-        );
+        let abs = std::env::temp_dir().join("igris.toml");
+        assert_eq!(absolute_config(&abs), abs);
     }
 }
