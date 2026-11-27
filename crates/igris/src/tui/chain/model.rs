@@ -18,7 +18,10 @@ pub enum Step {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mark {
     Ready,
+    /// Usable, but not proven (the login could not be read).
     Warn,
+    /// The user must do something first (log in).
+    Step,
     /// Listed, but cannot be chosen yet (not installed).
     Dim,
 }
@@ -66,9 +69,19 @@ impl ChainUi {
         self.reset_cursor(snap);
     }
 
+    /// On the default; with none (nothing is verified) on the first installed agent, and for the
+    /// reviewer on one that is not the builder. Never a silent choice: this only places the cursor.
     fn reset_cursor(&mut self, snap: &Snapshot) {
-        let last = self.choices(snap).len().saturating_sub(1);
-        self.cursor = self.default_index(snap).unwrap_or(0).min(last);
+        let v = ordered(snap);
+        let builder = self.builder.as_deref();
+        let other = (self.step == Step::Reviewer)
+            .then(|| {
+                v.iter()
+                    .position(|a| a.found && Some(a.kind.as_str()) != builder)
+            })
+            .flatten();
+        let last = v.len().saturating_sub(1);
+        self.cursor = self.default_index(snap).or(other).unwrap_or(0).min(last);
     }
 
     /// The options of the active question: installed agents first, then the missing ones (dim).
@@ -225,10 +238,23 @@ fn install_line(id: &str) -> String {
     }
 }
 
-/// Installed agents first (the scan's order within each group), then the missing ones.
+/// How many agents that are not installed are listed: the recommended ones (the rest come with
+/// the install step, as "More...").
+const MISSING_LISTED: usize = 3;
+
+/// Installed agents first, then up to three missing ones; the recommended kinds lead each group
+/// (Claude Code, Codex, Gemini), the others keep the scan's order.
 fn ordered(snap: &Snapshot) -> Vec<&Agent> {
+    let rank = |a: &Agent| match a.kind.as_str() {
+        "claude" => 0,
+        "codex" => 1,
+        "gemini" => 2,
+        _ => 3,
+    };
     let mut v: Vec<&Agent> = snap.agents.iter().collect();
-    v.sort_by_key(|a| !a.found);
+    v.sort_by_key(|a| (!a.found, rank(a)));
+    let installed = v.iter().filter(|a| a.found).count();
+    v.truncate(installed + MISSING_LISTED);
     v
 }
 
@@ -246,7 +272,7 @@ fn status(a: &Agent) -> (&'static str, Mark, Option<String>) {
         Login::Unknown => ("installed · login unverified", Mark::Warn, None),
         Login::LoggedOut => (
             "needs a step: log in",
-            Mark::Warn,
+            Mark::Step,
             Some(
                 "log in before the first task: the check in Verify fails until you do".to_string(),
             ),
@@ -258,7 +284,7 @@ fn status(a: &Agent) -> (&'static str, Mark, Option<String>) {
 mod tests {
     use super::*;
     use crate::tui::tools_screen::tests::snap;
-    use igris_detect::Login::{LoggedIn, LoggedOut};
+    use igris_detect::Login::{LoggedIn, LoggedOut, Unknown};
 
     fn ready() -> Snapshot {
         snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)])
@@ -330,6 +356,7 @@ mod tests {
         let at = c.iter().position(|c| c.id == "claude").unwrap();
         assert_eq!(c[at].note, "needs a step: log in");
         assert!(c[at].warn.is_some());
+        assert_eq!(c[at].mark, Mark::Step);
         u.cursor = at;
         u.enter(&s);
         assert_eq!(u.builder.as_deref(), Some("claude"));
@@ -360,6 +387,41 @@ mod tests {
         assert_eq!((u.builder.clone(), u.reviewer.clone()), (None, None));
         assert_eq!(u.step, Step::Builder);
         assert!(u.cursor < u.choices(&s2).len());
+    }
+
+    #[test]
+    fn the_recommended_agents_come_first_among_the_installed() {
+        let s = snap(&[
+            ("pi", true, Unknown),
+            ("codex", true, LoggedIn),
+            ("claude", true, LoggedIn),
+        ]);
+        let ids: Vec<_> = started(&s).choices(&s).into_iter().map(|c| c.id).collect();
+        assert_eq!(ids, ["claude", "codex", "pi"]);
+    }
+
+    #[test]
+    fn the_reviewer_cursor_avoids_the_builder_when_nothing_is_verified() {
+        let s = snap(&[("claude", true, Unknown), ("codex", true, Unknown)]);
+        let mut u = started(&s);
+        assert_eq!(u.default_index(&s), None, "never a silent default");
+        u.enter(&s);
+        assert_eq!(u.builder.as_deref(), Some("claude"));
+        assert_eq!(u.choices(&s)[u.cursor].id, "codex");
+    }
+
+    #[test]
+    fn only_the_three_recommended_missing_agents_are_listed() {
+        let s = snap(&[
+            ("pi", false, Unknown),
+            ("amp", false, Unknown),
+            ("gemini", false, Unknown),
+            ("cursor", false, Unknown),
+            ("codex", false, Unknown),
+            ("claude", false, Unknown),
+        ]);
+        let ids: Vec<_> = started(&s).choices(&s).into_iter().map(|c| c.id).collect();
+        assert_eq!(ids, ["claude", "codex", "gemini"]);
     }
 
     #[test]

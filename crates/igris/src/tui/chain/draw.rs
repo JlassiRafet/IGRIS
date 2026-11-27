@@ -143,11 +143,21 @@ fn question(step: Step) -> &'static str {
     }
 }
 
+/// Red is for a step the user must take, never for a state that is merely unverified.
+fn note_role(c: &Choice) -> Role {
+    match c.mark {
+        Mark::Ready => Role::Ok,
+        Mark::Step => Role::Bad,
+        Mark::Warn | Mark::Dim => Role::Dim,
+    }
+}
+
 fn option_line(c: &Choice, selected: bool, m: &Marks, t: &Theme) -> Line<'static> {
-    let (note_role, label_role) = match c.mark {
-        Mark::Ready => (Role::Ok, Role::Text),
-        Mark::Warn => (Role::Bad, Role::Text),
-        Mark::Dim => (Role::Dim, Role::Dim),
+    let note_role = note_role(c);
+    let label_role = if c.mark == Mark::Dim {
+        Role::Dim
+    } else {
+        Role::Text
     };
     let mut spans = vec![
         Span::styled(format!("{}  ", m.rail), t.style(Role::Dim)),
@@ -161,7 +171,7 @@ fn option_line(c: &Choice, selected: bool, m: &Marks, t: &Theme) -> Line<'static
     if let (true, Some(w)) = (selected, &c.warn) {
         spans.push(Span::styled(
             format!("  {} {w}", m.warn),
-            t.style(Role::Bad),
+            t.style(note_role),
         ));
     }
     Line::from(spans)
@@ -262,6 +272,26 @@ mod tests {
             assert!(!text.contains(g), "{g} in an ASCII terminal:\n{text}");
         }
         assert!(text.contains("Reviewer"), "{text}");
+    }
+
+    #[test]
+    fn red_is_only_for_a_step_the_user_must_take() {
+        let mut c = Choice {
+            id: "claude".into(),
+            label: "Claude Code".into(),
+            note: "installed · login unverified".into(),
+            mark: Mark::Warn,
+            warn: Some("same agent, new session".into()),
+        };
+        assert_eq!(
+            note_role(&c),
+            Role::Dim,
+            "unverified, and the neutral same-agent note"
+        );
+        c.mark = Mark::Step;
+        assert_eq!(note_role(&c), Role::Bad);
+        c.mark = Mark::Ready;
+        assert_eq!(note_role(&c), Role::Ok);
     }
 
     #[test]
