@@ -258,21 +258,37 @@ def screens(binary, out, scrub, chrome):
         print("wrote", out / f"{name}.png")
 
 
+def login_shim():
+    """Fake `claude` and `codex` that answer "logged in", so the chain shows its best case."""
+    shim = DEMO / "bin-logged-in"
+    shim.mkdir(parents=True, exist_ok=True)
+    (shim / "claude").write_text('#!/bin/sh\necho \'{"loggedIn":true,"authMethod":"claude.ai"}\'\n')
+    (shim / "codex").write_text('#!/bin/sh\necho "Logged in using ChatGPT" >&2\n')
+    for tool in ("claude", "codex"):
+        (shim / tool).chmod(0o755)
+    return shim
+
+
 def chain_screens(binary, out, scrub, chrome):
-    """The guided chain (IGRIS_CHAIN=1, slice 1): the Builder and Reviewer questions and the end line."""
+    """The guided chain (IGRIS_CHAIN=1, slice 1): the Builder, Reviewer and end screens in the usual
+    terminal, on a machine where the agents are logged in, in 16 colours and in an ASCII terminal."""
     repo, shim, git = demo_repo()
-    home = tempfile.mkdtemp()
-    t = Term(binary, home, repo, f"{shim}:{os.environ['PATH']}", extra_env="IGRIS_CHAIN=1")
+    runs = [("", "", shim), ("-logged-in", "", login_shim()), ("-16-colour", "COLORTERM=", shim), ("-ascii", "LC_ALL=C", shim)]
     shots = {}
-    try:
-        t.wait("Builder: which agent"); time.sleep(0.8)
-        shots["chain-builder"] = t.text(True)
-        t.keys("Enter"); t.wait("Reviewer: who checks"); time.sleep(0.8)
-        shots["chain-reviewer"] = t.text(True)
-        t.keys("Enter"); t.wait("Slice 1 ends here"); time.sleep(0.8)
-        shots["chain-end"] = t.text(True)
-    finally:
-        t.kill(); shutil.rmtree(home, ignore_errors=True)
+    for name, env, bin_dir in runs:
+        home = tempfile.mkdtemp()
+        extra = f"IGRIS_CHAIN=1 {env}".strip()
+        t = Term(binary, home, repo, f"{bin_dir}:{shim}:{os.environ['PATH']}", extra_env=extra)
+        try:
+            t.wait("Builder: which agent"); time.sleep(0.8)
+            shots[f"chain-builder{name}"] = t.text(True)
+            t.keys("Enter"); t.wait("Reviewer: who checks"); time.sleep(0.8)
+            shots[f"chain-reviewer{name}"] = t.text(True)
+            if not name:
+                t.keys("Enter"); t.wait("Slice 1 ends here"); time.sleep(0.8)
+                shots["chain-end"] = t.text(True)
+        finally:
+            t.kill(); shutil.rmtree(home, ignore_errors=True)
     for name, ansi in shots.items():
         render(ansi, out / f"{name}.png", scrub, chrome)
         print("wrote", out / f"{name}.png")

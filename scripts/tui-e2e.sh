@@ -185,9 +185,22 @@ tmux send-keys -t "$CH" Down Enter; chain_wait "Reviewer: who checks" 5
 tmux capture-pane -t "$CH" -p | grep -q "Builder  " || chain_fail "the answered Builder is not in the history"
 tmux send-keys -t "$CH" Left; chain_wait "Builder: which agent" 5
 echo "ok  chain: Enter answers, Left goes back"
+# The call to action's glint moves in a truecolor terminal while its text stays the same.
+glint() { for _ in $(seq 1 40); do tmux capture-pane -t "$CH" -e -p | grep "Use " | md5sum; sleep 0.1; done | sort -u | wc -l; }
+plain_use() { for _ in 1 2 3 4 5 6; do tmux capture-pane -t "$CH" -p | grep "Use "; sleep 0.4; done | sort -u | wc -l; }
+[ "$(glint)" -gt 1 ] || chain_fail "the glint does not move over the call to action"
+[ "$(plain_use)" -eq 1 ] || chain_fail "the call to action's text changes while the glint moves"
+echo "ok  chain: the glint moves and the text does not change"
 tmux send-keys -t "$CH" q; chain_wait "EXIT=0" 5
 tmux kill-session -t "$CH" 2>/dev/null || true
 echo "ok  chain: q quits with exit 0"
+# Ctrl-C quits too, in a real terminal.
+tmux new-session -d -s "$CH" -x 100 -y 30 \
+  "env PATH=$FAKES:\$PATH HOME=$HOME_DIR COLORTERM=truecolor IGRIS_CHAIN=1 '$BIN' --repo '$REPO'; echo EXIT=\$?; sleep 30"
+chain_wait "Builder: which agent" 60
+tmux send-keys -t "$CH" C-c; chain_wait "EXIT=0" 5
+tmux kill-session -t "$CH" 2>/dev/null || true
+echo "ok  chain: Ctrl-C quits with exit 0"
 
 # Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
 distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1
