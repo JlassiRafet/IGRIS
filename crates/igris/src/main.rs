@@ -117,6 +117,7 @@ fn run(repo: &Path, task: &str, approved: bool, config: Option<&Path>) -> Out {
         herdr: herdr_of(&cfg),
         cfg: &cfg,
         home: igris_home(),
+        config_path: config.map(Path::to_path_buf),
     };
     report(o.run(&top, task, approved)?)
 }
@@ -130,6 +131,7 @@ fn resume(id: &str, config: Option<&Path>) -> Out {
             herdr: herdr_of(&cfg),
             cfg: &cfg,
             home,
+            config_path: config.map(Path::to_path_buf),
         }
         .resume(id)?,
     )

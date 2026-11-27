@@ -95,6 +95,9 @@ fn cfg() -> Config {
 
 impl World {
     fn orch<'a>(&self, cfg: &'a Config) -> Orchestrator<'a> {
+        self.orch_with(cfg, None)
+    }
+    fn orch_with<'a>(&self, cfg: &'a Config, config_path: Option<PathBuf>) -> Orchestrator<'a> {
         Orchestrator {
             herdr: Herdr {
                 bin: self.fake.bin(),
@@ -102,6 +105,7 @@ impl World {
             },
             cfg,
             home: self.home.clone(),
+            config_path,
         }
     }
     fn count(&self, a: &str, b: &str) -> usize {
@@ -216,6 +220,76 @@ fn a_folder_trust_prompt_at_startup_is_reported_not_crashed() {
         r.checks.tail
     );
     assert!(r.next.contains("igris continue"), "{}", r.next);
+}
+
+fn blocked_run(w: &World, c: &Config, config: Option<&str>) -> igris_core::orchestrate::Report {
+    w.fake.fail("agent-start", "error-agent-not-ready.txt");
+    w.fake.on("agent-read", "agent-read-blocked.txt");
+    w.orch_with(c, config.map(PathBuf::from))
+        .run(&w.repo, "add a login page", false)
+        .unwrap()
+}
+
+#[test]
+fn blocked_next_line_repeats_the_config_path() {
+    let w = world(true);
+    let r = blocked_run(&w, &cfg(), Some("/cfg/solo.toml"));
+    assert_eq!(r.status, Status::Blocked);
+    assert!(
+        r.next.ends_with(&format!(
+            "`igris continue {} --config '/cfg/solo.toml'`",
+            r.id
+        )),
+        "{}",
+        r.next
+    );
+}
+
+#[test]
+fn a_run_without_a_config_prints_the_plain_continue_command() {
+    let w = world(true);
+    let r = blocked_run(&w, &cfg(), None);
+    assert!(
+        r.next.ends_with(&format!("`igris continue {}`", r.id)),
+        "{}",
+        r.next
+    );
+}
+
+#[test]
+fn needs_approval_next_line_repeats_the_config_path() {
+    let w = world(true);
+    let c = cfg();
+    let r = w
+        .orch_with(&c, Some(PathBuf::from("/cfg/solo.toml")))
+        .run(&w.repo, "run the db migration", false)
+        .unwrap();
+    assert_eq!(r.status, Status::NeedsApproval);
+    assert!(r.next.contains("--approved"), "{}", r.next);
+    assert!(r.next.contains("--config '/cfg/solo.toml'"), "{}", r.next);
+}
+
+#[test]
+fn a_config_path_with_a_space_or_a_quote_is_quoted_for_the_shell() {
+    let w = world(true);
+    let r = blocked_run(&w, &cfg(), Some("/my dir/it's.toml"));
+    assert!(
+        r.next.contains(r"--config '/my dir/it'\''s.toml'"),
+        "{}",
+        r.next
+    );
+}
+
+#[test]
+fn a_report_saved_by_rc2_still_loads() {
+    let w = world(true);
+    let r = blocked_run(&w, &cfg(), Some("/cfg/solo.toml"));
+    let mut v = serde_json::to_value(&r).unwrap();
+    for k in ["config", "waiting", "reviewed_by"] {
+        v.as_object_mut().unwrap().remove(k);
+    }
+    let old: igris_core::orchestrate::Report = serde_json::from_value(v).unwrap();
+    assert_eq!(old.id, r.id);
 }
 
 #[test]
