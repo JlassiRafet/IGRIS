@@ -7,6 +7,7 @@ use crate::tui::{header, layout, widgets};
 use igris_detect::Snapshot;
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
@@ -19,7 +20,10 @@ struct Marks {
     on: &'static str,
     off: &'static str,
     warn: &'static str,
-    hint: &'static str,
+    bar: &'static str,
+    enter: &'static str,
+    choose: &'static str,
+    back: &'static str,
 }
 
 fn marks(t: &Theme) -> Marks {
@@ -32,7 +36,10 @@ fn marks(t: &Theme) -> Marks {
             on: "(*)",
             off: "( )",
             warn: "!",
-            hint: "up/down choose - Enter confirm - Left back - r re-scan",
+            bar: ">",
+            enter: "Enter:",
+            choose: "up/down",
+            back: "Left",
         }
     } else {
         Marks {
@@ -43,12 +50,17 @@ fn marks(t: &Theme) -> Marks {
             on: "●",
             off: "○",
             warn: "⚠",
-            hint: "↑/↓ choose · Enter confirm · ← back · r re-scan",
+            bar: "▌",
+            enter: "⏎",
+            choose: "↑/↓",
+            back: "←",
         }
     }
 }
 
-const QUESTION_ROWS: usize = 4; // the blank line above, the question, the hint, the closing mark
+/// Rows that are not options: the blank line above the question, the question, the blank rail
+/// line, the action row and the closing mark.
+const FIXED_ROWS: usize = 5;
 const BOX_ROWS: u16 = 5;
 
 pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme, tick: usize) {
@@ -71,21 +83,20 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
     let body = Rect::new(a.band.x, top, a.band.width, a.footer.y.saturating_sub(top));
     let m = marks(t);
     let blocker = ui.blocker(snap);
-    let history = ui.history(snap);
-    let mut lines: Vec<Line> = history
+    let mut lines: Vec<Line> = ui
+        .history(snap)
         .iter()
         .map(|(label, answer, state)| {
             Line::from(vec![
                 Span::styled(format!("{} ", m.done), t.style(Role::Dim)),
-                Span::styled(format!("{label:<10}"), t.style(Role::Text)),
+                Span::styled(format!("{label:<10}"), t.style(Role::Dim)),
                 Span::styled(format!("{answer:<26}"), t.style(Role::Text)),
                 Span::styled(state.clone(), t.style(Role::Dim)),
             ])
         })
         .collect();
-    let options = ui.choices(snap);
     let box_rows = if blocker.is_some() { BOX_ROWS } else { 0 };
-    let used = lines.len() + QUESTION_ROWS + usize::from(box_rows);
+    let used = lines.len() + FIXED_ROWS + usize::from(box_rows);
     let room = (body.height as usize).saturating_sub(used).max(1);
     match ui.step {
         Step::End => lines.push(Line::styled(
@@ -93,24 +104,18 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
             t.style(Role::Dim),
         )),
         step => {
+            let options = ui.choices(snap);
             lines.push(Line::raw(""));
-            lines.push(Line::from(vec![
-                Span::styled(format!("{} ", m.active), t.style(Role::Info)),
-                Span::styled(question(step), t.style(Role::Text)),
-            ]));
-            let start = (ui.cursor + 1).saturating_sub(room);
-            for (i, c) in options.iter().enumerate().skip(start).take(room) {
-                lines.push(option_line(c, i == ui.cursor, &m, t));
-            }
-            let keys = if options.is_empty() {
-                "r re-scan"
-            } else {
-                m.hint
-            };
-            lines.push(Line::from(vec![
-                Span::styled(format!("{}  ", m.rail), t.style(Role::Dim)),
-                Span::styled(keys, t.style(Role::Dim)),
-            ]));
+            lines.push(question(step, &m, t));
+            let rows = option_rows(&options, ui.cursor, &m, t);
+            let at = rows
+                .iter()
+                .position(|(_, i)| *i == Some(ui.cursor))
+                .unwrap_or(0);
+            let start = (at + 1).saturating_sub(room);
+            lines.extend(rows.into_iter().skip(start).take(room).map(|(l, _)| l));
+            lines.push(Line::styled(m.rail, t.style(Role::Dim)));
+            lines.push(action_row(options.get(ui.cursor), &m, t));
             lines.push(Line::styled(m.close, t.style(Role::Dim)));
         }
     }
@@ -134,38 +139,109 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
     );
 }
 
-fn question(step: Step) -> &'static str {
-    match step {
-        Step::Workspace => "Workspace: Herdr runs your agents side by side",
-        Step::Builder => "Builder: which agent writes the code?",
-        Step::Reviewer => "Reviewer: who checks the builder's work?",
-        Step::End => "",
-    }
+/// The active question: a bold title, then the question itself.
+fn question(step: Step, m: &Marks, t: &Theme) -> Line<'static> {
+    let (title, ask) = match step {
+        Step::Workspace => ("Workspace", ": Herdr runs your agents side by side"),
+        Step::Builder => ("Builder", ": which agent writes the code?"),
+        Step::Reviewer => ("Reviewer", ": who checks the builder's work?"),
+        Step::End => ("", ""),
+    };
+    Line::from(vec![
+        Span::styled(format!("{} ", m.active), t.style(Role::Info)),
+        Span::styled(title, t.style(Role::Text).add_modifier(Modifier::BOLD)),
+        Span::styled(ask, t.style(Role::Text)),
+    ])
 }
 
-/// Red is for a step the user must take, never for a state that is merely unverified.
-fn note_role(c: &Choice) -> Role {
+/// The option rows, with "Installed" and "Not installed yet" above their groups when both exist.
+/// Each row carries the index of its option; a label row carries none.
+fn option_rows(
+    options: &[Choice],
+    cursor: usize,
+    m: &Marks,
+    t: &Theme,
+) -> Vec<(Line<'static>, Option<usize>)> {
+    let grouped =
+        options.iter().any(|c| c.mark == Mark::Dim) && options.iter().any(|c| c.mark != Mark::Dim);
+    let label = |text: &'static str| {
+        Line::from(vec![
+            Span::styled(format!("{}   ", m.rail), t.style(Role::Dim)),
+            Span::styled(text, t.style(Role::Dim)),
+        ])
+    };
+    let mut rows = Vec::new();
+    for (i, c) in options.iter().enumerate() {
+        if grouped && i == 0 {
+            rows.push((label("Installed"), None));
+        }
+        if grouped && c.mark == Mark::Dim && (i == 0 || options[i - 1].mark != Mark::Dim) {
+            rows.push((label("Not installed yet"), None));
+        }
+        rows.push((option_line(c, i == cursor, m, t), Some(i)));
+    }
+    rows
+}
+
+/// The one call to action as a chip, then the other keys as plain keycaps. A missing agent cannot
+/// be chosen yet, so there is no chip, only what comes next.
+fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme) -> Line<'static> {
+    let key = |k: &str, verb: &str| {
+        [
+            Span::styled(k.to_string(), t.style(Role::Key)),
+            Span::styled(format!(" {verb}   "), t.style(Role::Dim)),
+        ]
+    };
+    let mut spans = vec![Span::styled(format!("{}   ", m.rail), t.style(Role::Dim))];
+    match chosen {
+        Some(c) if c.mark != Mark::Dim => {
+            let chip = format!(" {} Use {} ", m.enter, c.label);
+            spans.extend([Span::styled(chip, t.style(Role::Cta)), Span::raw("   ")]);
+            spans.extend(key(m.choose, "choose"));
+        }
+        Some(_) => {
+            spans.extend([
+                Span::styled(m.enter.to_string(), t.style(Role::Key)),
+                Span::styled(" install comes in the next step   ", t.style(Role::Dim)),
+            ]);
+            spans.extend(key(m.choose, "choose"));
+        }
+        None => {}
+    }
+    if chosen.is_some() {
+        spans.extend(key(m.back, "back"));
+    }
+    spans.extend(key("r", "re-scan"));
+    Line::from(spans)
+}
+
+/// Red is for a step the user must take, and only on the row the cursor is on; colour marks focus.
+fn note_role(c: &Choice, selected: bool) -> Role {
     match c.mark {
         Mark::Ready => Role::Ok,
-        Mark::Step => Role::Bad,
-        Mark::Warn | Mark::Dim => Role::Dim,
+        Mark::Step if selected => Role::Bad,
+        Mark::Step | Mark::Warn | Mark::Dim => Role::Dim,
     }
 }
 
 fn option_line(c: &Choice, selected: bool, m: &Marks, t: &Theme) -> Line<'static> {
-    let note_role = note_role(c);
-    let label_role = if c.mark == Mark::Dim {
+    let note_role = note_role(c, selected);
+    let mut label = t.style(if c.mark == Mark::Dim {
         Role::Dim
     } else {
         Role::Text
-    };
+    });
+    if selected {
+        label = label.add_modifier(Modifier::BOLD);
+    }
     let mut spans = vec![
-        Span::styled(format!("{}  ", m.rail), t.style(Role::Dim)),
+        Span::styled(format!("{} ", m.rail), t.style(Role::Dim)),
+        Span::styled(if selected { m.bar } else { " " }, t.style(Role::Info)),
         Span::styled(
-            format!("{} ", if selected { m.on } else { m.off }),
+            format!(" {} ", if selected { m.on } else { m.off }),
             t.style(if selected { Role::Info } else { Role::Dim }),
         ),
-        Span::styled(format!("{:<14}", c.label), t.style(label_role)),
+        Span::styled(format!("{:<14}", c.label), label),
         Span::styled(c.note.clone(), t.style(note_role)),
     ];
     if let (true, Some(w)) = (selected, &c.warn) {
@@ -174,7 +250,12 @@ fn option_line(c: &Choice, selected: bool, m: &Marks, t: &Theme) -> Line<'static
             t.style(note_role),
         ));
     }
-    Line::from(spans)
+    let line = Line::from(spans);
+    if selected {
+        line.style(t.style(Role::Hover))
+    } else {
+        line
+    }
 }
 
 #[cfg(test)]
@@ -183,7 +264,7 @@ mod tests {
     use crate::catalog::tool;
     use crate::tui::theme::ColorDepth;
     use crate::tui::tools_screen::tests::snap;
-    use igris_detect::Login::LoggedIn;
+    use igris_detect::Login::{LoggedIn, LoggedOut};
     use ratatui::{Terminal, backend::TestBackend};
 
     fn theme(glyphs: Glyphs) -> Theme {
@@ -211,12 +292,137 @@ mod tests {
     }
 
     #[test]
-    fn the_hint_is_the_line_right_under_the_last_option() {
+    fn the_action_row_follows_the_options_after_one_blank_line() {
         let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
         let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36);
         let last = rows.iter().rposition(|r| r.contains("Codex")).unwrap();
-        let hint = rows.iter().position(|r| r.contains("↑/↓ choose")).unwrap();
-        assert_eq!(hint, last + 1, "{rows:#?}");
+        let action = rows.iter().position(|r| r.contains("↑/↓ choose")).unwrap();
+        assert_eq!(action, last + 2, "{rows:#?}");
+        assert!(
+            rows[last + 1]
+                .trim_matches(|c: char| c == '│' || c == ' ')
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn one_chip_names_the_primary_action_and_the_other_keys_stay_plain() {
+        let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
+        let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36);
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r.contains("⏎ Use Claude Code"))
+                .count(),
+            1,
+            "{rows:#?}"
+        );
+        let ascii = render(&at_builder(&s), &s, Glyphs::Ascii, 120, 36).join("\n");
+        assert!(ascii.contains("Enter: Use Claude Code"), "{ascii}");
+    }
+
+    #[test]
+    fn a_missing_agent_gets_no_chip_and_says_what_comes_next() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
+        let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36).join("\n");
+        assert!(!rows.contains("⏎ Use"), "{rows}");
+        assert!(rows.contains("install comes in the next step"), "{rows}");
+    }
+
+    #[test]
+    fn the_selected_row_has_a_bar_and_the_others_do_not() {
+        let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
+        let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36);
+        let bars: Vec<_> = rows.iter().filter(|r| r.contains('▌')).collect();
+        assert_eq!(bars.len(), 1, "{rows:#?}");
+        assert!(bars[0].contains("Claude Code"));
+    }
+
+    #[test]
+    fn group_labels_appear_only_when_both_groups_exist() {
+        let both = snap(&[("claude", true, LoggedIn), ("gemini", false, LoggedIn)]);
+        let rows = render(&at_builder(&both), &both, Glyphs::Unicode, 120, 36).join("\n");
+        assert!(
+            rows.contains("Installed") && rows.contains("Not installed yet"),
+            "{rows}"
+        );
+        let only = snap(&[("claude", true, LoggedIn)]);
+        let rows = render(&at_builder(&only), &only, Glyphs::Unicode, 120, 36).join("\n");
+        assert!(
+            !rows.contains("Not installed yet") && !rows.contains("Installed"),
+            "{rows}"
+        );
+    }
+
+    fn cell_style(
+        buf: &ratatui::buffer::Buffer,
+        rows: &[String],
+        needle: &str,
+    ) -> ratatui::style::Style {
+        let y = rows
+            .iter()
+            .position(|r| r.contains(needle))
+            .unwrap_or_else(|| panic!("no row with {needle}"));
+        let x = rows[y]
+            .find(needle)
+            .map(|b| rows[y][..b].chars().count())
+            .unwrap();
+        buf[(x as u16, y as u16)].style()
+    }
+
+    fn true_colour(ui: &ChainUi, s: &Snapshot) -> (ratatui::buffer::Buffer, Vec<String>) {
+        let t = Theme {
+            depth: ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: false,
+        };
+        let mut term = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        term.draw(|f| draw(f, f.area(), ui, s, &t, 0)).unwrap();
+        let b = term.backend().buffer().clone();
+        let rows = (0..36)
+            .map(|y| (0..120).map(|x| b[(x, y)].symbol().to_string()).collect())
+            .collect();
+        (b, rows)
+    }
+
+    #[test]
+    fn history_is_quieter_than_the_question() {
+        let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        u.enter(&s);
+        let (b, rows) = true_colour(&u, &s);
+        let t = Theme {
+            depth: ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: false,
+        };
+        assert_eq!(
+            cell_style(&b, &rows, "Workspace").fg,
+            t.style(Role::Dim).fg,
+            "answered label is dim"
+        );
+        let q = cell_style(&b, &rows, "Reviewer:");
+        assert!(
+            q.add_modifier.contains(ratatui::style::Modifier::BOLD),
+            "the question title is bold"
+        );
+    }
+
+    #[test]
+    fn colour_marks_focus_the_step_is_red_only_on_the_selected_row() {
+        let s = snap(&[("claude", true, LoggedOut), ("codex", true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        let red = Theme {
+            depth: ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: false,
+        }
+        .style(Role::Bad)
+        .fg;
+        let (b, rows) = true_colour(&u, &s); // the default is Codex, so Claude is not selected
+        assert_ne!(cell_style(&b, &rows, "needs a step").fg, red);
+        u.cursor = u.choices(&s).iter().position(|c| c.id == "claude").unwrap();
+        let (b, rows) = true_colour(&u, &s);
+        assert_eq!(cell_style(&b, &rows, "needs a step").fg, red);
     }
 
     #[test]
@@ -275,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn red_is_only_for_a_step_the_user_must_take() {
+    fn red_is_only_for_a_selected_step_the_user_must_take() {
         let mut c = Choice {
             id: "claude".into(),
             label: "Claude Code".into(),
@@ -284,14 +490,15 @@ mod tests {
             warn: Some("same agent, new session".into()),
         };
         assert_eq!(
-            note_role(&c),
+            note_role(&c, true),
             Role::Dim,
             "unverified, and the neutral same-agent note"
         );
         c.mark = Mark::Step;
-        assert_eq!(note_role(&c), Role::Bad);
+        assert_eq!(note_role(&c, false), Role::Dim);
+        assert_eq!(note_role(&c, true), Role::Bad);
         c.mark = Mark::Ready;
-        assert_eq!(note_role(&c), Role::Ok);
+        assert_eq!(note_role(&c, false), Role::Ok);
     }
 
     #[test]

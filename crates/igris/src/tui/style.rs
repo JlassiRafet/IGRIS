@@ -34,6 +34,8 @@ pub enum Role {
     Hover,
     /// The primary button.
     Primary,
+    /// The one call to action of a chain question: dark text on the light blue.
+    Cta,
 }
 
 pub fn rgb((r, g, b): (u8, u8, u8)) -> Color {
@@ -76,6 +78,17 @@ impl Theme {
                 .bg(Color::Red)
                 .add_modifier(Modifier::BOLD),
             (ColorDepth::None, Role::Primary) => {
+                Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            }
+            (ColorDepth::True, Role::Cta) => Style::new()
+                .fg(rgb(INK))
+                .bg(rgb(LIGHT_BLUE))
+                .add_modifier(Modifier::BOLD),
+            (ColorDepth::Ansi16, Role::Cta) => Style::new()
+                .fg(Color::Black)
+                .bg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+            (ColorDepth::None, Role::Cta) => {
                 Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
             }
         }
@@ -138,6 +151,7 @@ mod tests {
             Role::Key,
             Role::Hover,
             Role::Primary,
+            Role::Cta,
         ] {
             let s = t(ColorDepth::None).style(role);
             assert!(s.fg.is_none() && s.bg.is_none(), "{role:?}: {s:?}");
@@ -155,6 +169,35 @@ mod tests {
             Some(Color::Rgb(0x16, 0x22, 0x2b))
         );
         assert_eq!(t(ColorDepth::Ansi16).style(Role::Hover).bg, None);
+    }
+
+    #[test]
+    fn the_call_to_action_is_dark_bold_text_on_the_light_blue_and_reversed_without_colour() {
+        let s = t(ColorDepth::True).style(Role::Cta);
+        assert_eq!(s.bg, Some(Color::Rgb(0x53, 0x9f, 0xdf)));
+        assert_eq!(s.fg, Some(Color::Rgb(0x0b, 0x11, 0x14)));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+        let s = t(ColorDepth::Ansi16).style(Role::Cta);
+        assert_eq!((s.fg, s.bg), (Some(Color::Black), Some(Color::LightBlue)));
+        let s = t(ColorDepth::None).style(Role::Cta);
+        assert!(s.add_modifier.contains(Modifier::REVERSED | Modifier::BOLD));
+    }
+
+    #[test]
+    fn the_call_to_action_text_has_enough_contrast_on_its_chip() {
+        let lum = |(r, g, b): (u8, u8, u8)| {
+            let c = |v: u8| {
+                let v = f64::from(v) / 255.0;
+                if v <= 0.03928 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b)
+        };
+        let ratio = (lum(LIGHT_BLUE) + 0.05) / (lum(INK) + 0.05);
+        assert!(ratio >= 4.5, "{ratio}");
     }
 
     #[test]
