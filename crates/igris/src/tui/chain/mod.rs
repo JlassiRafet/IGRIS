@@ -130,6 +130,19 @@ mod tests {
     }
 
     #[test]
+    fn a_second_scan_keeps_the_cursor_where_the_user_moved_it() {
+        let mut st = app(ready(), None);
+        st.chain = Some(ChainUi::new());
+        st.apply(Msg::Detected(Box::new(ready())));
+        let s = st.snapshot.clone().unwrap();
+        key(st.chain.as_mut().unwrap(), Some(&s), k(KeyCode::Down));
+        let moved = st.chain.as_ref().unwrap().cursor;
+        assert_ne!(moved, 0, "the cursor moved off the default");
+        st.apply(Msg::Detected(Box::new(ready())));
+        assert_eq!(st.chain.as_ref().unwrap().cursor, moved);
+    }
+
+    #[test]
     fn ten_keypresses_or_fewer_reach_the_end_on_a_ready_machine() {
         let s = ready();
         let mut u = started(&s);

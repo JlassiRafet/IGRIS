@@ -69,6 +69,25 @@ impl ChainUi {
         self.reset_cursor(snap);
     }
 
+    /// A re-scan: like `settle`, but the cursor stays on the agent the user moved to when the
+    /// question is the same and that agent is still installed.
+    pub fn resettle(&mut self, snap: &Snapshot, prev: &Snapshot) {
+        let step = self.step;
+        let under = self.choices(prev).get(self.cursor).map(|c| c.id.clone());
+        self.settle(snap);
+        if self.step != step {
+            return;
+        }
+        let at = under.and_then(|id| {
+            self.choices(snap)
+                .iter()
+                .position(|c| c.id == id && c.mark != Mark::Dim)
+        });
+        if let Some(at) = at {
+            self.cursor = at;
+        }
+    }
+
     /// On the default; with none (nothing is verified) on the first installed agent, and for the
     /// reviewer on one that is not the builder. Never a silent choice: this only places the cursor.
     fn reset_cursor(&mut self, snap: &Snapshot) {
@@ -387,6 +406,64 @@ mod tests {
         assert_eq!((u.builder.clone(), u.reviewer.clone()), (None, None));
         assert_eq!(u.step, Step::Builder);
         assert!(u.cursor < u.choices(&s2).len());
+    }
+
+    fn on(u: &ChainUi, s: &Snapshot) -> String {
+        u.choices(s)[u.cursor].id.clone()
+    }
+
+    #[test]
+    fn a_rescan_keeps_the_cursor_on_the_agent_the_user_moved_to() {
+        let before = snap(&[
+            ("claude", true, LoggedIn),
+            ("codex", true, LoggedIn),
+            ("pi", true, Unknown),
+        ]);
+        let mut u = started(&before);
+        u.cursor = u
+            .choices(&before)
+            .iter()
+            .position(|c| c.id == "pi")
+            .unwrap();
+        // The scan finds the same agents again, and Codex is now logged out, so the order changes.
+        let after = snap(&[
+            ("claude", true, LoggedIn),
+            ("codex", true, LoggedOut),
+            ("pi", true, Unknown),
+        ]);
+        u.resettle(&after, &before);
+        assert_eq!(on(&u, &after), "pi");
+    }
+
+    #[test]
+    fn a_rescan_that_removes_the_agent_under_the_cursor_goes_back_to_the_default() {
+        let before = ready();
+        let mut u = started(&before);
+        u.cursor = u
+            .choices(&before)
+            .iter()
+            .position(|c| c.id == "codex")
+            .unwrap();
+        let after = snap(&[("claude", true, LoggedIn), ("codex", false, LoggedIn)]);
+        u.resettle(&after, &before);
+        assert_eq!(on(&u, &after), "claude");
+    }
+
+    #[test]
+    fn a_rescan_that_changes_the_step_puts_the_cursor_on_the_new_default() {
+        let before = ready();
+        let mut u = started(&before);
+        u.enter(&before);
+        u.cursor = u
+            .choices(&before)
+            .iter()
+            .position(|c| c.id == "claude")
+            .unwrap();
+        // Claude, the answered builder, is gone: back to the Builder question, on its default.
+        let after = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        u.resettle(&after, &before);
+        assert_eq!(u.step, Step::Builder);
+        assert_eq!(on(&u, &after), "codex");
     }
 
     #[test]

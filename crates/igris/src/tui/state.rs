@@ -170,9 +170,12 @@ impl State {
             self.applied = self.pipeline.load(&self.repo, &snap);
             super::pipeline_screen::refresh(self);
         }
-        self.snapshot = Some(*snap);
+        let prev = self.snapshot.replace(*snap);
         if let (Some(c), Some(s)) = (self.chain.as_mut(), self.snapshot.as_ref()) {
-            c.settle(s);
+            match prev.as_ref() {
+                Some(p) => c.resettle(s, p),
+                None => c.settle(s),
+            }
         }
         super::install::after_scan(self);
         super::verify_screen::after_scan(self);
