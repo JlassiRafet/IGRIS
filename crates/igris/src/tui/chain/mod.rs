@@ -28,7 +28,7 @@ pub fn key(ui: &mut ChainUi, snap: Option<&Snapshot>, k: KeyEvent) -> Option<Act
         KeyCode::Up if n > 0 => ui.cursor = (ui.cursor + n - 1) % n,
         KeyCode::Down if n > 0 => ui.cursor = (ui.cursor + 1) % n,
         KeyCode::Enter => ui.enter(snap),
-        KeyCode::Left => ui.back(snap),
+        KeyCode::Left | KeyCode::Esc => ui.back(snap),
         KeyCode::Char('r') => return Some(Action::Rescan),
         _ => {}
     }
@@ -78,6 +78,22 @@ mod tests {
         key(&mut u, Some(&s), k(KeyCode::Enter));
         assert_eq!(u.step, Step::Reviewer);
         key(&mut u, Some(&s), k(KeyCode::Left));
+        assert_eq!(u.step, Step::Builder);
+    }
+
+    #[test]
+    fn esc_goes_back_like_left_and_never_quits() {
+        let s = ready();
+        let mut u = started(&s);
+        key(&mut u, Some(&s), k(KeyCode::Enter));
+        assert_eq!(u.step, Step::Reviewer);
+        assert_eq!(key(&mut u, Some(&s), k(KeyCode::Esc)), None);
+        assert_eq!(u.step, Step::Builder);
+        assert_eq!(
+            key(&mut u, Some(&s), k(KeyCode::Esc)),
+            None,
+            "on the first question Esc stays put"
+        );
         assert_eq!(u.step, Step::Builder);
     }
 

@@ -184,7 +184,9 @@ echo "ok  chain: the Builder question, the hint under it, no Next banner, Worksp
 tmux send-keys -t "$CH" Down Enter; chain_wait "Reviewer: who checks" 5
 tmux capture-pane -t "$CH" -p | grep -q "Builder  " || chain_fail "the answered Builder is not in the history"
 tmux send-keys -t "$CH" Left; chain_wait "Builder: which agent" 5
-echo "ok  chain: Enter answers, Left goes back"
+tmux send-keys -t "$CH" Enter; chain_wait "Reviewer: who checks" 5
+tmux send-keys -t "$CH" Escape; chain_wait "Builder: which agent" 5
+echo "ok  chain: Enter answers, Left and Esc go back"
 # The call to action's glint moves in a truecolor terminal while its text stays the same.
 glint() { for _ in $(seq 1 40); do tmux capture-pane -t "$CH" -e -p | grep "Use " | md5sum; sleep 0.1; done | sort -u | wc -l; }
 plain_use() { for _ in 1 2 3 4 5 6; do tmux capture-pane -t "$CH" -p | grep "Use "; sleep 0.4; done | sort -u | wc -l; }
