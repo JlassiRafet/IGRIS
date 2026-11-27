@@ -522,3 +522,30 @@ fn an_escape_sequence_left_open_at_a_line_end_hides_the_next_line_too() {
     let out = igris_core::orchestrate::sanitize("\x1b]0;hidden\nstill hidden\x07\nUpdate now");
     assert_eq!(out, "Update now");
 }
+
+#[test]
+fn a_solo_run_says_the_same_agent_reviewed() {
+    let w = world(true);
+    w.fake.queue_raw_ok("agent-read", APPROVE);
+    let mut c = cfg();
+    c.agents.builder = "claude".into();
+    c.agents.reviewer = "claude".into();
+    let r = w.orch(&c).run(&w.repo, "add a login page", false).unwrap();
+    assert_eq!(r.status, Status::Done);
+    assert_eq!(
+        r.reviewed_by.as_deref(),
+        Some("claude (same agent, new session)")
+    );
+}
+
+#[test]
+fn two_agents_name_the_reviewer_only_and_the_report_json_carries_it() {
+    let w = world(true);
+    w.fake.queue_raw_ok("agent-read", APPROVE);
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!(r.reviewed_by.as_deref(), Some("codex"));
+    assert_eq!(serde_json::to_value(&r).unwrap()["reviewed_by"], "codex");
+}

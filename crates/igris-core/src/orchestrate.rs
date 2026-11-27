@@ -101,6 +101,10 @@ pub struct Report {
     /// Who the run is waiting for when it is `blocked`: `builder` or `reviewer`.
     #[serde(default)]
     pub waiting: Option<String>,
+    /// Who gave the verdict: the reviewer's kind, with a note when it is the builder's own kind
+    /// (a new session of the same agent is not an independent review).
+    #[serde(default)]
+    pub reviewed_by: Option<String>,
 }
 
 /// Agent screen text made safe to put in a report: terminal escape sequences and other control
@@ -366,6 +370,7 @@ impl Orchestrator<'_> {
             review_tag: None,
             config: self.config_path.clone(),
             waiting: None,
+            reviewed_by: None,
         };
         if needs_approval == "yes" && !approved {
             r.status = Status::NeedsApproval;
@@ -536,6 +541,15 @@ impl Orchestrator<'_> {
         Ok(decide::log_outcome(&self.log_path(), &r.id, &o)?)
     }
 
+    fn reviewed_by(&self) -> String {
+        let (b, v) = (&self.cfg.agents.builder, &self.cfg.agents.reviewer);
+        if b == v {
+            format!("{v} (same agent, new session)")
+        } else {
+            v.clone()
+        }
+    }
+
     /// Start `who`'s agent in its pane. `Ok(false)`: blocked at startup (folder trust, most often).
     fn start(&self, r: &mut Report, who: &'static str) -> Result<bool, OrchError> {
         let (kind, args, pane) = if who == "builder" {
@@ -663,6 +677,7 @@ impl Orchestrator<'_> {
                 return self.fail(r, "the reviewer gave no verdict".into());
             };
             r.verdict = Some(verdict.as_str().into());
+            r.reviewed_by = Some(self.reviewed_by());
             r.findings = findings;
             if verdict == Verdict::Approve {
                 r.stage = Stage::Checks;
