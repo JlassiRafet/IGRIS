@@ -165,6 +165,30 @@ for _ in $(seq 1 30); do pgrep -f -- "--repo $WALK" >/dev/null || { ended=1; bre
 rm -rf "$PASS" "$WALK" "$WHOME"
 echo "ok  the whole walk: Tools, Pipeline, Verify (latency), Review unlocked and written, Test; no orphan"
 
+# The guided chain (IGRIS_CHAIN=1, slice 1): one question at a time with the hint under the options,
+# Enter answers, Left goes back, q quits. The fake agents answer "not logged in" (worst case W3), so
+# no option is the default and the row says what is missing.
+CH="igris-e2e-c$$"
+tmux new-session -d -s "$CH" -x 100 -y 30 \
+  "env PATH=$FAKES:\$PATH HOME=$HOME_DIR COLORTERM=truecolor IGRIS_CHAIN=1 '$BIN' --repo '$REPO'; echo EXIT=\$?; sleep 30"
+chain_fail() { echo "FAIL: chain: $1"; echo "---- screen ----"; tmux capture-pane -t "$CH" -p; tmux kill-session -t "$CH" 2>/dev/null || true; exit 1; }
+chain_wait() { # pattern, seconds
+  for _ in $(seq 1 $((${2:-10} * 10))); do tmux capture-pane -t "$CH" -p | grep -q -- "$1" && return 0; sleep 0.1; done
+  chain_fail "waited for '$1'"
+}
+chain_wait "Builder: which agent" 60
+tmux capture-pane -t "$CH" -p | grep -q "choose" || chain_fail "no hint under the options"
+tmux capture-pane -t "$CH" -p | grep -q "Next:" && chain_fail "the Next banner is back"
+tmux capture-pane -t "$CH" -p | grep -q "Workspace  *Herdr" || chain_fail "Workspace is not one line of history"
+echo "ok  chain: the Builder question, the hint under it, no Next banner, Workspace as history"
+tmux send-keys -t "$CH" Down Enter; chain_wait "Reviewer: who checks" 5
+tmux capture-pane -t "$CH" -p | grep -q "Builder  " || chain_fail "the answered Builder is not in the history"
+tmux send-keys -t "$CH" Left; chain_wait "Builder: which agent" 5
+echo "ok  chain: Enter answers, Left goes back"
+tmux send-keys -t "$CH" q; chain_wait "EXIT=0" 5
+tmux kill-session -t "$CH" 2>/dev/null || true
+echo "ok  chain: q quits with exit 0"
+
 # Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
 distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1
   local sess="igris-e2e-m$$"

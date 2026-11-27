@@ -16,7 +16,7 @@ Nothing outside /tmp/igris-demo, a temporary HOME and preview/ is written.
 
 --scrub FILE  lines `old=>new` applied to the captured text (the replacement is padded or cut to the same
               width). Use it to hide facts about your own machine, such as the hardware on the Check screen.
---only NAME   build one of: wordmark, screens, igris, pipeline.
+--only NAME   build one of: wordmark, screens, igris, pipeline, chain (chain is never part of a full rebuild).
 """
 import argparse, html, os, re, shutil, subprocess, sys, tempfile, threading, time
 from concurrent.futures import ThreadPoolExecutor
@@ -38,9 +38,9 @@ def sh(*args, **kw):
 class Term:
     """igris in a detached tmux terminal."""
 
-    def __init__(self, binary, home, repo, path, motion=False):
+    def __init__(self, binary, home, repo, path, motion=False, extra_env=""):
         self.s = f"igris-preview-{os.getpid()}"
-        env = f"env HOME={home} PATH={path} COLORTERM=truecolor" + ("" if motion else " IGRIS_NO_MOTION=1")
+        env = f"env HOME={home} PATH={path} COLORTERM=truecolor" + ("" if motion else " IGRIS_NO_MOTION=1") + (f" {extra_env}" if extra_env else "")
         sh("tmux", "new-session", "-d", "-s", self.s, "-x", str(COLS), "-y", str(ROWS),
            f"{env} '{binary}' --repo '{repo}'; sleep 180")
 
@@ -258,6 +258,26 @@ def screens(binary, out, scrub, chrome):
         print("wrote", out / f"{name}.png")
 
 
+def chain_screens(binary, out, scrub, chrome):
+    """The guided chain (IGRIS_CHAIN=1, slice 1): the Builder and Reviewer questions and the end line."""
+    repo, shim, git = demo_repo()
+    home = tempfile.mkdtemp()
+    t = Term(binary, home, repo, f"{shim}:{os.environ['PATH']}", extra_env="IGRIS_CHAIN=1")
+    shots = {}
+    try:
+        t.wait("Builder: which agent"); time.sleep(0.8)
+        shots["chain-builder"] = t.text(True)
+        t.keys("Enter"); t.wait("Reviewer: who checks"); time.sleep(0.8)
+        shots["chain-reviewer"] = t.text(True)
+        t.keys("Enter"); t.wait("Slice 1 ends here"); time.sleep(0.8)
+        shots["chain-end"] = t.text(True)
+    finally:
+        t.kill(); shutil.rmtree(home, ignore_errors=True)
+    for name, ansi in shots.items():
+        render(ansi, out / f"{name}.png", scrub, chrome)
+        print("wrote", out / f"{name}.png")
+
+
 def igris_gif(binary, out, scrub, chrome):
     """Record the real session with the wordmark's sheen moving, then render each distinct frame."""
     repo, shim, git = demo_repo()
@@ -331,7 +351,7 @@ def main():
     ap.add_argument("--bin", default=str(ROOT / "target/debug/igris"))
     ap.add_argument("--scrub")
     ap.add_argument("--out", default=str(ROOT / "preview"))
-    ap.add_argument("--only", choices=["wordmark", "screens", "igris", "pipeline"])
+    ap.add_argument("--only", choices=["wordmark", "screens", "igris", "pipeline", "chain"])
     a = ap.parse_args()
     chrome = shutil.which("chromium") or shutil.which("google-chrome") or sys.exit("chromium not found")
     scrub = []
@@ -347,6 +367,8 @@ def main():
         igris_gif(a.bin, out, scrub, chrome)
     if a.only in (None, "pipeline"):
         pipeline_gif(out, chrome)
+    if a.only == "chain":
+        chain_screens(a.bin, out, scrub, chrome)
 
 
 if __name__ == "__main__":
