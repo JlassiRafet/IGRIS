@@ -224,3 +224,27 @@ fn the_pane_line_is_sh_on_unix_and_cmd_with_delayed_expansion_on_windows() {
         "cmd /V:ON /C \"cargo test & echo M=!ERRORLEVEL!\""
     );
 }
+
+#[test]
+fn the_not_ready_hint_does_not_promise_that_parent_folder_trust_works() {
+    let fake = FakeHerdr::new();
+    fake.fail("agent-start", "error-agent-not-ready.txt");
+    let e = herdr(&fake)
+        .start_agent("builder", "claude", "w2:p1", &[])
+        .unwrap_err();
+    assert!(!e.hint.contains("parent folder"), "{}", e.hint);
+    assert!(e.hint.contains("resolve it in Herdr"), "{}", e.hint);
+}
+
+#[test]
+fn agent_info_names_the_agent_kind_and_its_folder() {
+    let fake = FakeHerdr::new();
+    fake.on("agent-get", "agent-get-codex-blocked.json");
+    let i = herdr(&fake).agent_info("reviewer").unwrap();
+    assert_eq!(i.kind, "codex");
+    assert_eq!(i.pane_id, "w2:p1");
+    assert_eq!(
+        i.cwd,
+        std::path::PathBuf::from("/home/user/.herdr/worktrees/repo/igris-fx1")
+    );
+}

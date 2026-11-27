@@ -91,13 +91,17 @@ pub(crate) fn checks(repo: &Path, config: Option<&Path>) -> Vec<Check> {
         ("reviewer", cfg.as_ref().map(|c| c.agents.reviewer.clone())),
     ] {
         out.push(match kind {
-            Err(_) => fail(id, "not checked: the config is not valid", "fix the config first"),
+            Err(_) => fail(
+                id,
+                "not checked: the config is not valid",
+                "fix the config first",
+            ),
             Ok(k) => match which(&k) {
                 Some(p) => ok(id, format!("{k} at {}", p.display())),
                 None => fail(
                     id,
                     format!("'{k}' is not on PATH"),
-                    format!("install {k} and log in with your subscription or key; run it once in the parent folder of your worktrees so it trusts them"),
+                    format!("install {k} and log in with your subscription or key."),
                 ),
             },
         });

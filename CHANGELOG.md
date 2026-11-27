@@ -5,6 +5,8 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 ## [Unreleased]
 
 ### Fixed
+- A blocked report names the agent that is waiting (from Herdr, else the configured one) and quotes the last lines of its screen, cleaned of escape sequences. It no longer says "Claude Code" for a Codex update prompt, and it says the answer is a key press in the Herdr pane (#82).
+- The hints in `igris doctor` and the blocked report no longer promise that trusting a parent folder covers new worktrees: that was never verified.
 - The next-step line of a blocked or risky task repeats the `--config` file the run was given, quoted for the shell, so the printed command runs as it stands (#83).
 
 ## [0.1.0-rc2] - 2026-11-25

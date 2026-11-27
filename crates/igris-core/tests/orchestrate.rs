@@ -407,3 +407,76 @@ fn parse_verdict_takes_the_last_matching_line_and_ignores_the_echoed_instruction
     let (v, _) = parse_verdict("VERDICT-ab12: CHANGES\nVERDICT-ab12: APPROVE\n", tag);
     assert_eq!(v.map(|v| v.as_str()), Some("approve"));
 }
+
+#[test]
+fn a_codex_update_prompt_is_reported_as_codex_with_the_screen() {
+    let w = world(true);
+    w.fake.queue_ok("agent-start", "agent-start-ok.json"); // the builder starts
+    w.fake
+        .queue_fail("agent-start", "error-agent-not-ready.txt"); // the reviewer is blocked
+    w.fake.on("agent-get", "agent-get-codex-blocked.json");
+    w.fake.on("agent-read", "codex-update.txt");
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!((r.status, r.stage), (Status::Blocked, Stage::Review));
+    assert!(r.reason.contains("reviewer (codex)"), "{}", r.reason);
+    assert!(r.reason.contains("Update now"), "{}", r.reason);
+    assert!(!r.reason.contains("Claude Code"), "{}", r.reason);
+    assert!(
+        r.next.contains("key presses in the Herdr pane"),
+        "{}",
+        r.next
+    );
+    assert!(
+        r.next.contains(&format!("igris continue {}", r.id)),
+        "{}",
+        r.next
+    );
+}
+
+#[test]
+fn a_claude_trust_prompt_names_claude_and_quotes_the_dialog() {
+    let w = world(true);
+    w.fake.fail("agent-start", "error-agent-not-ready.txt");
+    w.fake.on("agent-get", "agent-get-blocked.json");
+    w.fake.on("agent-read", "agent-read-blocked.txt");
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!(r.status, Status::Blocked);
+    assert!(r.reason.contains("builder (claude)"), "{}", r.reason);
+    assert!(r.reason.contains("trust"), "{}", r.reason);
+}
+
+#[test]
+fn the_configured_agent_is_named_when_herdr_cannot_say() {
+    let w = world(true);
+    w.fake.fail("agent-start", "error-agent-not-ready.txt");
+    w.fake.on("agent-read", "agent-read-blocked.txt"); // no agent-get fixture: the call fails
+    let r = w
+        .orch(&cfg())
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!(r.status, Status::Blocked);
+    assert!(r.reason.contains("builder (claude)"), "{}", r.reason);
+}
+
+#[test]
+fn the_reason_never_holds_escape_sequences_or_long_lines() {
+    let screen = format!(
+        "\x1b[31mred\x1b[0m before\n{}\nline a\nline b\nline c\nline d\nline e\nline f\n",
+        "x".repeat(400)
+    );
+    let out = igris_core::orchestrate::sanitize(&screen);
+    assert!(!out.contains('\x1b') && !out.contains("[31m"), "{out:?}");
+    assert!(out.split(" / ").count() <= 5, "{out:?}");
+    assert!(
+        out.split(" / ").all(|l| l.chars().count() <= 160),
+        "{out:?}"
+    );
+    assert!(out.ends_with("line f"), "{out:?}");
+    assert_eq!(igris_core::orchestrate::sanitize("\n  \n"), "");
+}

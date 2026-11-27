@@ -488,3 +488,21 @@ fn setup_command_is_gone() {
         .unwrap();
     assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
 }
+
+#[test]
+fn doctor_does_not_promise_that_parent_folder_trust_works() {
+    let e = env();
+    fs::remove_file(e.bin.join("codex")).unwrap();
+    e.fake.on("agent-list", "agent-list.json");
+    let v = json_of(&e.igris(&["doctor", "--repo", e.repo()]));
+    let c = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "reviewer")
+        .unwrap();
+    assert_eq!(c["ok"], false, "{v}");
+    let fix = c["fix"].as_str().unwrap();
+    assert!(!fix.contains("parent folder"), "{fix}");
+    assert!(fix.contains("install codex"), "{fix}");
+}

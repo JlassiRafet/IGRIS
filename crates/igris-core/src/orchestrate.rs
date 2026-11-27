@@ -98,6 +98,52 @@ pub struct Report {
     /// The `--config` file the run was started with, so the printed next step can repeat it.
     #[serde(default)]
     pub config: Option<PathBuf>,
+    /// Who the run is waiting for when it is `blocked`: `builder` or `reviewer`.
+    #[serde(default)]
+    pub waiting: Option<String>,
+}
+
+/// Agent screen text made safe to put in a report: terminal escape sequences and other control
+/// characters removed, the last five non-empty lines, each cut at 160 characters, joined by ` / `.
+pub fn sanitize(text: &str) -> String {
+    let lines: Vec<String> = text
+        .lines()
+        .map(strip_controls)
+        .map(|l| l.trim().chars().take(160).collect::<String>())
+        .filter(|l| !l.is_empty())
+        .collect();
+    lines[lines.len().saturating_sub(5)..].join(" / ")
+}
+
+fn strip_controls(line: &str) -> String {
+    let mut out = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            match chars.next() {
+                // CSI: up to a final byte in `@`..=`~`.
+                Some('[') => {
+                    for n in chars.by_ref() {
+                        if ('@'..='~').contains(&n) {
+                            break;
+                        }
+                    }
+                }
+                // OSC: up to BEL or ESC `\`.
+                Some(']') => {
+                    while let Some(n) = chars.next() {
+                        if n == '\u{7}' || (n == '\u{1b}' && chars.next() == Some('\\')) {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        } else if !c.is_control() {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// The command that continues task `r`, as it can be pasted into a shell: the `--config` the run
@@ -304,6 +350,7 @@ impl Orchestrator<'_> {
             pending: None,
             review_tag: None,
             config: self.config_path.clone(),
+            waiting: None,
         };
         if needs_approval == "yes" && !approved {
             r.status = Status::NeedsApproval;
@@ -425,12 +472,33 @@ impl Orchestrator<'_> {
 
     fn blocked(&self, r: &mut Report, who: &str) -> Result<bool, OrchError> {
         let name = Self::agent_name(r, who);
-        r.checks.tail = self.herdr.read(&name, 40).unwrap_or_default();
+        let screen = self.herdr.read(&name, 40).unwrap_or_default();
+        let configured = if who == "builder" {
+            &self.cfg.agents.builder
+        } else {
+            &self.cfg.agents.reviewer
+        };
+        // Herdr knows which agent is in the pane; the configured kind is the fallback.
+        let kind = self
+            .herdr
+            .agent_info(&name)
+            .map(|i| i.kind)
+            .ok()
+            .filter(|k| !k.is_empty())
+            .unwrap_or_else(|| configured.clone());
+        let seen = sanitize(&screen);
+        r.checks.tail = screen;
         r.status = Status::Blocked;
-        r.reason = format!(
-            "the {who} is waiting for input (Claude Code asks once per new folder: trust it in Herdr)"
+        r.waiting = Some(who.into());
+        r.reason = if seen.is_empty() {
+            format!("the {who} ({kind}) is waiting for input")
+        } else {
+            format!("the {who} ({kind}) is waiting for input; on screen: {seen}")
+        };
+        r.next = format!(
+            "answer it with key presses in the Herdr pane (not a shell command), then run `{}`",
+            continue_command(r)
         );
-        r.next = format!("resolve it in Herdr, then run `{}`", continue_command(r));
         self.save(r)?;
         Ok(false)
     }
