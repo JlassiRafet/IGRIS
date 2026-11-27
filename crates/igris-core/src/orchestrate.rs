@@ -588,6 +588,8 @@ impl Orchestrator<'_> {
             r.builder_started = true;
         } else {
             r.reviewer_started = true;
+            // Record who is reviewing now: a later `continue` may run with a changed config.
+            r.reviewed_by.get_or_insert_with(|| self.reviewed_by());
         }
     }
 
@@ -677,7 +679,9 @@ impl Orchestrator<'_> {
                 return self.fail(r, "the reviewer gave no verdict".into());
             };
             r.verdict = Some(verdict.as_str().into());
-            r.reviewed_by = Some(self.reviewed_by());
+            // Normally set when the reviewer started; a task started before this field existed gets
+            // it here.
+            r.reviewed_by.get_or_insert_with(|| self.reviewed_by());
             r.findings = findings;
             if verdict == Verdict::Approve {
                 r.stage = Stage::Checks;

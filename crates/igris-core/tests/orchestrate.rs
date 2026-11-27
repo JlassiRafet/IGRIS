@@ -549,3 +549,27 @@ fn two_agents_name_the_reviewer_only_and_the_report_json_carries_it() {
     assert_eq!(r.reviewed_by.as_deref(), Some("codex"));
     assert_eq!(serde_json::to_value(&r).unwrap()["reviewed_by"], "codex");
 }
+
+#[test]
+fn a_resume_with_a_changed_config_keeps_the_reviewer_that_started() {
+    let w = world(true);
+    w.fake.queue_ok("agent-start", "agent-start-ok.json"); // the builder
+    w.fake
+        .queue_fail("agent-start", "error-agent-not-ready.txt"); // the codex reviewer is blocked
+    w.fake.on("agent-read", "agent-read-blocked.txt");
+    let started = cfg(); // builder claude, reviewer codex
+    let r = w
+        .orch(&started)
+        .run(&w.repo, "add a login page", false)
+        .unwrap();
+    assert_eq!((r.status, r.stage), (Status::Blocked, Stage::Review));
+    // The config now names another reviewer; the pane that was started is still codex's.
+    let mut changed = cfg();
+    changed.agents.builder = "claude".into();
+    changed.agents.reviewer = "claude".into();
+    w.fake.on("agent-start", "agent-start-ok.json");
+    w.fake.on_raw("agent-read", APPROVE);
+    let r = w.orch(&changed).resume(&r.id).unwrap();
+    assert_eq!(r.status, Status::Done);
+    assert_eq!(r.reviewed_by.as_deref(), Some("codex"));
+}
