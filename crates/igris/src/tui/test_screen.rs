@@ -281,7 +281,7 @@ pub fn draw(f: &mut Frame, area: Rect, s: &State, t: &Theme, hits: &mut HitMap, 
         let mut spans = vec![
             Span::styled(mark, t.style(Role::Bad)),
             Span::raw(" "),
-            button(t, label, false, s.test.focus == i),
+            button(t, label, s.test.focus == i),
         ];
         if i == 1 {
             spans.push(Span::styled("  uses your own agent subscriptions", dim));

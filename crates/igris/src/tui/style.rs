@@ -32,8 +32,11 @@ pub enum Role {
     /// A key in a hint.
     Key,
     Hover,
-    /// The primary button.
+    /// The primary button: dark text on the light blue.
     Primary,
+    /// The one call to action of a chain question: bold light-blue text, no rectangle. The chain
+    /// draws a glint over it when motion is on.
+    Cta,
 }
 
 pub fn rgb((r, g, b): (u8, u8, u8)) -> Color {
@@ -69,14 +72,21 @@ impl Theme {
             (_, Role::Hover) => Style::new().add_modifier(Modifier::BOLD),
             (ColorDepth::True, Role::Primary) => Style::new()
                 .fg(rgb(INK))
-                .bg(rgb(RED))
+                .bg(rgb(LIGHT_BLUE))
                 .add_modifier(Modifier::BOLD),
             (ColorDepth::Ansi16, Role::Primary) => Style::new()
                 .fg(Color::Black)
-                .bg(Color::Red)
+                .bg(Color::LightBlue)
                 .add_modifier(Modifier::BOLD),
             (ColorDepth::None, Role::Primary) => {
                 Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            }
+            (ColorDepth::True, Role::Cta) => fg(LIGHT_BLUE).add_modifier(Modifier::BOLD),
+            (ColorDepth::Ansi16, Role::Cta) => Style::new()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+            (ColorDepth::None, Role::Cta) => {
+                Style::new().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             }
         }
     }
@@ -138,6 +148,7 @@ mod tests {
             Role::Key,
             Role::Hover,
             Role::Primary,
+            Role::Cta,
         ] {
             let s = t(ColorDepth::None).style(role);
             assert!(s.fg.is_none() && s.bg.is_none(), "{role:?}: {s:?}");
@@ -145,16 +156,57 @@ mod tests {
     }
 
     #[test]
-    fn the_primary_button_is_red_and_hover_only_tints_in_truecolor() {
-        assert_eq!(
-            t(ColorDepth::True).style(Role::Primary).bg,
-            Some(Color::Rgb(0xff, 0x30, 0x38))
+    fn the_primary_button_is_dark_text_on_the_light_blue_and_hover_only_tints_in_truecolor() {
+        let s = t(ColorDepth::True).style(Role::Primary);
+        assert_eq!(s.bg, Some(Color::Rgb(0x53, 0x9f, 0xdf)));
+        assert_eq!(s.fg, Some(Color::Rgb(0x0b, 0x11, 0x14)));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+        let s = t(ColorDepth::Ansi16).style(Role::Primary);
+        assert_eq!((s.fg, s.bg), (Some(Color::Black), Some(Color::LightBlue)));
+        assert!(
+            t(ColorDepth::None)
+                .style(Role::Primary)
+                .add_modifier
+                .contains(Modifier::REVERSED | Modifier::BOLD)
         );
         assert_eq!(
             t(ColorDepth::True).style(Role::Hover).bg,
             Some(Color::Rgb(0x16, 0x22, 0x2b))
         );
         assert_eq!(t(ColorDepth::Ansi16).style(Role::Hover).bg, None);
+    }
+
+    #[test]
+    fn the_call_to_action_is_bold_blue_text_with_no_rectangle_and_underlined_without_colour() {
+        let s = t(ColorDepth::True).style(Role::Cta);
+        assert_eq!(s.fg, Some(Color::Rgb(0x53, 0x9f, 0xdf)));
+        assert_eq!(s.bg, None);
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+        let s = t(ColorDepth::Ansi16).style(Role::Cta);
+        assert_eq!((s.fg, s.bg), (Some(Color::LightBlue), None));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+        let s = t(ColorDepth::None).style(Role::Cta);
+        assert!(
+            s.add_modifier
+                .contains(Modifier::BOLD | Modifier::UNDERLINED)
+        );
+    }
+
+    #[test]
+    fn blue_text_and_the_dark_text_on_a_blue_button_both_have_enough_contrast() {
+        let lum = |(r, g, b): (u8, u8, u8)| {
+            let c = |v: u8| {
+                let v = f64::from(v) / 255.0;
+                if v <= 0.03928 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b)
+        };
+        let ratio = (lum(LIGHT_BLUE) + 0.05) / (lum(INK) + 0.05);
+        assert!(ratio >= 4.5, "{ratio}");
     }
 
     #[test]

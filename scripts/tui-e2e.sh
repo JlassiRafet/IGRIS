@@ -153,6 +153,13 @@ walk_wait "true" 5
 tmux send-keys -t "$W" 4;                 walk_wait "Claude Code replied in" 20
 walk_wait "Codex replied in" 5
 tmux send-keys -t "$W" 5;                 walk_wait "Write to" 5
+# The Apply button glints: its colours move while its text stays the same.
+apply_line=$(tmux capture-pane -t "$W" -p | grep -n "Apply" | head -1 | cut -d: -f1)
+[ -n "$apply_line" ] || walk_fail "no Apply button on the Review screen"
+apply_row() { tmux capture-pane -t "$W" -e -p | sed -n "${apply_line}p"; }
+apply_frames=$(for _ in $(seq 1 40); do apply_row | md5sum; sleep 0.1; done | sort -u | wc -l)
+[ "$apply_frames" -gt 1 ] || walk_fail "the Apply button does not glint"
+echo "ok  the Apply button glints"
 tmux send-keys -t "$W" Tab; sleep 0.3;    tmux send-keys -t "$W" Enter
 for _ in $(seq 1 50); do [ -f "$WALK/igris.toml" ] && break; sleep 0.1; done
 [ -f "$WALK/igris.toml" ] || walk_fail "Apply did not write igris.toml"
@@ -164,6 +171,45 @@ for _ in $(seq 1 30); do pgrep -f -- "--repo $WALK" >/dev/null || { ended=1; bre
 [ "$ended" = 1 ] || { pkill -f -- "--repo $WALK" || true; rm -rf "$PASS" "$WALK" "$WHOME"; echo "FAIL: igris kept running after the walk"; exit 1; }
 rm -rf "$PASS" "$WALK" "$WHOME"
 echo "ok  the whole walk: Tools, Pipeline, Verify (latency), Review unlocked and written, Test; no orphan"
+
+# The guided chain (IGRIS_CHAIN=1, slice 1): one question at a time with the hint under the options,
+# Enter answers, Left goes back, q quits. The fake agents answer "not logged in" (worst case W3), so
+# no option is the default and the row says what is missing.
+CH="igris-e2e-c$$"
+tmux new-session -d -s "$CH" -x 100 -y 30 \
+  "env PATH=$FAKES:\$PATH HOME=$HOME_DIR COLORTERM=truecolor IGRIS_CHAIN=1 '$BIN' --repo '$REPO'; echo EXIT=\$?; sleep 30"
+chain_fail() { echo "FAIL: chain: $1"; echo "---- screen ----"; tmux capture-pane -t "$CH" -p; tmux kill-session -t "$CH" 2>/dev/null || true; exit 1; }
+chain_wait() { # pattern, seconds
+  for _ in $(seq 1 $((${2:-10} * 10))); do tmux capture-pane -t "$CH" -p | grep -q -- "$1" && return 0; sleep 0.1; done
+  chain_fail "waited for '$1'"
+}
+chain_wait "Builder: which agent" 60
+tmux capture-pane -t "$CH" -p | grep -q "choose" || chain_fail "no hint under the options"
+tmux capture-pane -t "$CH" -p | grep -q "Next:" && chain_fail "the Next banner is back"
+tmux capture-pane -t "$CH" -p | grep -q "Workspace  *Herdr" || chain_fail "Workspace is not one line of history"
+echo "ok  chain: the Builder question, the hint under it, no Next banner, Workspace as history"
+tmux send-keys -t "$CH" Down Enter; chain_wait "Reviewer: who checks" 5
+tmux capture-pane -t "$CH" -p | grep -q "Builder  " || chain_fail "the answered Builder is not in the history"
+tmux send-keys -t "$CH" Left; chain_wait "Builder: which agent" 5
+tmux send-keys -t "$CH" Enter; chain_wait "Reviewer: who checks" 5
+tmux send-keys -t "$CH" Escape; chain_wait "Builder: which agent" 5
+echo "ok  chain: Enter answers, Left and Esc go back"
+# The call to action's glint moves in a truecolor terminal while its text stays the same.
+glint() { for _ in $(seq 1 40); do tmux capture-pane -t "$CH" -e -p | grep "Use " | md5sum; sleep 0.1; done | sort -u | wc -l; }
+plain_use() { for _ in 1 2 3 4 5 6; do tmux capture-pane -t "$CH" -p | grep "Use "; sleep 0.4; done | sort -u | wc -l; }
+[ "$(glint)" -gt 1 ] || chain_fail "the glint does not move over the call to action"
+[ "$(plain_use)" -eq 1 ] || chain_fail "the call to action's text changes while the glint moves"
+echo "ok  chain: the glint moves and the text does not change"
+tmux send-keys -t "$CH" q; chain_wait "EXIT=0" 5
+tmux kill-session -t "$CH" 2>/dev/null || true
+echo "ok  chain: q quits with exit 0"
+# Ctrl-C quits too, in a real terminal.
+tmux new-session -d -s "$CH" -x 100 -y 30 \
+  "env PATH=$FAKES:\$PATH HOME=$HOME_DIR COLORTERM=truecolor IGRIS_CHAIN=1 '$BIN' --repo '$REPO'; echo EXIT=\$?; sleep 30"
+chain_wait "Builder: which agent" 60
+tmux send-keys -t "$CH" C-c; chain_wait "EXIT=0" 5
+tmux kill-session -t "$CH" 2>/dev/null || true
+echo "ok  chain: Ctrl-C quits with exit 0"
 
 # Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
 distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1

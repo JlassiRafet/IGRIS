@@ -16,7 +16,7 @@ Nothing outside /tmp/igris-demo, a temporary HOME and preview/ is written.
 
 --scrub FILE  lines `old=>new` applied to the captured text (the replacement is padded or cut to the same
               width). Use it to hide facts about your own machine, such as the hardware on the Check screen.
---only NAME   build one of: wordmark, screens, igris, pipeline.
+--only NAME   build one of: wordmark, screens, igris, pipeline, chain (chain is never part of a full rebuild).
 """
 import argparse, html, os, re, shutil, subprocess, sys, tempfile, threading, time
 from concurrent.futures import ThreadPoolExecutor
@@ -38,9 +38,9 @@ def sh(*args, **kw):
 class Term:
     """igris in a detached tmux terminal."""
 
-    def __init__(self, binary, home, repo, path, motion=False):
+    def __init__(self, binary, home, repo, path, motion=False, extra_env=""):
         self.s = f"igris-preview-{os.getpid()}"
-        env = f"env HOME={home} PATH={path} COLORTERM=truecolor" + ("" if motion else " IGRIS_NO_MOTION=1")
+        env = f"env HOME={home} PATH={path} COLORTERM=truecolor" + ("" if motion else " IGRIS_NO_MOTION=1") + (f" {extra_env}" if extra_env else "")
         sh("tmux", "new-session", "-d", "-s", self.s, "-x", str(COLS), "-y", str(ROWS),
            f"{env} '{binary}' --repo '{repo}'; sleep 180")
 
@@ -258,6 +258,44 @@ def screens(binary, out, scrub, chrome):
         print("wrote", out / f"{name}.png")
 
 
+def login_shim(parent):
+    """Fake `claude` and `codex` that answer "logged in", so the chain shows its best case. They live
+    in a private folder under `parent`, never in a shared path another user could pre-create."""
+    shim = Path(tempfile.mkdtemp(dir=parent))
+    (shim / "claude").write_text('#!/bin/sh\necho \'{"loggedIn":true,"authMethod":"claude.ai"}\'\n')
+    (shim / "codex").write_text('#!/bin/sh\necho "Logged in using ChatGPT" >&2\n')
+    for tool in ("claude", "codex"):
+        (shim / tool).chmod(0o755)
+    return shim
+
+
+def chain_screens(binary, out, scrub, chrome):
+    """The guided chain (IGRIS_CHAIN=1, slice 1): the Builder, Reviewer and end screens in the usual
+    terminal, on a machine where the agents are logged in, in 16 colours and in an ASCII terminal."""
+    repo, shim, git = demo_repo()
+    private = tempfile.mkdtemp()
+    runs = [("", "", shim), ("-logged-in", "", login_shim(private)), ("-16-colour", "COLORTERM=", shim), ("-ascii", "LC_ALL=C", shim)]
+    shots = {}
+    for name, env, bin_dir in runs:
+        home = tempfile.mkdtemp()
+        extra = f"IGRIS_CHAIN=1 {env}".strip()
+        t = Term(binary, home, repo, f"{bin_dir}:{shim}:{os.environ['PATH']}", extra_env=extra)
+        try:
+            t.wait("Builder: which agent"); time.sleep(0.8)
+            shots[f"chain-builder{name}"] = t.text(True)
+            t.keys("Enter"); t.wait("Reviewer: who checks"); time.sleep(0.8)
+            shots[f"chain-reviewer{name}"] = t.text(True)
+            if not name:
+                t.keys("Enter"); t.wait("Slice 1 ends here"); time.sleep(0.8)
+                shots["chain-end"] = t.text(True)
+        finally:
+            t.kill(); shutil.rmtree(home, ignore_errors=True)
+    shutil.rmtree(private, ignore_errors=True)
+    for name, ansi in shots.items():
+        render(ansi, out / f"{name}.png", scrub, chrome)
+        print("wrote", out / f"{name}.png")
+
+
 def igris_gif(binary, out, scrub, chrome):
     """Record the real session with the wordmark's sheen moving, then render each distinct frame."""
     repo, shim, git = demo_repo()
@@ -331,7 +369,7 @@ def main():
     ap.add_argument("--bin", default=str(ROOT / "target/debug/igris"))
     ap.add_argument("--scrub")
     ap.add_argument("--out", default=str(ROOT / "preview"))
-    ap.add_argument("--only", choices=["wordmark", "screens", "igris", "pipeline"])
+    ap.add_argument("--only", choices=["wordmark", "screens", "igris", "pipeline", "chain"])
     a = ap.parse_args()
     chrome = shutil.which("chromium") or shutil.which("google-chrome") or sys.exit("chromium not found")
     scrub = []
@@ -347,6 +385,8 @@ def main():
         igris_gif(a.bin, out, scrub, chrome)
     if a.only in (None, "pipeline"):
         pipeline_gif(out, chrome)
+    if a.only == "chain":
+        chain_screens(a.bin, out, scrub, chrome)
 
 
 if __name__ == "__main__":
