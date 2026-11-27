@@ -1,8 +1,8 @@
 //! The chain screen: header band, history of answered questions, the active question with its
 //! hint right under the options, and a one-line footer. Pure drawing of a `ChainUi`.
 use super::model::{ChainUi, Choice, Mark, Step};
-use crate::tui::style::Role;
-use crate::tui::theme::{Glyphs, Theme};
+use crate::tui::style::{GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
+use crate::tui::theme::{ColorDepth, Glyphs, Theme};
 use crate::tui::{header, layout, widgets};
 use igris_detect::Snapshot;
 use ratatui::Frame;
@@ -17,6 +17,7 @@ struct Marks {
     active: &'static str,
     rail: &'static str,
     close: &'static str,
+    dash: &'static str,
     on: &'static str,
     off: &'static str,
     warn: &'static str,
@@ -33,11 +34,12 @@ fn marks(t: &Theme) -> Marks {
             active: "*",
             rail: "|",
             close: "`",
+            dash: "-",
             on: "(*)",
             off: "( )",
             warn: "!",
             bar: ">",
-            enter: "Enter:",
+            enter: "Enter",
             choose: "up/down",
             back: "Left",
         }
@@ -47,21 +49,29 @@ fn marks(t: &Theme) -> Marks {
             active: "◆",
             rail: "│",
             close: "└",
+            dash: "─",
             on: "●",
             off: "○",
             warn: "⚠",
             bar: "▌",
-            enter: "⏎",
+            enter: "Enter",
             choose: "↑/↓",
             back: "←",
         }
     }
 }
 
-/// Rows that are not options: the blank line above the question, the question, the blank rail
-/// line, the action row and the closing mark.
-const FIXED_ROWS: usize = 5;
+/// Rows that are not options: the blank line above the question, the question, and the action row
+/// that closes the tree.
+const FIXED_ROWS: usize = 3;
 const BOX_ROWS: u16 = 5;
+/// The column where the status words start, in the history and in the option rows alike.
+const NOTE_COL: usize = 26;
+/// Columns before an option's label: the tree line, the bar and the choice mark.
+fn option_prefix(m: &Marks) -> usize {
+    let w = |s: &str| unicode_width::UnicodeWidthStr::width(s);
+    w(m.rail) + 1 + w(m.bar) + 2 + w(m.on)
+}
 
 pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme, tick: usize) {
     let big = area.height >= layout::TALL_HEIGHT && t.glyphs == Glyphs::Unicode;
@@ -90,8 +100,11 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
             Line::from(vec![
                 Span::styled(format!("{} ", m.done), t.style(Role::Dim)),
                 Span::styled(format!("{label:<10}"), t.style(Role::Dim)),
-                Span::styled(format!("{answer:<26}"), t.style(Role::Text)),
-                Span::styled(state.clone(), t.style(Role::Dim)),
+                Span::styled(
+                    format!("{answer:<w$} ", w = NOTE_COL - 2 - 10 - 1),
+                    t.style(Role::Text),
+                ),
+                Span::styled(ascii_safe(state, t), t.style(Role::Dim)),
             ])
         })
         .collect();
@@ -114,9 +127,7 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
                 .unwrap_or(0);
             let start = (at + 1).saturating_sub(room);
             lines.extend(rows.into_iter().skip(start).take(room).map(|(l, _)| l));
-            lines.push(Line::styled(m.rail, t.style(Role::Dim)));
-            lines.push(action_row(options.get(ui.cursor), &m, t));
-            lines.push(Line::styled(m.close, t.style(Role::Dim)));
+            lines.push(action_row(options.get(ui.cursor), &m, t, tick));
         }
     }
     let n = lines.len() as u16;
@@ -137,6 +148,15 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
         ])),
         a.footer,
     );
+}
+
+/// The status words use a middle dot; an ASCII terminal gets a hyphen instead.
+fn ascii_safe(text: &str, t: &Theme) -> String {
+    if t.glyphs == Glyphs::Ascii {
+        text.replace('·', "-")
+    } else {
+        text.to_string()
+    }
 }
 
 /// The active question: a bold title, then the question itself.
@@ -183,20 +203,26 @@ fn option_rows(
     rows
 }
 
-/// The one call to action as a chip, then the other keys as plain keycaps. A missing agent cannot
-/// be chosen yet, so there is no chip, only what comes next.
-fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme) -> Line<'static> {
+/// The call to action closes the tree: the corner, the Enter key, then the label with its glint.
+/// The other keys follow as plain keycaps. A missing agent cannot be chosen yet, so there is no
+/// call to action, only what comes next.
+fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme, tick: usize) -> Line<'static> {
     let key = |k: &str, verb: &str| {
         [
             Span::styled(k.to_string(), t.style(Role::Key)),
             Span::styled(format!(" {verb}   "), t.style(Role::Dim)),
         ]
     };
-    let mut spans = vec![Span::styled(format!("{}   ", m.rail), t.style(Role::Dim))];
+    let mut spans = vec![Span::styled(
+        format!("{}{} ", m.close, m.dash.repeat(2)),
+        t.style(Role::Dim),
+    )];
     match chosen {
         Some(c) if c.mark != Mark::Dim => {
-            let chip = format!(" {} Use {} ", m.enter, c.label);
-            spans.extend([Span::styled(chip, t.style(Role::Cta)), Span::raw("   ")]);
+            spans.push(Span::styled(m.enter.to_string(), t.style(Role::Key)));
+            spans.push(Span::raw("  "));
+            spans.extend(shine(&format!("Use {}", c.label), tick, t));
+            spans.push(Span::raw("   "));
             spans.extend(key(m.choose, "choose"));
         }
         Some(_) => {
@@ -213,6 +239,32 @@ fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme) -> Line<'static> {
     }
     spans.extend(key("r", "re-scan"));
     Line::from(spans)
+}
+
+/// Ticks of rest between two glints (a tick is 100 ms).
+const GLINT_REST: usize = 14;
+
+/// The label of the call to action. With motion on, a glint slides over its letters one step per
+/// tick and then rests, like the effort slider in Claude Code: the letter under it is the sheen,
+/// its neighbours the glow, the rest the plain blue. Without motion it is one steady span.
+fn shine(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
+    let steady = t.style(Role::Cta);
+    if !t.motion || t.depth != ColorDepth::True {
+        return vec![Span::styled(text.to_string(), steady)];
+    }
+    let len = text.chars().count();
+    let at = (tick % (len + 4 + GLINT_REST)) as isize - 2;
+    text.chars()
+        .enumerate()
+        .map(|(i, ch)| {
+            let colour = match (i as isize - at).abs() {
+                0 => SHEEN,
+                1 => GLOW,
+                _ => LIGHT_BLUE,
+            };
+            Span::styled(ch.to_string(), steady.fg(rgb(colour)))
+        })
+        .collect()
 }
 
 /// Red is for a step the user must take, and only on the row the cursor is on; colour marks focus.
@@ -234,28 +286,32 @@ fn option_line(c: &Choice, selected: bool, m: &Marks, t: &Theme) -> Line<'static
     if selected {
         label = label.add_modifier(Modifier::BOLD);
     }
-    let mut spans = vec![
-        Span::styled(format!("{} ", m.rail), t.style(Role::Dim)),
+    let width = NOTE_COL - option_prefix(m) - 1;
+    // The band starts at the bar, so it never touches the tree line.
+    let mut row = vec![
         Span::styled(if selected { m.bar } else { " " }, t.style(Role::Info)),
         Span::styled(
             format!(" {} ", if selected { m.on } else { m.off }),
             t.style(if selected { Role::Info } else { Role::Dim }),
         ),
-        Span::styled(format!("{:<14}", c.label), label),
-        Span::styled(c.note.clone(), t.style(note_role)),
+        Span::styled(format!("{:<width$} ", c.label), label),
+        Span::styled(ascii_safe(&c.note, t), t.style(note_role)),
     ];
     if let (true, Some(w)) = (selected, &c.warn) {
-        spans.push(Span::styled(
+        row.push(Span::styled(
             format!("  {} {w}", m.warn),
             t.style(note_role),
         ));
     }
-    let line = Line::from(spans);
     if selected {
-        line.style(t.style(Role::Hover))
-    } else {
-        line
+        row = row
+            .into_iter()
+            .map(|s| s.patch_style(t.style(Role::Hover)))
+            .collect();
     }
+    let mut spans = vec![Span::styled(format!("{} ", m.rail), t.style(Role::Dim))];
+    spans.extend(row);
+    Line::from(spans)
 }
 
 #[cfg(test)]
@@ -292,40 +348,195 @@ mod tests {
     }
 
     #[test]
-    fn the_action_row_follows_the_options_after_one_blank_line() {
+    fn the_tree_closes_on_the_action_row_right_after_the_options() {
         let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
-        let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36);
-        let last = rows.iter().rposition(|r| r.contains("Codex")).unwrap();
-        let action = rows.iter().position(|r| r.contains("↑/↓ choose")).unwrap();
-        assert_eq!(action, last + 2, "{rows:#?}");
-        assert!(
-            rows[last + 1]
-                .trim_matches(|c: char| c == '│' || c == ' ')
-                .is_empty()
-        );
+        for (glyphs, corner) in [(Glyphs::Unicode, '└'), (Glyphs::Ascii, '`')] {
+            let rows = render(&at_builder(&s), &s, glyphs, 120, 36);
+            let last = rows.iter().rposition(|r| r.contains("Codex")).unwrap();
+            assert!(
+                rows[last + 1]
+                    .trim_start()
+                    .starts_with(&format!("{corner}--"))
+                    || rows[last + 1]
+                        .trim_start()
+                        .starts_with(&format!("{corner}──")),
+                "the corner sits on the action row: {rows:#?}"
+            );
+            assert!(rows[last + 1].contains("choose"), "{rows:#?}");
+            assert_eq!(
+                rows.iter()
+                    .filter(|r| r.trim_start().starts_with(corner))
+                    .count(),
+                1,
+                "{rows:#?}"
+            );
+        }
     }
 
     #[test]
-    fn one_chip_names_the_primary_action_and_the_other_keys_stay_plain() {
+    fn the_call_to_action_names_the_enter_key_in_words_and_appears_once() {
         let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
-        let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36);
-        assert_eq!(
-            rows.iter()
-                .filter(|r| r.contains("⏎ Use Claude Code"))
-                .count(),
-            1,
-            "{rows:#?}"
-        );
-        let ascii = render(&at_builder(&s), &s, Glyphs::Ascii, 120, 36).join("\n");
-        assert!(ascii.contains("Enter: Use Claude Code"), "{ascii}");
+        for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
+            let rows = render(&at_builder(&s), &s, glyphs, 120, 36);
+            assert_eq!(
+                rows.iter()
+                    .filter(|r| r.contains("Enter  Use Claude Code"))
+                    .count(),
+                1,
+                "{rows:#?}"
+            );
+            assert!(rows.iter().all(|r| !r.contains('⏎')), "{rows:#?}");
+        }
     }
 
     #[test]
-    fn a_missing_agent_gets_no_chip_and_says_what_comes_next() {
+    fn a_missing_agent_gets_no_call_to_action_and_says_what_comes_next() {
         let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
         let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36).join("\n");
-        assert!(!rows.contains("⏎ Use"), "{rows}");
+        assert!(!rows.contains("Enter  Use"), "{rows}");
         assert!(rows.contains("install comes in the next step"), "{rows}");
+    }
+
+    fn truecolour_with_motion() -> Theme {
+        Theme {
+            depth: ColorDepth::True,
+            glyphs: Glyphs::Unicode,
+            motion: true,
+        }
+    }
+
+    fn fgs(spans: &[Span<'static>]) -> Vec<Option<ratatui::style::Color>> {
+        spans.iter().map(|s| s.style.fg).collect()
+    }
+
+    #[test]
+    fn the_glint_slides_over_the_letters_one_step_per_tick_then_rests() {
+        let t = truecolour_with_motion();
+        let sheen = Some(rgb(crate::tui::style::SHEEN));
+        let at = |tick| shine("Use Codex", tick, &t);
+        let lead = |tick| fgs(&at(tick)).iter().position(|c| *c == sheen);
+        assert_eq!(at(0).len(), 9, "one span per letter");
+        let path: Vec<_> = (2..=10).map(lead).collect();
+        assert_eq!(
+            path,
+            (0..=8).map(Some).collect::<Vec<_>>(),
+            "the brightest letter moves right one step per tick"
+        );
+        let blue = Some(rgb(crate::tui::style::LIGHT_BLUE));
+        assert!(
+            fgs(&at(14)).iter().all(|c| *c == blue),
+            "at rest every letter is the plain blue: {:?}",
+            fgs(&at(14))
+        );
+        assert_eq!(fgs(&at(0)), fgs(&at(27)), "the cycle repeats");
+    }
+
+    #[test]
+    fn every_letter_of_the_glint_stays_bold_and_has_no_background() {
+        let t = truecolour_with_motion();
+        for tick in 0..30 {
+            for span in shine("Use Codex", tick, &t) {
+                assert!(
+                    span.style
+                        .add_modifier
+                        .contains(ratatui::style::Modifier::BOLD),
+                    "tick {tick}"
+                );
+                assert_eq!(span.style.bg, None, "tick {tick}: no rectangle");
+            }
+        }
+    }
+
+    #[test]
+    fn without_motion_the_call_to_action_is_one_steady_span() {
+        for depth in [ColorDepth::True, ColorDepth::Ansi16, ColorDepth::None] {
+            let t = Theme {
+                depth,
+                glyphs: Glyphs::Unicode,
+                motion: false,
+            };
+            let spans = shine("Use Codex", 5, &t);
+            assert_eq!(spans.len(), 1, "{depth:?}");
+            assert_eq!(spans[0].style, t.style(Role::Cta), "{depth:?}");
+        }
+        let odd = Theme {
+            depth: ColorDepth::Ansi16,
+            glyphs: Glyphs::Unicode,
+            motion: true,
+        };
+        assert_eq!(
+            shine("Use Codex", 5, &odd).len(),
+            1,
+            "motion needs truecolor"
+        );
+    }
+
+    #[test]
+    fn the_glint_never_changes_the_text_on_screen() {
+        let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
+        let u = at_builder(&s);
+        let t = truecolour_with_motion();
+        let text_at = |tick| {
+            let mut term = Terminal::new(TestBackend::new(120, 36)).unwrap();
+            term.draw(|f| draw(f, f.area(), &u, &s, &t, tick)).unwrap();
+            let b = term.backend().buffer().clone();
+            let rows: Vec<String> = (0..36)
+                .map(|y| (0..120).map(|x| b[(x, y)].symbol().to_string()).collect())
+                .collect();
+            rows[rows.iter().position(|r| r.contains("Use Claude")).unwrap()].clone()
+        };
+        let first = text_at(0);
+        for tick in 1..30 {
+            assert_eq!(text_at(tick), first, "tick {tick}");
+        }
+    }
+
+    #[test]
+    fn the_call_to_action_is_blue_text_with_no_rectangle_behind_it() {
+        let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
+        let (b, rows) = true_colour(&at_builder(&s), &s);
+        let st = cell_style(&b, &rows, "Use Claude");
+        assert_eq!(st.fg, Some(rgb(crate::tui::style::LIGHT_BLUE)));
+        assert_eq!(st.bg, Some(ratatui::style::Color::Reset), "no rectangle");
+    }
+
+    #[test]
+    fn the_selected_band_starts_at_the_blue_bar_not_at_the_tree_line() {
+        let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
+        let (b, rows) = true_colour(&at_builder(&s), &s);
+        let y = rows.iter().position(|r| r.contains('▌')).unwrap();
+        let col = |ch: char| rows[y].chars().position(|c| c == ch).unwrap() as u16;
+        let hover = rgb((0x16, 0x22, 0x2b));
+        assert_ne!(
+            b[(col('│'), y as u16)].bg,
+            hover,
+            "the tree line stays clear"
+        );
+        assert_eq!(
+            b[(col('▌'), y as u16)].bg,
+            hover,
+            "the band starts at the bar"
+        );
+        assert_eq!(b[(col('●'), y as u16)].bg, hover);
+    }
+
+    #[test]
+    fn history_status_and_option_notes_share_one_column() {
+        let s = snap(&[("claude", true, LoggedIn), ("codex", true, LoggedIn)]);
+        let u = at_builder(&s);
+        let note = u.choices(&s)[0].note.clone();
+        for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
+            let rows = render(&u, &s, glyphs, 120, 36);
+            let col = |needle: &str, row: &str| {
+                let b = row
+                    .find(needle)
+                    .unwrap_or_else(|| panic!("{needle} in {row}"));
+                row[..b].chars().count()
+            };
+            let hist = rows.iter().find(|r| r.contains("Workspace")).unwrap();
+            let opt = rows.iter().find(|r| r.contains("Claude Code")).unwrap();
+            assert_eq!(col("ready", hist), col(&note, opt), "{glyphs:?}: {rows:#?}");
+        }
     }
 
     #[test]
@@ -478,6 +689,19 @@ mod tests {
             assert!(!text.contains(g), "{g} in an ASCII terminal:\n{text}");
         }
         assert!(text.contains("Reviewer"), "{text}");
+    }
+
+    #[test]
+    fn an_ascii_terminal_gets_no_middle_dot_even_in_the_status_words() {
+        let s = snap(&[
+            ("claude", true, igris_detect::Login::Unknown),
+            ("codex", true, igris_detect::Login::Unknown),
+        ]);
+        let mut u = at_builder(&s);
+        u.enter(&s);
+        let text = render(&u, &s, Glyphs::Ascii, 100, 30).join("\n");
+        assert!(text.contains("login unverified"), "{text}");
+        assert!(text.is_ascii(), "{text}");
     }
 
     #[test]

@@ -224,7 +224,7 @@ pub fn status_cell(t: &Theme, st: Status) -> Span<'static> {
     Span::styled(" ".repeat(fill) + &text, t.style(status_role(st)))
 }
 
-/// A button. The primary one (the thing to do next) is red; the others are light-blue text in
+/// A button. The primary one (the thing to do next) is a light-blue chip; the others are light-blue text in
 /// brackets. A focused one is also bold and underlined, so focus never relies on colour.
 pub fn button(t: &Theme, label: &str, primary: bool, focused: bool) -> Span<'static> {
     let mut style = if primary {

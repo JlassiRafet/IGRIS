@@ -590,14 +590,14 @@ mod tests {
     }
 
     #[test]
-    fn apply_is_the_red_primary_button_only_when_there_is_something_to_apply() {
+    fn apply_is_the_blue_primary_button_only_when_there_is_something_to_apply() {
         let s = on_review(Some("[checks]\ncommand = \"t\"\n"));
         let (text, buf) = render_with(&s, &truecolor(), 100, 24);
         let (x, y) = find(&text, "Apply");
         assert_eq!(
             buf[(x, y)].bg,
-            ratatui::style::Color::Rgb(0xff, 0x30, 0x38),
-            "the primary button is red"
+            ratatui::style::Color::Rgb(0x53, 0x9f, 0xdf),
+            "the primary button is the light blue"
         );
 
         // After applying, the file matches: the button says so and is no longer primary.

@@ -32,9 +32,10 @@ pub enum Role {
     /// A key in a hint.
     Key,
     Hover,
-    /// The primary button.
+    /// The primary button: dark text on the light blue.
     Primary,
-    /// The one call to action of a chain question: dark text on the light blue.
+    /// The one call to action of a chain question: bold light-blue text, no rectangle. The chain
+    /// draws a glint over it when motion is on.
     Cta,
 }
 
@@ -71,25 +72,21 @@ impl Theme {
             (_, Role::Hover) => Style::new().add_modifier(Modifier::BOLD),
             (ColorDepth::True, Role::Primary) => Style::new()
                 .fg(rgb(INK))
-                .bg(rgb(RED))
+                .bg(rgb(LIGHT_BLUE))
                 .add_modifier(Modifier::BOLD),
             (ColorDepth::Ansi16, Role::Primary) => Style::new()
                 .fg(Color::Black)
-                .bg(Color::Red)
+                .bg(Color::LightBlue)
                 .add_modifier(Modifier::BOLD),
             (ColorDepth::None, Role::Primary) => {
                 Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
             }
-            (ColorDepth::True, Role::Cta) => Style::new()
-                .fg(rgb(INK))
-                .bg(rgb(LIGHT_BLUE))
-                .add_modifier(Modifier::BOLD),
+            (ColorDepth::True, Role::Cta) => fg(LIGHT_BLUE).add_modifier(Modifier::BOLD),
             (ColorDepth::Ansi16, Role::Cta) => Style::new()
-                .fg(Color::Black)
-                .bg(Color::LightBlue)
+                .fg(Color::LightBlue)
                 .add_modifier(Modifier::BOLD),
             (ColorDepth::None, Role::Cta) => {
-                Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+                Style::new().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             }
         }
     }
@@ -159,10 +156,18 @@ mod tests {
     }
 
     #[test]
-    fn the_primary_button_is_red_and_hover_only_tints_in_truecolor() {
-        assert_eq!(
-            t(ColorDepth::True).style(Role::Primary).bg,
-            Some(Color::Rgb(0xff, 0x30, 0x38))
+    fn the_primary_button_is_dark_text_on_the_light_blue_and_hover_only_tints_in_truecolor() {
+        let s = t(ColorDepth::True).style(Role::Primary);
+        assert_eq!(s.bg, Some(Color::Rgb(0x53, 0x9f, 0xdf)));
+        assert_eq!(s.fg, Some(Color::Rgb(0x0b, 0x11, 0x14)));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+        let s = t(ColorDepth::Ansi16).style(Role::Primary);
+        assert_eq!((s.fg, s.bg), (Some(Color::Black), Some(Color::LightBlue)));
+        assert!(
+            t(ColorDepth::None)
+                .style(Role::Primary)
+                .add_modifier
+                .contains(Modifier::REVERSED | Modifier::BOLD)
         );
         assert_eq!(
             t(ColorDepth::True).style(Role::Hover).bg,
@@ -172,19 +177,23 @@ mod tests {
     }
 
     #[test]
-    fn the_call_to_action_is_dark_bold_text_on_the_light_blue_and_reversed_without_colour() {
+    fn the_call_to_action_is_bold_blue_text_with_no_rectangle_and_underlined_without_colour() {
         let s = t(ColorDepth::True).style(Role::Cta);
-        assert_eq!(s.bg, Some(Color::Rgb(0x53, 0x9f, 0xdf)));
-        assert_eq!(s.fg, Some(Color::Rgb(0x0b, 0x11, 0x14)));
+        assert_eq!(s.fg, Some(Color::Rgb(0x53, 0x9f, 0xdf)));
+        assert_eq!(s.bg, None);
         assert!(s.add_modifier.contains(Modifier::BOLD));
         let s = t(ColorDepth::Ansi16).style(Role::Cta);
-        assert_eq!((s.fg, s.bg), (Some(Color::Black), Some(Color::LightBlue)));
+        assert_eq!((s.fg, s.bg), (Some(Color::LightBlue), None));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
         let s = t(ColorDepth::None).style(Role::Cta);
-        assert!(s.add_modifier.contains(Modifier::REVERSED | Modifier::BOLD));
+        assert!(
+            s.add_modifier
+                .contains(Modifier::BOLD | Modifier::UNDERLINED)
+        );
     }
 
     #[test]
-    fn the_call_to_action_text_has_enough_contrast_on_its_chip() {
+    fn blue_text_and_the_dark_text_on_a_blue_button_both_have_enough_contrast() {
         let lum = |(r, g, b): (u8, u8, u8)| {
             let c = |v: u8| {
                 let v = f64::from(v) / 255.0;
