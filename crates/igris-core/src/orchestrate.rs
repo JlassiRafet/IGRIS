@@ -106,18 +106,19 @@ pub struct Report {
 /// Agent screen text made safe to put in a report: terminal escape sequences and other control
 /// characters removed, the last five non-empty lines, each cut at 160 characters, joined by ` / `.
 pub fn sanitize(text: &str) -> String {
-    let lines: Vec<String> = text
+    // Strip over the whole text first: an escape sequence can stay open across a line break.
+    let clean = strip_controls(text);
+    let lines: Vec<String> = clean
         .lines()
-        .map(strip_controls)
         .map(|l| l.trim().chars().take(160).collect::<String>())
         .filter(|l| !l.is_empty())
         .collect();
     lines[lines.len().saturating_sub(5)..].join(" / ")
 }
 
-fn strip_controls(line: &str) -> String {
+fn strip_controls(text: &str) -> String {
     let mut out = String::new();
-    let mut chars = line.chars().peekable();
+    let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\u{1b}' {
             match chars.next() {
@@ -139,7 +140,7 @@ fn strip_controls(line: &str) -> String {
                 }
                 _ => {}
             }
-        } else if !c.is_control() {
+        } else if c == '\n' || !c.is_control() {
             out.push(c);
         }
     }

@@ -480,3 +480,9 @@ fn the_reason_never_holds_escape_sequences_or_long_lines() {
     assert!(out.ends_with("line f"), "{out:?}");
     assert_eq!(igris_core::orchestrate::sanitize("\n  \n"), "");
 }
+
+#[test]
+fn an_escape_sequence_left_open_at_a_line_end_hides_the_next_line_too() {
+    let out = igris_core::orchestrate::sanitize("\x1b]0;hidden\nstill hidden\x07\nUpdate now");
+    assert_eq!(out, "Update now");
+}
