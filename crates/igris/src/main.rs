@@ -87,6 +87,11 @@ enum Cmd {
 
 type Out = Result<(Value, u8), Box<dyn Error>>;
 
+/// The `--config` path as an absolute path, so the next-step line works from any folder.
+fn absolute_config(p: &Path) -> PathBuf {
+    std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
 pub fn herdr_of(cfg: &Config) -> Herdr {
     Herdr {
         bin: cfg.herdr.bin.clone().into(),
@@ -117,7 +122,7 @@ fn run(repo: &Path, task: &str, approved: bool, config: Option<&Path>) -> Out {
         herdr: herdr_of(&cfg),
         cfg: &cfg,
         home: igris_home(),
-        config_path: config.map(Path::to_path_buf),
+        config_path: config.map(absolute_config),
     };
     report(o.run(&top, task, approved)?)
 }
@@ -131,7 +136,7 @@ fn resume(id: &str, config: Option<&Path>) -> Out {
             herdr: herdr_of(&cfg),
             cfg: &cfg,
             home,
-            config_path: config.map(Path::to_path_buf),
+            config_path: config.map(absolute_config),
         }
         .resume(id)?,
     )
@@ -200,5 +205,22 @@ fn main() -> ExitCode {
             println!("{}", json!({"status": "error", "error": e.to_string()}));
             ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::absolute_config;
+    use std::path::Path;
+
+    #[test]
+    fn a_relative_config_path_is_made_absolute_and_an_absolute_one_is_kept() {
+        let rel = absolute_config(Path::new("cfg/custom.toml"));
+        assert!(rel.is_absolute(), "{}", rel.display());
+        assert!(rel.ends_with("cfg/custom.toml"));
+        assert_eq!(
+            absolute_config(Path::new("/etc/igris.toml")),
+            Path::new("/etc/igris.toml")
+        );
     }
 }
