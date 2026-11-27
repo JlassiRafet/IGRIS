@@ -4,6 +4,9 @@ All notable changes are listed here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed
+- The next-step line of a blocked or risky task repeats the `--config` file the run was given, quoted for the shell, so the printed command runs as it stands (#83).
+
 ## [0.1.0-rc2] - 2026-11-25
 
 The guided setup: six steps from a scan to a tested pipeline. Pre-release: it has passed CI and a scripted walk with fake agents, not yet a live run with real accounts.

@@ -95,6 +95,22 @@ pub struct Report {
     /// The agent (`builder` or `reviewer`) we sent a prompt to and have not seen settle yet.
     pub pending: Option<String>,
     pub review_tag: Option<String>,
+    /// The `--config` file the run was started with, so the printed next step can repeat it.
+    #[serde(default)]
+    pub config: Option<PathBuf>,
+}
+
+/// The command that continues task `r`, as it can be pasted into a shell: the `--config` the run
+/// was given is repeated, quoted.
+fn continue_command(r: &Report) -> String {
+    let mut c = format!("igris continue {}", r.id);
+    if let Some(p) = &r.config {
+        c.push_str(&format!(
+            " --config {}",
+            crate::herdr::sh_quote(&p.to_string_lossy())
+        ));
+    }
+    c
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,6 +239,8 @@ pub struct Orchestrator<'a> {
     pub cfg: &'a Config,
     /// Where tasks and the decision log live (`IGRIS_HOME`).
     pub home: PathBuf,
+    /// The `--config` file given on the command line, if any (repeated in the next-step line).
+    pub config_path: Option<PathBuf>,
 }
 
 impl Orchestrator<'_> {
@@ -285,12 +303,16 @@ impl Orchestrator<'_> {
             reviewer_started: false,
             pending: None,
             review_tag: None,
+            config: self.config_path.clone(),
         };
         if needs_approval == "yes" && !approved {
             r.status = Status::NeedsApproval;
             r.reason = format!("risk is {risk}");
+            let again = r.config.as_ref().map_or(String::new(), |p| {
+                format!(" --config {}", crate::herdr::sh_quote(&p.to_string_lossy()))
+            });
             r.next = format!(
-                "this task looks risky; run it again with --approved to start it ({})",
+                "this task looks risky; run it again with --approved{again} to start it ({})",
                 r.reason
             );
             self.save(&r)?;
@@ -391,8 +413,8 @@ impl Orchestrator<'_> {
             }
             Err(e) if e.code == "timeout" => {
                 let why = format!(
-                    "timed out waiting for the {who}; it may still be working: `igris continue {}` waits for it",
-                    r.id
+                    "timed out waiting for the {who}; it may still be working: `{}` waits for it",
+                    continue_command(r)
                 );
                 self.fail(r, why)?;
                 Ok(false)
@@ -408,7 +430,7 @@ impl Orchestrator<'_> {
         r.reason = format!(
             "the {who} is waiting for input (Claude Code asks once per new folder: trust it in Herdr)"
         );
-        r.next = format!("resolve it in Herdr, then run `igris continue {}`", r.id);
+        r.next = format!("resolve it in Herdr, then run `{}`", continue_command(r));
         self.save(r)?;
         Ok(false)
     }

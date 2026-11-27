@@ -75,6 +75,7 @@ pub fn run_sample_in(repo: &Path) -> Result<String, String> {
             herdr: crate::herdr_of(cfg),
             cfg,
             home: igris_home(),
+            config_path: None,
         };
         let r = o.run(scratch, TASK, false)?;
         let said = if r.next.is_empty() {
