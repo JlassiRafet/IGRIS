@@ -285,11 +285,56 @@ def chain_screens(binary, out, scrub, chrome):
             shots[f"chain-builder{name}"] = t.text(True)
             t.keys("Enter"); t.wait("Reviewer: who checks"); time.sleep(0.8)
             shots[f"chain-reviewer{name}"] = t.text(True)
-            if not name:
-                t.keys("Enter"); t.wait("Slice 1 ends here"); time.sleep(0.8)
+            if name == "-logged-in":
+                t.keys("Enter"); t.wait("This preview ends here"); time.sleep(0.8)
                 shots["chain-end"] = t.text(True)
         finally:
             t.kill(); shutil.rmtree(home, ignore_errors=True)
+    shutil.rmtree(private, ignore_errors=True)
+    for name, ansi in shots.items():
+        render(ansi, out / f"{name}.png", scrub, chrome)
+        print("wrote", out / f"{name}.png")
+
+
+def chain_install_screens(binary, out, scrub, chrome):
+    """Slice 2: the install question for an agent IGRIS cannot install, Herdr's install question and a
+    running install (a fake `sh` that only sleeps stands in for the installer), and a failed live
+    check. Nothing is downloaded or installed."""
+    repo, shim, git = demo_repo()
+    private = Path(tempfile.mkdtemp())
+    def fakes(name, files):
+        d = private / name
+        d.mkdir()
+        for tool, body in files.items():
+            (d / tool).write_text("#!/bin/sh\n" + body + "\n")
+            (d / tool).chmod(0o755)
+        return d
+    herdr, codex = 'echo "herdr 0.9.1"', 'echo "Logged in using ChatGPT" >&2'
+    scenarios = {
+        "a": (fakes("a", {"herdr": herdr, "codex": codex}), ":/usr/bin:/bin"),
+        "c": (fakes("c", {"sh": "exec /usr/bin/sleep 61235"}), ""),
+        "b": (fakes("b", {"herdr": herdr, "codex": codex, "claude":
+              'case "$1" in -p) echo "Not logged in"; exit 1 ;; auth) echo \'{"loggedIn":false}\' ;; *) exit 1 ;; esac'}), ":/usr/bin:/bin"),
+    }
+    shots = {}
+    def run(key, steps):
+        d, tail = scenarios[key]
+        home = tempfile.mkdtemp()
+        t = Term(binary, home, repo, f"{d}{tail}", extra_env="IGRIS_CHAIN=1")
+        try:
+            for wait, keys, name in steps:
+                if keys:
+                    t.keys(*keys)
+                t.wait(wait); time.sleep(0.8)
+                if name:
+                    shots[name] = t.text(True)
+        finally:
+            t.kill(); shutil.rmtree(home, ignore_errors=True)
+    run("a", [("Builder: which agent", None, None), ("Install: Claude Code is not installed", ("Down", "Enter"), "chain-install-guidance")])
+    run("c", [("Workspace: Herdr runs", None, "chain-install-herdr"), ("Installing Herdr", ("Enter",), "chain-installing")])
+    run("b", [("Builder: which agent", None, None), ("Reviewer: who checks", ("Up", "Enter"), None),
+              ("Connect: make Claude Code ready", ("Enter",), "chain-connect-logged-out"),
+              ("the check of Claude Code failed", ("Down", "Down", "Down", "Enter"), "chain-connect-failed")])
     shutil.rmtree(private, ignore_errors=True)
     for name, ansi in shots.items():
         render(ansi, out / f"{name}.png", scrub, chrome)
@@ -387,6 +432,7 @@ def main():
         pipeline_gif(out, chrome)
     if a.only == "chain":
         chain_screens(a.bin, out, scrub, chrome)
+        chain_install_screens(a.bin, out, scrub, chrome)
 
 
 if __name__ == "__main__":

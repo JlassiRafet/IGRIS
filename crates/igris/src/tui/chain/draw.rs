@@ -1,14 +1,14 @@
 //! The chain screen: header band, history of answered questions, the active question with its
 //! hint right under the options, and a one-line footer. Pure drawing of a `ChainUi`.
-use super::model::{ChainUi, Choice, Mark, Step};
-use crate::tui::style::{GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
+use super::model::{ChainUi, Choice, Mark, Step, Work, name};
+use crate::tui::style::{GLOW, GUIDE, GUIDE_GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
 use crate::tui::theme::{ColorDepth, Glyphs, Theme};
 use crate::tui::widgets::{Glint, glint};
 use crate::tui::{header, layout, widgets};
 use igris_detect::Snapshot;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
@@ -65,7 +65,10 @@ fn marks(t: &Theme) -> Marks {
 /// Rows that are not options: the blank line above the question, the question, and the action row
 /// that closes the tree.
 const FIXED_ROWS: usize = 3;
-const BOX_ROWS: u16 = 5;
+/// Rows of a box that are not text: the two borders.
+const BOX_FRAME: usize = 2;
+/// Columns of a box that are not text: the two borders and one column of padding on each side.
+const BOX_SIDES: u16 = 4;
 /// The column where the status words start, in the history and in the option rows alike.
 const NOTE_COL: usize = 26;
 /// Columns before an option's label: the tree line, the bar and the choice mark.
@@ -109,26 +112,44 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
             ])
         })
         .collect();
-    let box_rows = if blocker.is_some() { BOX_ROWS } else { 0 };
+    // The box is as tall as its wrapped text, but leaves the question and two options on screen.
+    let box_rows = blocker.as_deref().map_or(0, |text| {
+        let wanted = wrapped_rows(text, body.width.saturating_sub(BOX_SIDES)) + BOX_FRAME;
+        let cap = (body.height as usize).saturating_sub(lines.len() + FIXED_ROWS + 2);
+        wanted.min(cap.max(BOX_FRAME + 1)) as u16
+    });
     let used = lines.len() + FIXED_ROWS + usize::from(box_rows);
     let room = (body.height as usize).saturating_sub(used).max(1);
     match ui.step {
         Step::End => lines.push(Line::styled(
-            "Slice 1 ends here: the next questions come in the next release candidate.",
+            "This preview ends here: the next questions come in the next release candidate.",
             t.style(Role::Dim),
         )),
-        step => {
+        _ => {
             let options = ui.choices(snap);
             lines.push(Line::raw(""));
-            lines.push(question(step, &m, t));
-            let rows = option_rows(&options, ui.cursor, &m, t);
+            lines.push(question(ui, &m, t));
+            let rows = if options.is_empty() {
+                ui.wait_line(snap)
+                    .map(|w| {
+                        let row = Line::from(vec![
+                            Span::styled(format!("{}   ", m.rail), t.style(Role::Dim)),
+                            Span::styled(w, t.style(Role::Dim)),
+                        ]);
+                        (row, None)
+                    })
+                    .into_iter()
+                    .collect()
+            } else {
+                option_rows(&options, ui.cursor, &m, t)
+            };
             let at = rows
                 .iter()
                 .position(|(_, i)| *i == Some(ui.cursor))
                 .unwrap_or(0);
             let start = (at + 1).saturating_sub(room);
             lines.extend(rows.into_iter().skip(start).take(room).map(|(l, _)| l));
-            lines.push(action_row(options.get(ui.cursor), &m, t, tick));
+            lines.push(action_row(ui, &options, &m, t, tick));
         }
     }
     let n = lines.len() as u16;
@@ -136,7 +157,11 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
     if let Some(text) = blocker {
         let y = body.y + n.min(body.height.saturating_sub(box_rows));
         let r = Rect::new(body.x, y, body.width, box_rows.min(body.height));
-        let block = widgets::panel(t, "Needs a step", true);
+        let block = widgets::frame(
+            t,
+            t.style(Role::Guide),
+            guide_title("Needs a step", tick, t),
+        );
         f.render_widget(
             Paragraph::new(text).wrap(Wrap { trim: true }).block(block),
             r,
@@ -151,6 +176,31 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
     );
 }
 
+/// How many rows `text` takes when wrapped greedily at `width` columns, one row at least per line.
+fn wrapped_rows(text: &str, width: u16) -> usize {
+    let width = usize::from(width.max(1));
+    let w = |s: &str| unicode_width::UnicodeWidthStr::width(s);
+    text.lines()
+        .map(|line| {
+            let (mut rows, mut used) = (1, 0);
+            for word in line.split_whitespace() {
+                let n = w(word);
+                if used > 0 && used + 1 + n <= width {
+                    used += 1 + n;
+                    continue;
+                }
+                if used > 0 {
+                    rows += 1;
+                }
+                // A word longer than a row is broken over several rows.
+                rows += (n - 1) / width;
+                used = (n - 1) % width + 1;
+            }
+            rows
+        })
+        .sum()
+}
+
 /// The status words use a middle dot; an ASCII terminal gets a hyphen instead.
 fn ascii_safe(text: &str, t: &Theme) -> String {
     if t.glyphs == Glyphs::Ascii {
@@ -161,12 +211,29 @@ fn ascii_safe(text: &str, t: &Theme) -> String {
 }
 
 /// The active question: a bold title, then the question itself.
-fn question(step: Step, m: &Marks, t: &Theme) -> Line<'static> {
-    let (title, ask) = match step {
-        Step::Workspace => ("Workspace", ": Herdr runs your agents side by side"),
-        Step::Builder => ("Builder", ": which agent writes the code?"),
-        Step::Reviewer => ("Reviewer", ": who checks the builder's work?"),
-        Step::End => ("", ""),
+fn question(ui: &ChainUi, m: &Marks, t: &Theme) -> Line<'static> {
+    let who = ui.subject.as_deref().map(name).unwrap_or_default();
+    let (title, ask) = match ui.step {
+        Step::Workspace => (
+            "Workspace",
+            ": Herdr runs your agents side by side".to_string(),
+        ),
+        Step::Builder => ("Builder", ": which agent writes the code?".to_string()),
+        Step::Reviewer => ("Reviewer", ": who checks the builder's work?".to_string()),
+        Step::Install => ("Install", format!(": {who} is not installed")),
+        Step::Connect => (
+            "Connect",
+            match ui.subject.as_deref().and_then(|k| ui.work.get(k)) {
+                Some(Work::Installing { .. } | Work::InstallDone) => {
+                    format!(": {who} is installing")
+                }
+                Some(Work::InstallFailed { .. }) => format!(": the install of {who} failed"),
+                Some(Work::Checking { .. }) => format!(": checking {who}"),
+                Some(Work::CheckFailed { .. }) => format!(": the check of {who} failed"),
+                _ => format!(": make {who} ready"),
+            },
+        ),
+        Step::End => ("", String::new()),
     };
     Line::from(vec![
         Span::styled(format!("{} ", m.active), t.style(Role::Info)),
@@ -205,9 +272,15 @@ fn option_rows(
 }
 
 /// The call to action closes the tree: the corner, the Enter key, then the label with its glint.
-/// The other keys follow as plain keycaps. A missing agent cannot be chosen yet, so there is no
-/// call to action, only what comes next.
-fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme, tick: usize) -> Line<'static> {
+/// The other keys follow as plain keycaps. With nothing to confirm (the app is working) there is no
+/// call to action, only the keys that still work.
+fn action_row(
+    ui: &ChainUi,
+    options: &[Choice],
+    m: &Marks,
+    t: &Theme,
+    tick: usize,
+) -> Line<'static> {
     let key = |k: &str, verb: &str| {
         [
             Span::styled(k.to_string(), t.style(Role::Key)),
@@ -218,24 +291,17 @@ fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme, tick: usize) -> Lin
         format!("{}{} ", m.close, m.dash.repeat(2)),
         t.style(Role::Dim),
     )];
-    match chosen {
-        Some(c) if c.mark != Mark::Dim => {
-            spans.push(Span::styled(m.enter.to_string(), t.style(Role::Key)));
-            spans.push(Span::raw("  "));
-            spans.extend(shine(&format!("Use {}", c.label), tick, t));
-            spans.push(Span::raw("   "));
-            spans.extend(key(m.choose, "choose"));
-        }
-        Some(_) => {
-            spans.extend([
-                Span::styled(m.enter.to_string(), t.style(Role::Key)),
-                Span::styled(" install comes in the next step   ", t.style(Role::Dim)),
-            ]);
-            spans.extend(key(m.choose, "choose"));
-        }
-        None => {}
+    if let Some(c) = options.get(ui.cursor) {
+        let words = c.cta.clone().unwrap_or_else(|| format!("Use {}", c.label));
+        spans.push(Span::styled(m.enter.to_string(), t.style(Role::Key)));
+        spans.push(Span::raw("  "));
+        spans.extend(shine(&words, tick, t));
+        spans.push(Span::raw("   "));
     }
-    if chosen.is_some() {
+    if options.len() > 1 {
+        spans.extend(key(m.choose, "choose"));
+    }
+    if !matches!(ui.step, Step::Workspace | Step::Builder) {
         spans.extend(key(m.back, "back"));
     }
     spans.extend(key("r", "re-scan"));
@@ -246,7 +312,24 @@ fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme, tick: usize) -> Lin
 /// letter under it is the sheen, its neighbours the glow, the rest the plain blue. Without motion
 /// it is one steady span.
 fn shine(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
-    let steady = t.style(Role::Cta);
+    glint_spans(text, tick, t, t.style(Role::Cta), (LIGHT_BLUE, GLOW))
+}
+
+/// The title of the guidance box: bold periwinkle, with the same glint passing over it.
+fn guide_title(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
+    let bold = t.style(Role::Guide).add_modifier(Modifier::BOLD);
+    glint_spans(text, tick, t, bold, (GUIDE, GUIDE_GLOW))
+}
+
+/// `text` in `steady`, one span per letter while the glint moves: the sheen, then `ramp.1` on the
+/// neighbours, `ramp.0` everywhere else. Steady, one span, without motion or truecolor.
+fn glint_spans(
+    text: &str,
+    tick: usize,
+    t: &Theme,
+    steady: Style,
+    ramp: ((u8, u8, u8), (u8, u8, u8)),
+) -> Vec<Span<'static>> {
     if !t.motion || t.depth != ColorDepth::True {
         return vec![Span::styled(text.to_string(), steady)];
     }
@@ -256,8 +339,8 @@ fn shine(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
         .map(|(i, ch)| {
             let colour = match glint(tick, len, i) {
                 Glint::Sheen => SHEEN,
-                Glint::Glow => GLOW,
-                Glint::Off => LIGHT_BLUE,
+                Glint::Glow => ramp.1,
+                Glint::Off => ramp.0,
             };
             Span::styled(ch.to_string(), steady.fg(rgb(colour)))
         })
@@ -387,11 +470,11 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_agent_gets_no_call_to_action_and_says_what_comes_next() {
+    fn a_missing_agent_says_how_to_install_it_in_the_call_to_action() {
         let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
         let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36).join("\n");
-        assert!(!rows.contains("Enter  Use"), "{rows}");
-        assert!(rows.contains("install comes in the next step"), "{rows}");
+        assert!(rows.contains("Enter  How to install Claude Code"), "{rows}");
+        assert!(!rows.contains("comes in the next step"), "{rows}");
     }
 
     fn truecolour_with_motion() -> Theme {
@@ -701,6 +784,186 @@ mod tests {
         assert!(text.is_ascii(), "{text}");
     }
 
+    use crate::tui::chain::model::{Step, Work};
+    use igris_detect::Login::Unknown;
+
+    fn connecting(kind: &str) -> (Snapshot, ChainUi) {
+        let other = if kind == "claude" { "codex" } else { "claude" };
+        let s = snap(&[(kind, true, LoggedOut), (other, true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        u.builder = Some(kind.into());
+        u.reviewer = Some(other.into());
+        u.step = Step::End;
+        u.settle(&s);
+        (s, u)
+    }
+
+    fn failed(u: &mut ChainUi, s: &Snapshot) {
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "not logged in".into(),
+                fix: Some("claude auth login".into()),
+            },
+        );
+        u.settle(s);
+    }
+
+    #[test]
+    fn a_long_failure_reason_keeps_the_unchanged_and_fix_lines_visible_at_80x24() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "the agent answered with a very long message about its account, its plan and its limits, which wraps over several rows of the box".into(),
+                fix: Some("claude auth login".into()),
+            },
+        );
+        u.settle(&s);
+        let rows = render(&u, &s, Glyphs::Unicode, 80, 24).join("\n");
+        assert!(rows.contains("Unchanged:"), "{rows}");
+        assert!(rows.contains("Fix: claude auth login"), "{rows}");
+        assert!(
+            rows.contains("Check again"),
+            "the recovery action stays: {rows}"
+        );
+    }
+
+    #[test]
+    fn the_row_count_of_a_wrapped_text_matches_what_the_paragraph_really_draws() {
+        let texts = [
+            "short",
+            "Claude Code: not logged in.\nUnchanged: no setting was changed.\nFix: claude auth login",
+            "the agent answered with a very long message about its account, its plan and its limits",
+            "https://docs.anthropic.com/en/docs/claude-code/overview. Install it yourself, then press r",
+            "one\n\nthree",
+        ];
+        for text in texts {
+            for width in [12u16, 20, 37, 60] {
+                let mut term = Terminal::new(TestBackend::new(width, 40)).unwrap();
+                term.draw(|f| {
+                    f.render_widget(
+                        Paragraph::new(text).wrap(ratatui::widgets::Wrap { trim: true }),
+                        f.area(),
+                    )
+                })
+                .unwrap();
+                let b = term.backend().buffer().clone();
+                let last = (0..40)
+                    .rposition(|y| (0..width).any(|x| b[(x, y)].symbol() != " "))
+                    .unwrap()
+                    + 1;
+                assert_eq!(wrapped_rows(text, width), last, "{text:?} at {width}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_workspace_question_offers_the_herdr_install_with_the_exact_command() {
+        let mut s = snap(&[("claude", true, LoggedIn)]);
+        s.herdr.found = false;
+        let mut u = ChainUi::new();
+        u.settle(&s);
+        let rows = render(&u, &s, Glyphs::Unicode, 160, 36).join("\n");
+        let cmd = crate::tui::install::quote_cmd(tool("herdr").unwrap().install.unwrap());
+        assert!(rows.contains("Install Herdr in the background"), "{rows}");
+        assert!(rows.contains(&cmd), "{rows}");
+        assert!(rows.contains("Enter  Install Herdr"), "{rows}");
+    }
+
+    #[test]
+    fn an_agent_without_a_command_shows_its_docs_in_a_box_and_one_way_out() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        u.cursor = u.choices(&s).iter().position(|c| c.id == "claude").unwrap();
+        u.enter(&s);
+        let rows = render(&u, &s, Glyphs::Unicode, 140, 36);
+        let text = rows.join("\n");
+        assert!(
+            text.contains("Install: Claude Code is not installed"),
+            "{text}"
+        );
+        assert!(
+            text.contains("docs.anthropic.com") && text.contains('╭'),
+            "{text}"
+        );
+        assert!(text.contains("Enter  Choose another agent"), "{text}");
+    }
+
+    #[test]
+    fn a_running_install_shows_the_clock_in_history_and_a_wait_line_without_a_call_to_action() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        u.builder = Some("claude".into());
+        u.reviewer = Some("codex".into());
+        u.step = Step::End;
+        u.work
+            .insert("claude".into(), Work::Installing { secs: 42 });
+        u.settle(&s);
+        let text = render(&u, &s, Glyphs::Unicode, 120, 36).join("\n");
+        assert!(text.contains("installing 00:42"), "history: {text}");
+        assert!(
+            text.contains("Installing Claude Code: 00:42"),
+            "wait line: {text}"
+        );
+        assert!(!text.contains("Enter  "), "nothing to confirm: {text}");
+        assert!(text.contains("r re-scan"), "{text}");
+    }
+
+    #[test]
+    fn a_failure_box_has_three_lines_and_the_fix() {
+        let (s, mut u) = connecting("claude");
+        failed(&mut u, &s);
+        let text = render(&u, &s, Glyphs::Unicode, 140, 36).join("\n");
+        for want in [
+            "Claude Code: not logged in.",
+            "Unchanged: no setting was changed.",
+            "Fix: claude auth login",
+            "Enter  Check again",
+        ] {
+            assert!(text.contains(want), "missing {want}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn the_connect_question_lists_methods_and_one_call_to_action() {
+        let (s, u) = connecting("claude");
+        let rows = render(&u, &s, Glyphs::Unicode, 120, 36);
+        let text = rows.join("\n");
+        for want in ["Log in", "Check now", "Choose another agent"] {
+            assert!(text.contains(want), "missing {want}:\n{text}");
+        }
+        assert_eq!(
+            rows.iter().filter(|r| r.contains("Enter  Log in")).count(),
+            1,
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn at_80x24_the_failure_box_and_the_call_to_action_are_visible() {
+        let (s, mut u) = connecting("claude");
+        failed(&mut u, &s);
+        let text = render(&u, &s, Glyphs::Unicode, 80, 24).join("\n");
+        for want in ["Fix: claude auth login", "Enter  Check again", "q quit"] {
+            assert!(text.contains(want), "missing {want}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn ascii_has_no_unicode_marks_in_install_and_connect() {
+        let (s, mut u) = connecting("claude");
+        failed(&mut u, &s);
+        let text = render(&u, &s, Glyphs::Ascii, 120, 36).join("\n");
+        assert!(text.is_ascii(), "{text}");
+        let s2 = snap(&[("claude", true, Unknown), ("codex", true, Unknown)]);
+        let mut u2 = at_builder(&s2);
+        u2.enter(&s2);
+        u2.enter(&s2);
+        let text = render(&u2, &s2, Glyphs::Ascii, 120, 36).join("\n");
+        assert!(text.is_ascii(), "{text}");
+    }
+
     #[test]
     fn red_is_only_for_a_selected_step_the_user_must_take() {
         let mut c = Choice {
@@ -709,6 +972,7 @@ mod tests {
             note: "installed · login unverified".into(),
             mark: Mark::Warn,
             warn: Some("same agent, new session".into()),
+            cta: None,
         };
         assert_eq!(
             note_role(&c, true),
@@ -732,18 +996,93 @@ mod tests {
     }
 
     #[test]
-    fn a_blocker_shows_its_exact_command_in_a_box() {
+    fn the_herdr_command_is_on_its_install_row_once_with_no_box_repeating_it() {
         let mut s = snap(&[("claude", true, LoggedIn)]);
         s.herdr.found = false;
         let mut u = ChainUi::new();
         u.settle(&s);
         let rows = render(&u, &s, Glyphs::Unicode, 160, 36);
         let cmd = crate::tui::install::quote_cmd(tool("herdr").unwrap().install.unwrap());
-        assert!(
-            rows.iter().any(|r| r.contains("Herdr is not installed")),
+        assert_eq!(
+            rows.iter().filter(|r| r.contains(&cmd)).count(),
+            1,
             "{rows:#?}"
         );
-        assert!(rows.iter().any(|r| r.contains(&cmd)), "{rows:#?}");
+        assert!(!rows.iter().any(|r| r.contains('╭')), "no box: {rows:#?}");
+    }
+
+    #[test]
+    fn a_box_names_the_agent_install_when_no_coding_agent_is_installed() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
+        let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 160, 36);
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("No coding agent is installed")),
+            "{rows:#?}"
+        );
         assert!(rows.iter().any(|r| r.contains('╭')), "a box: {rows:#?}");
+    }
+
+    #[test]
+    fn the_guidance_box_is_periwinkle_on_its_border_and_title_and_white_in_its_body() {
+        use crate::tui::style::GUIDE;
+        let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
+        let (b, rows) = true_colour(&at_builder(&s), &s);
+        let guide = Some(rgb(GUIDE));
+        assert_eq!(cell_style(&b, &rows, "╭").fg, guide, "border");
+        let title = cell_style(&b, &rows, "Needs a step");
+        assert_eq!(title.fg, guide, "title");
+        assert!(title.add_modifier.contains(ratatui::style::Modifier::BOLD));
+        let body = cell_style(&b, &rows, "No coding agent");
+        assert_ne!(body.fg, guide, "the body stays readable white");
+    }
+
+    #[test]
+    fn the_guidance_title_glints_from_periwinkle_through_a_light_tint_to_the_sheen() {
+        use crate::tui::style::{GUIDE, GUIDE_GLOW, SHEEN};
+        let t = truecolour_with_motion();
+        let at = |tick| guide_title("Needs a step", tick, &t);
+        let sheen = Some(rgb(SHEEN));
+        let lead = |tick| fgs(&at(tick)).iter().position(|c| *c == sheen);
+        assert_eq!(at(0).len(), 12, "one span per letter");
+        let path: Vec<_> = (2..=6).map(lead).collect();
+        assert_eq!(path, (0..=4).map(Some).collect::<Vec<_>>());
+        assert!(
+            fgs(&at(4)).contains(&Some(rgb(GUIDE_GLOW))),
+            "neighbours glow"
+        );
+        assert!(
+            fgs(&at(20)).iter().all(|c| *c == Some(rgb(GUIDE))),
+            "at rest"
+        );
+        for tick in 0..40 {
+            let spans = at(tick);
+            let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+            assert_eq!(text, "Needs a step", "tick {tick}");
+            assert!(spans.iter().all(|s| {
+                s.style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::BOLD)
+                    && s.style.bg.is_none()
+            }));
+        }
+    }
+
+    #[test]
+    fn without_motion_the_guidance_title_is_one_steady_bold_span() {
+        for depth in [ColorDepth::True, ColorDepth::Ansi16, ColorDepth::None] {
+            let t = Theme {
+                depth,
+                glyphs: Glyphs::Unicode,
+                motion: false,
+            };
+            let spans = guide_title("Needs a step", 5, &t);
+            assert_eq!(spans.len(), 1, "{depth:?}");
+            assert_eq!(
+                spans[0].style,
+                t.style(Role::Guide)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            );
+        }
     }
 }

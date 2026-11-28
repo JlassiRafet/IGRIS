@@ -408,6 +408,7 @@ pub fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
         }
         // Time, not loop turns: mouse movement must not speed the animation up.
         state.tick = (started.elapsed().as_millis() / 100) as usize;
+        chain::sync(&mut state);
         terminal.draw(|f| draw(f, &state, &theme, &mut hits))?;
         if stop.load(Ordering::Relaxed) {
             return Ok(());

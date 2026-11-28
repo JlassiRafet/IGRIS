@@ -7,6 +7,8 @@ use ratatui::style::{Color, Modifier, Style};
 pub const RED: (u8, u8, u8) = (0xff, 0x30, 0x38);
 pub const LIGHT_BLUE: (u8, u8, u8) = (0x53, 0x9f, 0xdf);
 pub const ACCENT: (u8, u8, u8) = (0x08, 0x79, 0xf3);
+pub const GUIDE: (u8, u8, u8) = (0x7f, 0x8c, 0xf0);
+pub const GUIDE_GLOW: (u8, u8, u8) = (0xc4, 0xcb, 0xfa);
 pub const GLOW: (u8, u8, u8) = (0xbc, 0xfa, 0xf1);
 const DIM: (u8, u8, u8) = (0x7d, 0x87, 0x90);
 const BORDER: (u8, u8, u8) = (0x3a, 0x46, 0x50);
@@ -37,6 +39,9 @@ pub enum Role {
     /// The one call to action of a chain question: bold light-blue text, no rectangle. The chain
     /// draws a glint over it when motion is on.
     Cta,
+    /// The guidance box (what to do next): periwinkle from the indigo shadows of the reference art,
+    /// apart from the blue of keys and the call to action.
+    Guide,
 }
 
 pub fn rgb((r, g, b): (u8, u8, u8)) -> Color {
@@ -88,6 +93,9 @@ impl Theme {
             (ColorDepth::None, Role::Cta) => {
                 Style::new().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             }
+            (ColorDepth::True, Role::Guide) => fg(GUIDE),
+            (ColorDepth::Ansi16, Role::Guide) => Style::new().fg(Color::LightMagenta),
+            (ColorDepth::None, Role::Guide) => Style::new().add_modifier(Modifier::BOLD),
         }
     }
 }
@@ -118,6 +126,21 @@ mod tests {
             none.add_modifier.contains(Modifier::BOLD),
             "still stands out"
         );
+    }
+
+    #[test]
+    fn the_guidance_box_is_periwinkle_light_magenta_in_16_colours_and_bold_without_colour() {
+        assert_eq!(
+            t(ColorDepth::True).style(Role::Guide).fg,
+            Some(Color::Rgb(0x7f, 0x8c, 0xf0))
+        );
+        assert_eq!(
+            t(ColorDepth::Ansi16).style(Role::Guide).fg,
+            Some(Color::LightMagenta)
+        );
+        let none = t(ColorDepth::None).style(Role::Guide);
+        assert_eq!(none.fg, None);
+        assert!(none.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
