@@ -1,7 +1,7 @@
 //! The chain's state and rules, with no drawing and no I/O: what is asked, what the defaults are,
 //! what a re-scan does to the answers.
 use crate::catalog::{Tool, tool};
-use crate::tui::connect::methods_for;
+use crate::tui::connect::{Act, methods_for};
 use crate::tui::install::{Offer, install_offer, quote_cmd};
 use igris_detect::{Agent, Login, Snapshot};
 use std::collections::HashMap;
@@ -270,9 +270,32 @@ impl ChainUi {
         match self.work.get(k) {
             Some(Work::Installing { .. } | Work::InstallDone | Work::Checking { .. }) => vec![],
             Some(Work::InstallFailed { .. }) => install_choices(t, true),
-            _ => {
-                let _ = snap;
-                vec![another()]
+            w => {
+                let mut v = Vec::new();
+                if matches!(w, Some(Work::CheckFailed { .. })) {
+                    v.push(pick(
+                        "recheck",
+                        "Check again".to_string(),
+                        "runs the live check once more".to_string(),
+                        Some("Check again".to_string()),
+                    ));
+                }
+                for (i, r) in methods_for(t, snap).iter().enumerate() {
+                    let cta = match r.act {
+                        Act::Check => format!("Check {}", t.name),
+                        Act::Attach(_) => r.label.to_string(),
+                        Act::Env(_) => "Show how".to_string(),
+                        Act::Store(_) => continue, // masked key entry comes with paste handling
+                    };
+                    v.push(pick(
+                        &format!("method:{i}"),
+                        r.label.to_string(),
+                        r.hint.to_string(),
+                        Some(cta),
+                    ));
+                }
+                v.push(another());
+                v
             }
         }
     }
@@ -326,6 +349,19 @@ impl ChainUi {
                     }
                     "retry" => Some(Want::Install(id)),
                     "copy" => Some(Want::Copy(id)),
+                    "recheck" => Some(Want::Check(id)),
+                    m if m.starts_with("method:") => {
+                        let i: usize = m["method:".len()..].parse().ok()?;
+                        match methods_for(tool(id)?, snap).get(i)?.act {
+                            Act::Check => Some(Want::Check(id)),
+                            Act::Attach(argv) => Some(Want::Attach(argv)),
+                            Act::Env(name) => {
+                                self.hint = Some(env_hint(tool(id)?, name));
+                                None
+                            }
+                            Act::Store(_) => None,
+                        }
+                    }
                     "another" => {
                         self.back(snap);
                         None
@@ -519,6 +555,20 @@ pub fn install_choices(t: &Tool, failed: bool) -> Vec<Choice> {
     }
     v.push(another());
     v
+}
+
+/// Where an API key goes: the agent reads it from the environment IGRIS starts in, so the user
+/// sets it, opens a new terminal, starts igris there and re-scans.
+fn env_hint(t: &Tool, name: &str) -> String {
+    let line = if cfg!(windows) {
+        format!("setx {name} \"<your key>\"")
+    } else {
+        format!("export {name}=<your key>")
+    };
+    format!(
+        "{} reads its key from {name}. Add `{line}` to your shell profile, open a new terminal, start igris there and press r to re-scan.",
+        t.name
+    )
 }
 
 fn clock(secs: u64) -> String {
@@ -925,6 +975,149 @@ mod tests {
             labels(&u, &s),
             ["Choose another agent"],
             "no verified command, no retry"
+        );
+    }
+
+    /// Claude Code (or any agent) installed and not logged in, the other one ready, both answered.
+    fn connecting(kind: &str) -> (Snapshot, ChainUi) {
+        let other = if kind == "claude" { "codex" } else { "claude" };
+        let s = snap(&[(kind, true, LoggedOut), (other, true, LoggedIn)]);
+        let mut u = started(&s);
+        u.builder = Some(kind.into());
+        u.reviewer = Some(other.into());
+        u.step = Step::End;
+        u.settle(&s);
+        assert_eq!((u.step, u.subject.as_deref()), (Step::Connect, Some(kind)));
+        (s, u)
+    }
+
+    fn row_of(u: &mut ChainUi, s: &Snapshot, label: &str) {
+        u.cursor = u
+            .choices(s)
+            .iter()
+            .position(|c| c.label == label)
+            .unwrap_or_else(|| panic!("no row {label}: {:?}", labels(u, s)));
+    }
+
+    #[test]
+    fn connect_lists_the_catalogs_methods_without_masked_key_entry() {
+        let (s, u) = connecting("codex");
+        let rows = methods_for(tool("codex").unwrap(), &s);
+        let stores = rows
+            .iter()
+            .filter(|r| matches!(r.act, crate::tui::connect::Act::Store(_)))
+            .count();
+        assert!(
+            stores > 0,
+            "codex has a key-entry method, so this test means something"
+        );
+        assert_eq!(
+            u.choices(&s).len(),
+            rows.len() - stores + 1,
+            "{:?}",
+            labels(&u, &s)
+        );
+        assert_eq!(
+            labels(&u, &s).last().map(String::as_str),
+            Some("Choose another agent")
+        );
+    }
+
+    #[test]
+    fn w3_logged_out_agent_offers_log_in_first() {
+        let (s, u) = connecting("claude");
+        assert_eq!(labels(&u, &s)[0], "Log in");
+    }
+
+    #[test]
+    fn log_in_returns_the_tools_own_login_command_and_the_next_scan_decides() {
+        let (s, mut u) = connecting("claude");
+        row_of(&mut u, &s, "Log in");
+        assert_eq!(
+            u.enter(&s),
+            Some(Want::Attach(&["claude", "auth", "login"]))
+        );
+        assert_eq!(
+            u.step,
+            Step::Connect,
+            "nothing is assumed: the scan decides"
+        );
+    }
+
+    #[test]
+    fn an_api_key_method_shows_where_to_put_it_and_runs_nothing() {
+        let (s, mut u) = connecting("claude");
+        row_of(&mut u, &s, "API key");
+        assert_eq!(u.enter(&s), None);
+        let h = u.hint.clone().unwrap();
+        assert!(
+            h.contains("ANTHROPIC_API_KEY") && h.contains("press r"),
+            "{h}"
+        );
+    }
+
+    #[test]
+    fn check_now_returns_the_live_check() {
+        let (s, mut u) = connecting("claude");
+        row_of(&mut u, &s, "Check now");
+        assert_eq!(u.enter(&s), Some(Want::Check("claude")));
+    }
+
+    #[test]
+    fn a_passed_check_collapses_to_a_history_line_with_the_latency() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert("claude".into(), Work::Passed { ms: 6800 });
+        u.settle(&s);
+        assert_eq!(u.step, Step::End);
+        assert!(
+            u.history(&s)
+                .iter()
+                .any(|h| h.0 == "Builder" && h.2 == "replied in 6.8 s"),
+            "{:?}",
+            u.history(&s)
+        );
+    }
+
+    #[test]
+    fn a_failed_check_keeps_the_question_and_never_picks_another_agent() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "not logged in".into(),
+                fix: Some("claude auth login".into()),
+            },
+        );
+        u.settle(&s);
+        assert_eq!(
+            (u.step, u.subject.as_deref()),
+            (Step::Connect, Some("claude"))
+        );
+        assert_eq!(
+            u.builder.as_deref(),
+            Some("claude"),
+            "the choice is unchanged"
+        );
+        assert_eq!(labels(&u, &s)[0], "Check again");
+        u.cursor = 0;
+        assert_eq!(u.enter(&s), Some(Want::Check("claude")));
+    }
+
+    #[test]
+    fn while_a_check_runs_there_is_nothing_to_pick() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert("claude".into(), Work::Checking { secs: 2 });
+        assert!(u.choices(&s).is_empty());
+    }
+
+    #[test]
+    fn choosing_another_agent_from_connect_clears_that_answer() {
+        let (s, mut u) = connecting("claude");
+        row_of(&mut u, &s, "Choose another agent");
+        assert_eq!(u.enter(&s), None);
+        assert_eq!(
+            (u.step, u.builder.clone(), u.reviewer.clone()),
+            (Step::Builder, None, None)
         );
     }
 
