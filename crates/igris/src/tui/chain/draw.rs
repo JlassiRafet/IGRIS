@@ -166,6 +166,8 @@ fn question(step: Step, m: &Marks, t: &Theme) -> Line<'static> {
         Step::Workspace => ("Workspace", ": Herdr runs your agents side by side"),
         Step::Builder => ("Builder", ": which agent writes the code?"),
         Step::Reviewer => ("Reviewer", ": who checks the builder's work?"),
+        Step::Install => ("Install", ": how to get this agent"),
+        Step::Connect => ("Connect", ": make this agent ready"),
         Step::End => ("", ""),
     };
     Line::from(vec![
@@ -709,6 +711,7 @@ mod tests {
             note: "installed · login unverified".into(),
             mark: Mark::Warn,
             warn: Some("same agent, new session".into()),
+            cta: None,
         };
         assert_eq!(
             note_role(&c, true),

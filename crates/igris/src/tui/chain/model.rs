@@ -1,8 +1,10 @@
 //! The chain's state and rules, with no drawing and no I/O: what is asked, what the defaults are,
 //! what a re-scan does to the answers.
-use crate::catalog::tool;
-use crate::tui::install::quote_cmd;
+use crate::catalog::{Tool, tool};
+use crate::tui::connect::methods_for;
+use crate::tui::install::{Offer, install_offer, quote_cmd};
 use igris_detect::{Agent, Login, Snapshot};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Step {
@@ -11,7 +13,11 @@ pub enum Step {
     Workspace,
     Builder,
     Reviewer,
-    /// Slice 1 ends here.
+    /// How to get the `subject` agent installed (or why IGRIS cannot do it).
+    Install,
+    /// Make the `subject` agent ready: wait for its install, log in, check it live.
+    Connect,
+    /// Slice 2 ends here.
     End,
 }
 
@@ -33,7 +39,39 @@ pub struct Choice {
     pub note: String,
     pub mark: Mark,
     pub warn: Option<String>,
+    /// The words of the call to action; `None` means `Use <label>`.
+    pub cta: Option<String>,
 }
+
+/// What a choice asks the app to run. The model never runs anything itself. (Constructed by the
+/// wiring task; allowed until then.)
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Want {
+    /// The tool's verified install command, as a background job.
+    Install(&'static str),
+    /// Put the tool's install command on the clipboard (it needs administrator rights).
+    Copy(&'static str),
+    /// The tool's live check.
+    Check(&'static str),
+    /// The tool's own login command, on the user's terminal.
+    Attach(&'static [&'static str]),
+}
+
+/// What the install and check engines are doing for one agent (built by `State`). (Constructed by
+/// the wiring task; allowed until then.)
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum Work {
+    Installing { secs: u64 },
+    InstallFailed { reason: String, fix: Option<String> },
+    InstallDone,
+    Checking { secs: u64 },
+    Passed { ms: u64 },
+    CheckFailed { reason: String, fix: Option<String> },
+}
+
+pub type WorkMap = HashMap<String, Work>;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ChainUi {
@@ -41,6 +79,12 @@ pub struct ChainUi {
     pub builder: Option<String>,
     pub reviewer: Option<String>,
     pub cursor: usize,
+    /// The agent the `Install` or `Connect` question is about.
+    pub subject: Option<String>,
+    /// A line shown in the note box (for example where to put an API key).
+    pub hint: Option<String>,
+    /// What the engines are doing; `State` sets it before every key, scan result and frame.
+    pub work: WorkMap,
 }
 
 impl ChainUi {
@@ -48,25 +92,91 @@ impl ChainUi {
         Self::default()
     }
     /// After every scan: skip Workspace once Herdr is found, drop answers whose agent is gone (and
-    /// every later one), and put the cursor on the default.
+    /// every later one) unless its install is running, route to what still needs attention, and
+    /// put the cursor on the default.
     pub fn settle(&mut self, snap: &Snapshot) {
         if !snap.herdr.found {
+            let work = std::mem::take(&mut self.work);
             *self = Self::default();
+            self.work = work;
             return;
         }
         if self.step == Step::Workspace {
             self.step = Step::Builder;
         }
-        let found = |k: &str| snap.agents.iter().any(|a| a.kind == k && a.found);
-        if self.builder.as_deref().is_some_and(|b| !found(b)) {
+        let here = |k: &str| {
+            snap.agents.iter().any(|a| a.kind == k && a.found)
+                || matches!(
+                    self.work.get(k),
+                    Some(Work::Installing { .. } | Work::InstallDone | Work::InstallFailed { .. })
+                )
+        };
+        if self.builder.as_deref().is_some_and(|b| !here(b)) {
             self.builder = None;
             self.reviewer = None;
             self.step = Step::Builder;
-        } else if self.reviewer.as_deref().is_some_and(|r| !found(r)) {
+            self.subject = None;
+        } else if self.reviewer.as_deref().is_some_and(|r| !here(r)) {
             self.reviewer = None;
             self.step = Step::Reviewer;
+            self.subject = None;
         }
+        if self.step == Step::Install
+            && self
+                .subject
+                .as_deref()
+                .is_some_and(|k| snap.agents.iter().any(|a| a.kind == k && a.found))
+        {
+            // It was installed by hand and the scan found it: back to the list.
+            self.subject = None;
+            self.step = if self.builder.is_none() {
+                Step::Builder
+            } else {
+                Step::Reviewer
+            };
+        }
+        self.route(snap);
         self.reset_cursor(snap);
+    }
+
+    /// When both questions are answered, the first agent that still needs something becomes the
+    /// `Connect` question; with none, the chain is at its end.
+    fn route(&mut self, snap: &Snapshot) {
+        if self.builder.is_none() || self.reviewer.is_none() {
+            return;
+        }
+        let ids = [self.builder.clone(), self.reviewer.clone()];
+        match ids
+            .into_iter()
+            .flatten()
+            .find(|k| self.needs_attention(snap, k))
+        {
+            Some(k) => {
+                self.step = Step::Connect;
+                self.subject = Some(k);
+            }
+            None => {
+                self.step = Step::End;
+                self.subject = None;
+            }
+        }
+    }
+
+    /// An agent needs attention while it installs or failed to, or when it is installed but not
+    /// proven and the catalog has a way to prove it (a login method or a live check).
+    fn needs_attention(&self, snap: &Snapshot, kind: &str) -> bool {
+        match self.work.get(kind) {
+            Some(Work::Passed { .. }) => false,
+            Some(_) => true,
+            None => snap
+                .agents
+                .iter()
+                .find(|a| a.kind == kind)
+                .is_some_and(|a| {
+                    !is_ready(a)
+                        && tool(kind).is_some_and(|t| !a.found || !methods_for(t, snap).is_empty())
+                }),
+        }
     }
 
     /// A re-scan: like `settle`, but the cursor stays on the agent the user moved to when the
@@ -91,6 +201,10 @@ impl ChainUi {
     /// On the default; with none (nothing is verified) on the first installed agent, and for the
     /// reviewer on one that is not the builder. Never a silent choice: this only places the cursor.
     fn reset_cursor(&mut self, snap: &Snapshot) {
+        if !matches!(self.step, Step::Builder | Step::Reviewer) {
+            self.cursor = 0;
+            return;
+        }
         let v = ordered(snap);
         let builder = self.builder.as_deref();
         let other = (self.step == Step::Reviewer)
@@ -105,9 +219,26 @@ impl ChainUi {
 
     /// The options of the active question: installed agents first, then the missing ones (dim).
     pub fn choices(&self, snap: &Snapshot) -> Vec<Choice> {
-        if !matches!(self.step, Step::Builder | Step::Reviewer) {
-            return vec![];
+        match self.step {
+            Step::Builder | Step::Reviewer => self.agent_choices(snap),
+            Step::Workspace if !snap.herdr.found => match self.work.get("herdr") {
+                Some(Work::Installing { .. } | Work::InstallDone) => vec![],
+                w => tool("herdr").map_or_else(Vec::new, |t| {
+                    let mut v = install_choices(t, matches!(w, Some(Work::InstallFailed { .. })));
+                    v.retain(|c| c.id != "another");
+                    v
+                }),
+            },
+            Step::Install => match self.subject.as_deref().and_then(tool) {
+                Some(t) => install_choices(t, false),
+                None => vec![],
+            },
+            Step::Connect => self.connect_choices(snap),
+            Step::Workspace | Step::End => vec![],
         }
+    }
+
+    fn agent_choices(&self, snap: &Snapshot) -> Vec<Choice> {
         ordered(snap)
             .into_iter()
             .map(|a| {
@@ -122,9 +253,28 @@ impl ChainUi {
                     note: note.to_string(),
                     mark,
                     warn,
+                    cta: (!a.found).then(|| format!("Install {}", name(&a.kind))),
                 }
             })
             .collect()
+    }
+
+    /// What can be done for the `Connect` subject: wait, retry a failed install, or choose another.
+    fn connect_choices(&self, snap: &Snapshot) -> Vec<Choice> {
+        let Some(k) = self.subject.as_deref() else {
+            return vec![];
+        };
+        let Some(t) = tool(k) else {
+            return vec![];
+        };
+        match self.work.get(k) {
+            Some(Work::Installing { .. } | Work::InstallDone | Work::Checking { .. }) => vec![],
+            Some(Work::InstallFailed { .. }) => install_choices(t, true),
+            _ => {
+                let _ = snap;
+                vec![another()]
+            }
+        }
     }
 
     /// Builder: Claude Code when it is ready, else the first ready agent. Reviewer: a ready agent
@@ -149,27 +299,67 @@ impl ChainUi {
         }
     }
 
-    /// Answer the active question with the highlighted option. A missing agent cannot be chosen.
-    pub fn enter(&mut self, snap: &Snapshot) {
-        let v = ordered(snap);
-        let Some(a) = v.get(self.cursor).filter(|a| a.found) else {
-            return;
-        };
+    /// Answer the active question with the highlighted option. Returns what the app should run.
+    pub fn enter(&mut self, snap: &Snapshot) -> Option<Want> {
         match self.step {
-            Step::Builder => {
-                self.builder = Some(a.kind.clone());
-                self.step = Step::Reviewer;
-                self.reset_cursor(snap);
+            Step::Builder | Step::Reviewer => {
+                let v = ordered(snap);
+                let a = *v.get(self.cursor)?;
+                if a.found || self.installing(&a.kind) {
+                    self.answer(&a.kind, snap);
+                } else {
+                    self.step = Step::Install;
+                    self.subject = Some(a.kind.clone());
+                    self.cursor = 0;
+                }
+                None
             }
-            Step::Reviewer => {
-                self.reviewer = Some(a.kind.clone());
-                self.step = Step::End;
+            Step::Workspace | Step::Install | Step::Connect => {
+                let c = self.choices(snap).get(self.cursor)?.clone();
+                let id = self.subject.as_deref().or(Some("herdr")).and_then(tool)?.id;
+                match c.id.as_str() {
+                    "install" => {
+                        if self.step == Step::Install {
+                            self.answer(id, snap);
+                        }
+                        Some(Want::Install(id))
+                    }
+                    "retry" => Some(Want::Install(id)),
+                    "copy" => Some(Want::Copy(id)),
+                    "another" => {
+                        self.back(snap);
+                        None
+                    }
+                    _ => None,
+                }
             }
-            Step::Workspace | Step::End => {}
+            Step::End => None,
         }
     }
 
-    /// One step back; the answer of the step landed on, and every later one, is cleared.
+    fn installing(&self, kind: &str) -> bool {
+        matches!(
+            self.work.get(kind),
+            Some(Work::Installing { .. } | Work::InstallDone | Work::InstallFailed { .. })
+        )
+    }
+
+    /// Record `kind` as the answer of the active question and go to the next one.
+    fn answer(&mut self, kind: &str, snap: &Snapshot) {
+        if self.builder.is_none() {
+            self.builder = Some(kind.to_string());
+            self.step = Step::Reviewer;
+        } else {
+            self.reviewer = Some(kind.to_string());
+            self.step = Step::End;
+        }
+        self.subject = None;
+        self.route(snap);
+        self.reset_cursor(snap);
+    }
+
+    /// One step back; the answer of the step landed on, and every later one, is cleared. From an
+    /// install or connect question it goes back to choose another agent.
     pub fn back(&mut self, snap: &Snapshot) {
         match self.step {
             Step::Reviewer => {
@@ -180,6 +370,25 @@ impl ChainUi {
             Step::End => {
                 self.reviewer = None;
                 self.step = Step::Reviewer;
+            }
+            Step::Install => {
+                self.step = if self.builder.is_none() {
+                    Step::Builder
+                } else {
+                    Step::Reviewer
+                };
+                self.subject = None;
+            }
+            Step::Connect => {
+                let subject = self.subject.take();
+                if subject.is_some() && subject == self.builder {
+                    self.builder = None;
+                    self.reviewer = None;
+                    self.step = Step::Builder;
+                } else {
+                    self.reviewer = None;
+                    self.step = Step::Reviewer;
+                }
             }
             Step::Workspace | Step::Builder => {}
         }
@@ -197,12 +406,19 @@ impl ChainUi {
                 "ready".to_string(),
             ));
         }
-        let state_of = |kind: &str| {
-            snap.agents
+        let state_of = |kind: &str| match self.work.get(kind) {
+            Some(Work::Installing { secs }) => format!("installing {}", clock(*secs)),
+            Some(Work::InstallDone) => "installed, scanning".to_string(),
+            Some(Work::InstallFailed { .. }) => "install failed".to_string(),
+            Some(Work::Checking { secs }) => format!("checking {}", clock(*secs)),
+            Some(Work::Passed { ms }) => format!("replied in {:.1} s", *ms as f64 / 1000.0),
+            Some(Work::CheckFailed { .. }) => "check failed".to_string(),
+            None => snap
+                .agents
                 .iter()
                 .find(|a| a.kind == kind)
                 .map_or("not installed", |a| status(a).0)
-                .to_string()
+                .to_string(),
         };
         if let Some(b) = &self.builder {
             h.push(("Builder".to_string(), name(b), state_of(b)));
@@ -225,6 +441,25 @@ impl ChainUi {
                 "Herdr is not installed. Install it, then press r to re-scan. {}",
                 install_line("herdr")
             )),
+            Step::Install => {
+                let t = self.subject.as_deref().and_then(tool)?;
+                match install_offer(t) {
+                    Offer::None => Some(format!(
+                        "{} has no install command IGRIS can verify. {} Install it yourself, then press r to re-scan.",
+                        t.name,
+                        if t.docs.is_empty() {
+                            String::new()
+                        } else {
+                            format!("See {}.", t.docs)
+                        }
+                    )),
+                    Offer::Copy(cmd) => Some(format!(
+                        "{} needs administrator rights: run this yourself, then press r to re-scan. {cmd}",
+                        t.name
+                    )),
+                    Offer::Run(_) => None,
+                }
+            }
             Step::Builder | Step::Reviewer if !snap.agents.iter().any(|a| a.found) => {
                 Some(format!(
                     "No coding agent is installed. Install one, then press r to re-scan. {}",
@@ -234,6 +469,60 @@ impl ChainUi {
             _ => None,
         }
     }
+}
+
+fn pick(id: &str, label: String, note: String, cta: Option<String>) -> Choice {
+    Choice {
+        id: id.to_string(),
+        label,
+        note,
+        mark: Mark::Warn,
+        warn: None,
+        cta,
+    }
+}
+
+fn another() -> Choice {
+    pick(
+        "another",
+        "Choose another agent".to_string(),
+        "back to the list".to_string(),
+        None,
+    )
+}
+
+/// What can be done about installing `t`: run its verified command in the background, copy it when
+/// it needs administrator rights, or neither when IGRIS has no verified command (then only
+/// "Choose another agent"). After a failure the run is offered again as "Try again".
+pub fn install_choices(t: &Tool, failed: bool) -> Vec<Choice> {
+    let mut v = Vec::new();
+    match install_offer(t) {
+        Offer::Run(argv) if failed => v.push(pick(
+            "retry",
+            "Try again".to_string(),
+            quote_cmd(argv),
+            Some("Try again".to_string()),
+        )),
+        Offer::Run(argv) => v.push(pick(
+            "install",
+            format!("Install {} in the background", t.name),
+            quote_cmd(argv),
+            Some(format!("Install {}", t.name)),
+        )),
+        Offer::Copy(cmd) => v.push(pick(
+            "copy",
+            "Copy the command".to_string(),
+            format!("needs administrator rights: {cmd}"),
+            Some("Copy the command".to_string()),
+        )),
+        Offer::None => {}
+    }
+    v.push(another());
+    v
+}
+
+fn clock(secs: u64) -> String {
+    format!("{:02}:{:02}", secs / 60, secs % 60)
 }
 
 fn name(kind: &str) -> String {
@@ -363,7 +652,12 @@ mod tests {
         let want = t.install.map_or(t.docs.to_string(), quote_cmd);
         assert!(b.contains(&want), "{b}");
         u.enter(&s);
-        assert_eq!(u.step, Step::Builder, "a missing agent cannot be chosen");
+        assert_eq!(u.builder, None, "a missing agent is never chosen as it is");
+        assert_eq!(
+            u.step,
+            Step::Install,
+            "it opens its install question instead"
+        );
     }
 
     #[test]
@@ -467,6 +761,171 @@ mod tests {
         u.resettle(&after, &before);
         assert_eq!(u.step, Step::Builder);
         assert_eq!(on(&u, &after), "codex");
+    }
+
+    fn moved_to(u: &mut ChainUi, s: &Snapshot, id: &str) {
+        u.cursor = u.choices(s).iter().position(|c| c.id == id).unwrap();
+    }
+
+    fn labels(u: &ChainUi, s: &Snapshot) -> Vec<String> {
+        u.choices(s).into_iter().map(|c| c.label).collect()
+    }
+
+    static ADMIN: crate::catalog::Tool = crate::catalog::Tool {
+        id: "fake-admin",
+        name: "Fake Admin",
+        groups: &[],
+        install: Some(&["apt-get", "install", "fake admin"]),
+        install_needs_admin: true,
+        check: None,
+        methods: &[],
+        docs: "",
+        connects: "",
+        selectable: true,
+        verified: None,
+    };
+
+    #[test]
+    fn herdr_missing_offers_its_verified_install_in_the_workspace_question() {
+        let mut s = snap(&[("claude", true, LoggedIn)]);
+        s.herdr.found = false;
+        let mut u = started(&s);
+        assert_eq!(u.step, Step::Workspace);
+        let cmd = quote_cmd(tool("herdr").unwrap().install.unwrap());
+        let c = u.choices(&s);
+        assert_eq!(c[0].label, "Install Herdr in the background");
+        assert!(c[0].note.contains(&cmd), "{c:?}");
+        assert_eq!(u.enter(&s), Some(Want::Install("herdr")));
+        u.work.insert("herdr".into(), Work::Installing { secs: 3 });
+        assert!(
+            u.choices(&s).is_empty(),
+            "while it installs there is nothing to pick"
+        );
+        assert_eq!(u.step, Step::Workspace, "the chain waits for Herdr");
+    }
+
+    #[test]
+    fn an_agent_without_a_verified_command_gets_guidance_not_an_install() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = started(&s);
+        moved_to(&mut u, &s, "claude");
+        assert_eq!(u.enter(&s), None, "nothing is run");
+        assert_eq!(u.step, Step::Install);
+        assert_eq!(u.subject.as_deref(), Some("claude"));
+        assert_eq!(labels(&u, &s), ["Choose another agent"]);
+        let b = u.blocker(&s).unwrap();
+        assert!(
+            b.contains("docs.anthropic.com") && b.contains("press r"),
+            "{b}"
+        );
+    }
+
+    #[test]
+    fn an_install_that_needs_admin_rights_offers_to_copy_never_to_run() {
+        let c = install_choices(&ADMIN, false);
+        let ids: Vec<_> = c.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["copy", "another"]);
+        assert!(c[0].note.contains("apt-get install 'fake admin'"), "{c:?}");
+    }
+
+    #[test]
+    fn installing_in_the_background_answers_the_question_and_moves_on() {
+        let mut s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        s.herdr.found = true;
+        // Give the catalog tool a runnable install the way Herdr has one: use herdr as the agent.
+        let mut u = started(&s);
+        u.step = Step::Install;
+        u.subject = Some("herdr".into());
+        assert_eq!(u.choices(&s)[0].id, "install");
+        assert_eq!(u.enter(&s), Some(Want::Install("herdr")));
+    }
+
+    #[test]
+    fn a_missing_answered_agent_survives_a_scan_while_its_install_runs() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = started(&s);
+        u.builder = Some("claude".into());
+        u.step = Step::Reviewer;
+        u.work.insert("claude".into(), Work::Installing { secs: 9 });
+        u.settle(&s);
+        assert_eq!(
+            u.builder.as_deref(),
+            Some("claude"),
+            "the answer stays while it installs"
+        );
+        u.work.clear();
+        u.settle(&s);
+        assert_eq!(u.builder, None, "no install running: the stale answer goes");
+    }
+
+    #[test]
+    fn the_same_missing_agent_as_builder_and_reviewer_is_installed_once() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = started(&s);
+        u.builder = Some("claude".into());
+        u.step = Step::Reviewer;
+        u.work.insert("claude".into(), Work::Installing { secs: 2 });
+        moved_to(&mut u, &s, "claude");
+        assert_eq!(u.enter(&s), None, "its install already runs");
+        assert_eq!(u.reviewer.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn a_finished_install_that_is_not_logged_in_becomes_a_connect_question() {
+        let before = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = started(&before);
+        u.builder = Some("claude".into());
+        u.reviewer = Some("codex".into());
+        u.step = Step::End;
+        u.work
+            .insert("claude".into(), Work::Installing { secs: 30 });
+        u.settle(&before);
+        assert_eq!(
+            (u.step, u.subject.as_deref()),
+            (Step::Connect, Some("claude"))
+        );
+        let after = snap(&[("claude", true, Unknown), ("codex", true, LoggedIn)]);
+        u.work.clear();
+        u.settle(&after);
+        assert_eq!(
+            (u.step, u.subject.as_deref()),
+            (Step::Connect, Some("claude"))
+        );
+    }
+
+    #[test]
+    fn ready_agents_go_straight_to_the_end() {
+        let s = ready();
+        let mut u = started(&s);
+        u.enter(&s);
+        u.enter(&s);
+        assert_eq!(u.step, Step::End);
+    }
+
+    #[test]
+    fn a_failed_install_keeps_the_subject_and_offers_retry_and_another_agent() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = started(&s);
+        u.builder = Some("claude".into());
+        u.reviewer = Some("codex".into());
+        u.step = Step::End;
+        u.work.insert(
+            "claude".into(),
+            Work::InstallFailed {
+                reason: "did not finish".into(),
+                fix: None,
+            },
+        );
+        u.settle(&s);
+        assert_eq!(
+            (u.step, u.subject.as_deref()),
+            (Step::Connect, Some("claude"))
+        );
+        assert_eq!(
+            labels(&u, &s),
+            ["Choose another agent"],
+            "no verified command, no retry"
+        );
     }
 
     #[test]

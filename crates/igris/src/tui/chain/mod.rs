@@ -27,7 +27,9 @@ pub fn key(ui: &mut ChainUi, snap: Option<&Snapshot>, k: KeyEvent) -> Option<Act
     match k.code {
         KeyCode::Up if n > 0 => ui.cursor = (ui.cursor + n - 1) % n,
         KeyCode::Down if n > 0 => ui.cursor = (ui.cursor + 1) % n,
-        KeyCode::Enter => ui.enter(snap),
+        KeyCode::Enter => {
+            ui.enter(snap);
+        }
         KeyCode::Left | KeyCode::Esc => ui.back(snap),
         KeyCode::Char('r') => return Some(Action::Rescan),
         _ => {}
