@@ -65,7 +65,10 @@ fn marks(t: &Theme) -> Marks {
 /// Rows that are not options: the blank line above the question, the question, and the action row
 /// that closes the tree.
 const FIXED_ROWS: usize = 3;
-const BOX_ROWS: u16 = 5;
+/// Rows of a box that are not text: the two borders.
+const BOX_FRAME: usize = 2;
+/// Columns of a box that are not text: the two borders and one column of padding on each side.
+const BOX_SIDES: u16 = 4;
 /// The column where the status words start, in the history and in the option rows alike.
 const NOTE_COL: usize = 26;
 /// Columns before an option's label: the tree line, the bar and the choice mark.
@@ -109,7 +112,12 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
             ])
         })
         .collect();
-    let box_rows = if blocker.is_some() { BOX_ROWS } else { 0 };
+    // The box is as tall as its wrapped text, but leaves the question and two options on screen.
+    let box_rows = blocker.as_deref().map_or(0, |text| {
+        let wanted = wrapped_rows(text, body.width.saturating_sub(BOX_SIDES)) + BOX_FRAME;
+        let cap = (body.height as usize).saturating_sub(lines.len() + FIXED_ROWS + 2);
+        wanted.min(cap.max(BOX_FRAME + 1)) as u16
+    });
     let used = lines.len() + FIXED_ROWS + usize::from(box_rows);
     let room = (body.height as usize).saturating_sub(used).max(1);
     match ui.step {
@@ -166,6 +174,31 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
         ])),
         a.footer,
     );
+}
+
+/// How many rows `text` takes when wrapped greedily at `width` columns, one row at least per line.
+fn wrapped_rows(text: &str, width: u16) -> usize {
+    let width = usize::from(width.max(1));
+    let w = |s: &str| unicode_width::UnicodeWidthStr::width(s);
+    text.lines()
+        .map(|line| {
+            let (mut rows, mut used) = (1, 0);
+            for word in line.split_whitespace() {
+                let n = w(word);
+                if used > 0 && used + 1 + n <= width {
+                    used += 1 + n;
+                    continue;
+                }
+                if used > 0 {
+                    rows += 1;
+                }
+                // A word longer than a row is broken over several rows.
+                rows += (n - 1) / width;
+                used = (n - 1) % width + 1;
+            }
+            rows
+        })
+        .sum()
 }
 
 /// The status words use a middle dot; an ASCII terminal gets a hyphen instead.
@@ -774,6 +807,55 @@ mod tests {
             },
         );
         u.settle(s);
+    }
+
+    #[test]
+    fn a_long_failure_reason_keeps_the_unchanged_and_fix_lines_visible_at_80x24() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "the agent answered with a very long message about its account, its plan and its limits, which wraps over several rows of the box".into(),
+                fix: Some("claude auth login".into()),
+            },
+        );
+        u.settle(&s);
+        let rows = render(&u, &s, Glyphs::Unicode, 80, 24).join("\n");
+        assert!(rows.contains("Unchanged:"), "{rows}");
+        assert!(rows.contains("Fix: claude auth login"), "{rows}");
+        assert!(
+            rows.contains("Check again"),
+            "the recovery action stays: {rows}"
+        );
+    }
+
+    #[test]
+    fn the_row_count_of_a_wrapped_text_matches_what_the_paragraph_really_draws() {
+        let texts = [
+            "short",
+            "Claude Code: not logged in.\nUnchanged: no setting was changed.\nFix: claude auth login",
+            "the agent answered with a very long message about its account, its plan and its limits",
+            "https://docs.anthropic.com/en/docs/claude-code/overview. Install it yourself, then press r",
+            "one\n\nthree",
+        ];
+        for text in texts {
+            for width in [12u16, 20, 37, 60] {
+                let mut term = Terminal::new(TestBackend::new(width, 40)).unwrap();
+                term.draw(|f| {
+                    f.render_widget(
+                        Paragraph::new(text).wrap(ratatui::widgets::Wrap { trim: true }),
+                        f.area(),
+                    )
+                })
+                .unwrap();
+                let b = term.backend().buffer().clone();
+                let last = (0..40)
+                    .rposition(|y| (0..width).any(|x| b[(x, y)].symbol() != " "))
+                    .unwrap()
+                    + 1;
+                assert_eq!(wrapped_rows(text, width), last, "{text:?} at {width}");
+            }
+        }
     }
 
     #[test]

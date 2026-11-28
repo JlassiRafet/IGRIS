@@ -495,38 +495,45 @@ impl ChainUi {
         }
     }
 
+    /// The three lines of a failed check or install: what happened, what stayed unchanged, the fix.
+    fn failure(&self, k: &str) -> Option<String> {
+        let (reason, unchanged, fix) = match self.work.get(k)? {
+            Work::CheckFailed { reason, fix } => (reason, "no setting was changed.", fix),
+            Work::InstallFailed { reason, fix } => (
+                reason,
+                "IGRIS changed no setting; the installer may have left files.",
+                fix,
+            ),
+            _ => return None,
+        };
+        let mut text = format!("{}: {}\nUnchanged: {unchanged}", name(k), sentence(reason));
+        if let Some(f) = fix {
+            text.push_str(&format!("\nFix: {f}"));
+        }
+        Some(text)
+    }
+
     /// What stops the chain on this step, in words, with the tool's documented install command.
     pub fn blocker(&self, snap: &Snapshot) -> Option<String> {
         match self.step {
-            // A command that can run is on the option row, so no box repeats it.
+            // A command that can run is on the option row, so no box repeats it; a failed run is
+            // the exception, because the row cannot say why it failed.
             Step::Workspace
                 if tool("herdr").is_some_and(|t| matches!(install_offer(t), Offer::Run(_))) =>
             {
-                None
+                self.failure("herdr")
             }
             Step::Workspace => Some(format!(
                 "Herdr is not installed. Install it, then press r to re-scan. {}",
                 install_line("herdr")
             )),
             Step::Connect => {
-                let k = self.subject.as_deref()?;
-                let n = name(k);
-                let (reason, unchanged, fix) = match self.work.get(k) {
-                    Some(Work::CheckFailed { reason, fix }) => {
-                        (reason, "no setting was changed.", fix)
-                    }
-                    Some(Work::InstallFailed { reason, fix }) => (
-                        reason,
-                        "IGRIS changed no setting; the installer may have left files.",
-                        fix,
-                    ),
-                    _ => return self.hint.clone(),
-                };
-                let mut text = format!("{n}: {}\nUnchanged: {unchanged}", sentence(reason));
-                if let Some(f) = fix {
-                    text.push_str(&format!("\nFix: {f}"));
+                let failure = self.failure(self.subject.as_deref()?);
+                match (failure, &self.hint) {
+                    (Some(f), Some(h)) => Some(format!("{f}\n{h}")),
+                    (Some(f), None) => Some(f),
+                    (None, h) => h.clone(),
                 }
-                Some(text)
             }
             Step::Install => {
                 let t = self.subject.as_deref().and_then(tool)?;
@@ -1240,6 +1247,44 @@ mod tests {
             None,
             "and a box must not contradict a running install"
         );
+    }
+
+    #[test]
+    fn a_failed_herdr_install_shows_its_reason_and_fix_where_the_running_one_shows_nothing() {
+        let mut s = snap(&[("claude", true, LoggedIn)]);
+        s.herdr.found = false;
+        let mut u = started(&s);
+        u.work.insert(
+            "herdr".into(),
+            Work::InstallFailed {
+                reason: "download failed".into(),
+                fix: Some("check the network, then retry".into()),
+            },
+        );
+        let b = u.blocker(&s).expect("the failure is shown");
+        assert!(b.contains("Herdr: download failed."), "{b}");
+        assert!(b.contains("Fix: check the network, then retry"), "{b}");
+    }
+
+    #[test]
+    fn a_hint_chosen_after_a_failed_check_is_shown_below_the_failure() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "not logged in".into(),
+                fix: Some("claude auth login".into()),
+            },
+        );
+        u.settle(&s);
+        row_of(&mut u, &s, "API key");
+        u.enter(&s);
+        let b = u.blocker(&s).unwrap();
+        assert!(
+            b.contains("Fix: claude auth login"),
+            "the failure stays: {b}"
+        );
+        assert!(b.contains("ANTHROPIC_API_KEY"), "and the hint follows: {b}");
     }
 
     #[test]

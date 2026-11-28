@@ -288,9 +288,6 @@ def chain_screens(binary, out, scrub, chrome):
             if name == "-logged-in":
                 t.keys("Enter"); t.wait("This preview ends here"); time.sleep(0.8)
                 shots["chain-end"] = t.text(True)
-            elif not name:
-                t.keys("Enter"); t.wait("Connect: make"); time.sleep(0.8)
-                shots["chain-connect"] = t.text(True)
         finally:
             t.kill(); shutil.rmtree(home, ignore_errors=True)
     shutil.rmtree(private, ignore_errors=True)
