@@ -253,7 +253,13 @@ impl ChainUi {
                     note: note.to_string(),
                     mark,
                     warn,
-                    cta: (!a.found).then(|| format!("Install {}", name(&a.kind))),
+                    cta: (!a.found).then(|| {
+                        let n = name(&a.kind);
+                        match tool(&a.kind).map(install_offer) {
+                            Some(Offer::Run(_) | Offer::Copy(_)) => format!("Install {n}"),
+                            _ => format!("How to install {n}"),
+                        }
+                    }),
                 }
             })
             .collect()
@@ -470,6 +476,27 @@ impl ChainUi {
         h
     }
 
+    /// A dim line for a question with nothing to pick because the app is working: an install or a
+    /// live check that is running.
+    pub fn wait_line(&self, _snap: &Snapshot) -> Option<String> {
+        let k = self.subject.as_deref().or(match self.step {
+            Step::Workspace => Some("herdr"),
+            _ => None,
+        })?;
+        let n = name(k);
+        match self.work.get(k)? {
+            Work::Installing { secs } => Some(format!(
+                "Installing {n}: {}. This moves on by itself when the scan finds it.",
+                clock(*secs)
+            )),
+            Work::Checking { secs } => Some(format!(
+                "Checking {n}: {}. A live call to the agent can take a minute.",
+                clock(*secs)
+            )),
+            _ => None,
+        }
+    }
+
     /// What stops the chain on this step, in words, with the tool's documented install command.
     pub fn blocker(&self, snap: &Snapshot) -> Option<String> {
         match self.step {
@@ -477,6 +504,26 @@ impl ChainUi {
                 "Herdr is not installed. Install it, then press r to re-scan. {}",
                 install_line("herdr")
             )),
+            Step::Connect => {
+                let k = self.subject.as_deref()?;
+                let n = name(k);
+                let (reason, unchanged, fix) = match self.work.get(k) {
+                    Some(Work::CheckFailed { reason, fix }) => {
+                        (reason, "no setting was changed.", fix)
+                    }
+                    Some(Work::InstallFailed { reason, fix }) => (
+                        reason,
+                        "IGRIS changed no setting; the installer may have left files.",
+                        fix,
+                    ),
+                    _ => return self.hint.clone(),
+                };
+                let mut text = format!("{n}: {}\nUnchanged: {unchanged}", sentence(reason));
+                if let Some(f) = fix {
+                    text.push_str(&format!("\nFix: {f}"));
+                }
+                Some(text)
+            }
             Step::Install => {
                 let t = self.subject.as_deref().and_then(tool)?;
                 match install_offer(t) {
@@ -523,7 +570,7 @@ fn another() -> Choice {
         "another",
         "Choose another agent".to_string(),
         "back to the list".to_string(),
-        None,
+        Some("Choose another agent".to_string()),
     )
 }
 
@@ -571,11 +618,16 @@ fn env_hint(t: &Tool, name: &str) -> String {
     )
 }
 
+/// `reason` as a sentence: one trailing full stop.
+fn sentence(reason: &str) -> String {
+    format!("{}.", reason.trim_end_matches('.'))
+}
+
 fn clock(secs: u64) -> String {
     format!("{:02}:{:02}", secs / 60, secs % 60)
 }
 
-fn name(kind: &str) -> String {
+pub fn name(kind: &str) -> String {
     tool(kind).map_or_else(|| kind.to_string(), |t| t.name.to_string())
 }
 
@@ -1119,6 +1171,54 @@ mod tests {
             (u.step, u.builder.clone(), u.reviewer.clone()),
             (Step::Builder, None, None)
         );
+    }
+
+    #[test]
+    fn a_missing_agent_says_how_to_install_when_nothing_can_be_run() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let u = started(&s);
+        let c = u
+            .choices(&s)
+            .into_iter()
+            .find(|c| c.id == "claude")
+            .unwrap();
+        assert_eq!(c.cta.as_deref(), Some("How to install Claude Code"));
+    }
+
+    #[test]
+    fn a_running_install_and_a_running_check_have_a_wait_line_with_the_clock() {
+        let (s, mut u) = connecting("claude");
+        assert_eq!(u.wait_line(&s), None, "nothing runs yet");
+        u.work.insert("claude".into(), Work::Checking { secs: 42 });
+        assert!(u.wait_line(&s).unwrap().contains("00:42"));
+        u.work
+            .insert("claude".into(), Work::Installing { secs: 75 });
+        let w = u.wait_line(&s).unwrap();
+        assert!(w.contains("01:15") && w.contains("Claude Code"), "{w}");
+    }
+
+    #[test]
+    fn a_failure_is_three_lines_with_the_exact_fix_and_a_hint_is_one_line() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "not logged in".into(),
+                fix: Some("claude auth login".into()),
+            },
+        );
+        u.settle(&s);
+        let b = u.blocker(&s).unwrap();
+        let lines: Vec<_> = b.lines().collect();
+        assert_eq!(lines.len(), 3, "{b}");
+        assert!(lines[0].starts_with("Claude Code: not logged in"), "{b}");
+        assert!(lines[1].starts_with("Unchanged:"), "{b}");
+        assert_eq!(lines[2], "Fix: claude auth login");
+        u.work.clear();
+        u.settle(&s);
+        row_of(&mut u, &s, "API key");
+        u.enter(&s);
+        assert!(u.blocker(&s).unwrap().contains("ANTHROPIC_API_KEY"));
     }
 
     #[test]

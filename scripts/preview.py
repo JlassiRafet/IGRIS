@@ -286,7 +286,7 @@ def chain_screens(binary, out, scrub, chrome):
             t.keys("Enter"); t.wait("Reviewer: who checks"); time.sleep(0.8)
             shots[f"chain-reviewer{name}"] = t.text(True)
             if not name:
-                t.keys("Enter"); t.wait("Slice 1 ends here"); time.sleep(0.8)
+                t.keys("Enter"); t.wait("This preview ends here"); time.sleep(0.8)
                 shots["chain-end"] = t.text(True)
         finally:
             t.kill(); shutil.rmtree(home, ignore_errors=True)

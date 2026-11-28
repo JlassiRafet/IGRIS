@@ -1,6 +1,6 @@
 //! The chain screen: header band, history of answered questions, the active question with its
 //! hint right under the options, and a one-line footer. Pure drawing of a `ChainUi`.
-use super::model::{ChainUi, Choice, Mark, Step};
+use super::model::{ChainUi, Choice, Mark, Step, Work, name};
 use crate::tui::style::{GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
 use crate::tui::theme::{ColorDepth, Glyphs, Theme};
 use crate::tui::widgets::{Glint, glint};
@@ -114,21 +114,34 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
     let room = (body.height as usize).saturating_sub(used).max(1);
     match ui.step {
         Step::End => lines.push(Line::styled(
-            "Slice 1 ends here: the next questions come in the next release candidate.",
+            "This preview ends here: the next questions come in the next release candidate.",
             t.style(Role::Dim),
         )),
-        step => {
+        _ => {
             let options = ui.choices(snap);
             lines.push(Line::raw(""));
-            lines.push(question(step, &m, t));
-            let rows = option_rows(&options, ui.cursor, &m, t);
+            lines.push(question(ui, &m, t));
+            let rows = if options.is_empty() {
+                ui.wait_line(snap)
+                    .map(|w| {
+                        let row = Line::from(vec![
+                            Span::styled(format!("{}   ", m.rail), t.style(Role::Dim)),
+                            Span::styled(w, t.style(Role::Dim)),
+                        ]);
+                        (row, None)
+                    })
+                    .into_iter()
+                    .collect()
+            } else {
+                option_rows(&options, ui.cursor, &m, t)
+            };
             let at = rows
                 .iter()
                 .position(|(_, i)| *i == Some(ui.cursor))
                 .unwrap_or(0);
             let start = (at + 1).saturating_sub(room);
             lines.extend(rows.into_iter().skip(start).take(room).map(|(l, _)| l));
-            lines.push(action_row(options.get(ui.cursor), &m, t, tick));
+            lines.push(action_row(ui, &options, &m, t, tick));
         }
     }
     let n = lines.len() as u16;
@@ -161,14 +174,29 @@ fn ascii_safe(text: &str, t: &Theme) -> String {
 }
 
 /// The active question: a bold title, then the question itself.
-fn question(step: Step, m: &Marks, t: &Theme) -> Line<'static> {
-    let (title, ask) = match step {
-        Step::Workspace => ("Workspace", ": Herdr runs your agents side by side"),
-        Step::Builder => ("Builder", ": which agent writes the code?"),
-        Step::Reviewer => ("Reviewer", ": who checks the builder's work?"),
-        Step::Install => ("Install", ": how to get this agent"),
-        Step::Connect => ("Connect", ": make this agent ready"),
-        Step::End => ("", ""),
+fn question(ui: &ChainUi, m: &Marks, t: &Theme) -> Line<'static> {
+    let who = ui.subject.as_deref().map(name).unwrap_or_default();
+    let (title, ask) = match ui.step {
+        Step::Workspace => (
+            "Workspace",
+            ": Herdr runs your agents side by side".to_string(),
+        ),
+        Step::Builder => ("Builder", ": which agent writes the code?".to_string()),
+        Step::Reviewer => ("Reviewer", ": who checks the builder's work?".to_string()),
+        Step::Install => ("Install", format!(": {who} is not installed")),
+        Step::Connect => (
+            "Connect",
+            match ui.subject.as_deref().and_then(|k| ui.work.get(k)) {
+                Some(Work::Installing { .. } | Work::InstallDone) => {
+                    format!(": {who} is installing")
+                }
+                Some(Work::InstallFailed { .. }) => format!(": the install of {who} failed"),
+                Some(Work::Checking { .. }) => format!(": checking {who}"),
+                Some(Work::CheckFailed { .. }) => format!(": the check of {who} failed"),
+                _ => format!(": make {who} ready"),
+            },
+        ),
+        Step::End => ("", String::new()),
     };
     Line::from(vec![
         Span::styled(format!("{} ", m.active), t.style(Role::Info)),
@@ -207,9 +235,15 @@ fn option_rows(
 }
 
 /// The call to action closes the tree: the corner, the Enter key, then the label with its glint.
-/// The other keys follow as plain keycaps. A missing agent cannot be chosen yet, so there is no
-/// call to action, only what comes next.
-fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme, tick: usize) -> Line<'static> {
+/// The other keys follow as plain keycaps. With nothing to confirm (the app is working) there is no
+/// call to action, only the keys that still work.
+fn action_row(
+    ui: &ChainUi,
+    options: &[Choice],
+    m: &Marks,
+    t: &Theme,
+    tick: usize,
+) -> Line<'static> {
     let key = |k: &str, verb: &str| {
         [
             Span::styled(k.to_string(), t.style(Role::Key)),
@@ -220,24 +254,17 @@ fn action_row(chosen: Option<&Choice>, m: &Marks, t: &Theme, tick: usize) -> Lin
         format!("{}{} ", m.close, m.dash.repeat(2)),
         t.style(Role::Dim),
     )];
-    match chosen {
-        Some(c) if c.mark != Mark::Dim => {
-            spans.push(Span::styled(m.enter.to_string(), t.style(Role::Key)));
-            spans.push(Span::raw("  "));
-            spans.extend(shine(&format!("Use {}", c.label), tick, t));
-            spans.push(Span::raw("   "));
-            spans.extend(key(m.choose, "choose"));
-        }
-        Some(_) => {
-            spans.extend([
-                Span::styled(m.enter.to_string(), t.style(Role::Key)),
-                Span::styled(" install comes in the next step   ", t.style(Role::Dim)),
-            ]);
-            spans.extend(key(m.choose, "choose"));
-        }
-        None => {}
+    if let Some(c) = options.get(ui.cursor) {
+        let words = c.cta.clone().unwrap_or_else(|| format!("Use {}", c.label));
+        spans.push(Span::styled(m.enter.to_string(), t.style(Role::Key)));
+        spans.push(Span::raw("  "));
+        spans.extend(shine(&words, tick, t));
+        spans.push(Span::raw("   "));
     }
-    if chosen.is_some() {
+    if options.len() > 1 {
+        spans.extend(key(m.choose, "choose"));
+    }
+    if !matches!(ui.step, Step::Workspace | Step::Builder) {
         spans.extend(key(m.back, "back"));
     }
     spans.extend(key("r", "re-scan"));
@@ -389,11 +416,11 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_agent_gets_no_call_to_action_and_says_what_comes_next() {
+    fn a_missing_agent_says_how_to_install_it_in_the_call_to_action() {
         let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
         let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 120, 36).join("\n");
-        assert!(!rows.contains("Enter  Use"), "{rows}");
-        assert!(rows.contains("install comes in the next step"), "{rows}");
+        assert!(rows.contains("Enter  How to install Claude Code"), "{rows}");
+        assert!(!rows.contains("comes in the next step"), "{rows}");
     }
 
     fn truecolour_with_motion() -> Theme {
@@ -700,6 +727,137 @@ mod tests {
         u.enter(&s);
         let text = render(&u, &s, Glyphs::Ascii, 100, 30).join("\n");
         assert!(text.contains("login unverified"), "{text}");
+        assert!(text.is_ascii(), "{text}");
+    }
+
+    use crate::tui::chain::model::{Step, Work};
+    use igris_detect::Login::Unknown;
+
+    fn connecting(kind: &str) -> (Snapshot, ChainUi) {
+        let other = if kind == "claude" { "codex" } else { "claude" };
+        let s = snap(&[(kind, true, LoggedOut), (other, true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        u.builder = Some(kind.into());
+        u.reviewer = Some(other.into());
+        u.step = Step::End;
+        u.settle(&s);
+        (s, u)
+    }
+
+    fn failed(u: &mut ChainUi, s: &Snapshot) {
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "not logged in".into(),
+                fix: Some("claude auth login".into()),
+            },
+        );
+        u.settle(s);
+    }
+
+    #[test]
+    fn the_workspace_question_offers_the_herdr_install_with_the_exact_command() {
+        let mut s = snap(&[("claude", true, LoggedIn)]);
+        s.herdr.found = false;
+        let mut u = ChainUi::new();
+        u.settle(&s);
+        let rows = render(&u, &s, Glyphs::Unicode, 160, 36).join("\n");
+        let cmd = crate::tui::install::quote_cmd(tool("herdr").unwrap().install.unwrap());
+        assert!(rows.contains("Install Herdr in the background"), "{rows}");
+        assert!(rows.contains(&cmd), "{rows}");
+        assert!(rows.contains("Enter  Install Herdr"), "{rows}");
+    }
+
+    #[test]
+    fn an_agent_without_a_command_shows_its_docs_in_a_box_and_one_way_out() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        u.cursor = u.choices(&s).iter().position(|c| c.id == "claude").unwrap();
+        u.enter(&s);
+        let rows = render(&u, &s, Glyphs::Unicode, 140, 36);
+        let text = rows.join("\n");
+        assert!(
+            text.contains("Install: Claude Code is not installed"),
+            "{text}"
+        );
+        assert!(
+            text.contains("docs.anthropic.com") && text.contains('╭'),
+            "{text}"
+        );
+        assert!(text.contains("Enter  Choose another agent"), "{text}");
+    }
+
+    #[test]
+    fn a_running_install_shows_the_clock_in_history_and_a_wait_line_without_a_call_to_action() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", true, LoggedIn)]);
+        let mut u = at_builder(&s);
+        u.builder = Some("claude".into());
+        u.reviewer = Some("codex".into());
+        u.step = Step::End;
+        u.work
+            .insert("claude".into(), Work::Installing { secs: 42 });
+        u.settle(&s);
+        let text = render(&u, &s, Glyphs::Unicode, 120, 36).join("\n");
+        assert!(text.contains("installing 00:42"), "history: {text}");
+        assert!(
+            text.contains("Installing Claude Code: 00:42"),
+            "wait line: {text}"
+        );
+        assert!(!text.contains("Enter  "), "nothing to confirm: {text}");
+        assert!(text.contains("r re-scan"), "{text}");
+    }
+
+    #[test]
+    fn a_failure_box_has_three_lines_and_the_fix() {
+        let (s, mut u) = connecting("claude");
+        failed(&mut u, &s);
+        let text = render(&u, &s, Glyphs::Unicode, 140, 36).join("\n");
+        for want in [
+            "Claude Code: not logged in.",
+            "Unchanged: no setting was changed.",
+            "Fix: claude auth login",
+            "Enter  Check again",
+        ] {
+            assert!(text.contains(want), "missing {want}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn the_connect_question_lists_methods_and_one_call_to_action() {
+        let (s, u) = connecting("claude");
+        let rows = render(&u, &s, Glyphs::Unicode, 120, 36);
+        let text = rows.join("\n");
+        for want in ["Log in", "Check now", "Choose another agent"] {
+            assert!(text.contains(want), "missing {want}:\n{text}");
+        }
+        assert_eq!(
+            rows.iter().filter(|r| r.contains("Enter  Log in")).count(),
+            1,
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn at_80x24_the_failure_box_and_the_call_to_action_are_visible() {
+        let (s, mut u) = connecting("claude");
+        failed(&mut u, &s);
+        let text = render(&u, &s, Glyphs::Unicode, 80, 24).join("\n");
+        for want in ["Fix: claude auth login", "Enter  Check again", "q quit"] {
+            assert!(text.contains(want), "missing {want}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn ascii_has_no_unicode_marks_in_install_and_connect() {
+        let (s, mut u) = connecting("claude");
+        failed(&mut u, &s);
+        let text = render(&u, &s, Glyphs::Ascii, 120, 36).join("\n");
+        assert!(text.is_ascii(), "{text}");
+        let s2 = snap(&[("claude", true, Unknown), ("codex", true, Unknown)]);
+        let mut u2 = at_builder(&s2);
+        u2.enter(&s2);
+        u2.enter(&s2);
+        let text = render(&u2, &s2, Glyphs::Ascii, 120, 36).join("\n");
         assert!(text.is_ascii(), "{text}");
     }
 
