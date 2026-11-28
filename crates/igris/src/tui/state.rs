@@ -159,6 +159,7 @@ impl State {
             }
             Msg::Job(id, end) => {
                 super::install::dispatch(self, id, end);
+                super::chain::sync(self);
                 return;
             }
         };
@@ -171,13 +172,16 @@ impl State {
             super::pipeline_screen::refresh(self);
         }
         let prev = self.snapshot.replace(*snap);
+        super::install::after_scan(self);
+        // After the install bookkeeping, so the chain sees an install that this scan settled.
+        let work = super::chain::work_of(self);
         if let (Some(c), Some(s)) = (self.chain.as_mut(), self.snapshot.as_ref()) {
+            c.work = work;
             match prev.as_ref() {
                 Some(p) => c.resettle(s, p),
                 None => c.settle(s),
             }
         }
-        super::install::after_scan(self);
         super::verify_screen::after_scan(self);
         self.blocker = self.check.view.as_ref().and_then(super::check::blocker);
         self.detecting = false;
@@ -279,6 +283,7 @@ pub fn update(s: &mut State, a: Action) -> Effect {
 fn update_inner(s: &mut State, a: Action) -> Effect {
     let discard = Some(Overlay::Confirm(Confirm::Discard));
     match a {
+        Action::Chain(w) => super::chain::run(s, w),
         Action::Quit if s.overlay == discard => Effect::Quit,
         Action::Quit if s.dirty => {
             s.overlay = discard;

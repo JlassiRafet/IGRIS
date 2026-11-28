@@ -33,6 +33,8 @@ pub enum Action {
     Stay,
     /// A click on an item of the screen or of a dialog: focus it and activate it. Mouse only.
     Select(usize),
+    /// What the guided chain asks the app to run (its install, check and login commands).
+    Chain(super::chain::model::Want),
 }
 
 impl Action {
@@ -95,7 +97,7 @@ impl Action {
             Action::Cancel => "Close, cancel or go back",
             Action::Yes => "Yes",
             Action::No => "No",
-            Action::Stay | Action::Select(_) => "",
+            Action::Stay | Action::Select(_) | Action::Chain(_) => "",
         }
         .to_string()
     }

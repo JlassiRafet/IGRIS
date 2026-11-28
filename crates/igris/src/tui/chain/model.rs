@@ -43,9 +43,7 @@ pub struct Choice {
     pub cta: Option<String>,
 }
 
-/// What a choice asks the app to run. The model never runs anything itself. (Constructed by the
-/// wiring task; allowed until then.)
-#[allow(dead_code)]
+/// What a choice asks the app to run. The model never runs anything itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Want {
     /// The tool's verified install command, as a background job.
@@ -58,9 +56,7 @@ pub enum Want {
     Attach(&'static [&'static str]),
 }
 
-/// What the install and check engines are doing for one agent (built by `State`). (Constructed by
-/// the wiring task; allowed until then.)
-#[allow(dead_code)]
+/// What the install and check engines are doing for one agent (built by `State`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Work {
     Installing { secs: u64 },
