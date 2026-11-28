@@ -211,6 +211,68 @@ tmux send-keys -t "$CH" C-c; chain_wait "EXIT=0" 5
 tmux kill-session -t "$CH" 2>/dev/null || true
 echo "ok  chain: Ctrl-C quits with exit 0"
 
+# Install and connect in the chain (slice 2). No installer is ever run here.
+# A: Claude Code is not on PATH: choosing it opens its install question with the docs link and one
+#    way out, and Left goes back.
+mkdir -p "$FAKES/a" "$FAKES/b"
+printf '#!/bin/sh\necho "herdr 0.9.1"\n' > "$FAKES/a/herdr"
+printf '#!/bin/sh\necho "Logged in using ChatGPT" >&2\n' > "$FAKES/a/codex"
+cp "$FAKES/a/herdr" "$FAKES/b/herdr"; cp "$FAKES/a/codex" "$FAKES/b/codex"
+chmod +x "$FAKES/a/herdr" "$FAKES/a/codex" "$FAKES/b/herdr" "$FAKES/b/codex"
+start_chain() { # directory with the fakes, then the rest of PATH (default: the system folders)
+  tmux new-session -d -s "$CH" -x 120 -y 36 \
+    "env PATH=$1${2-:/usr/bin:/bin} HOME=$HOME_DIR COLORTERM=truecolor IGRIS_CHAIN=1 '$BIN' --repo '$REPO'; echo EXIT=\$?; sleep 30"
+}
+start_chain "$FAKES/a"
+chain_wait "Builder: which agent" 60
+tmux send-keys -t "$CH" Down Enter; chain_wait "Install: Claude Code is not installed" 5
+tmux capture-pane -t "$CH" -p | grep -q "docs.anthropic.com" || chain_fail "no docs link for an agent IGRIS cannot install"
+tmux capture-pane -t "$CH" -p | grep -q "Choose another agent" || chain_fail "no way out of the install question"
+tmux send-keys -t "$CH" Left; chain_wait "Builder: which agent" 5
+tmux send-keys -t "$CH" q; chain_wait "EXIT=0" 5
+tmux kill-session -t "$CH" 2>/dev/null || true
+echo "ok  chain: a missing agent opens its install question with the docs link; Left goes back"
+# B: Claude Code is installed but logged out: after both answers the Connect question offers the
+#    login and a live check; the fake check answers at once and the chain reaches its end.
+cat > "$FAKES/b/claude" <<'FAKE'
+#!/bin/sh
+case "$1" in
+  -p) echo ok ;;
+  auth) echo '{"loggedIn":false}' ;;
+  *) exit 1 ;;
+esac
+FAKE
+chmod +x "$FAKES/b/claude"
+start_chain "$FAKES/b"
+chain_wait "Builder: which agent" 60
+tmux send-keys -t "$CH" Up Enter; chain_wait "Reviewer: who checks" 5
+tmux send-keys -t "$CH" Enter; chain_wait "Connect: make Claude Code ready" 5
+tmux capture-pane -t "$CH" -p | grep -q "Log in" || chain_fail "the Connect question has no Log in"
+tmux send-keys -t "$CH" Down Down Down; chain_wait "Enter  Check Claude Code" 5
+tmux send-keys -t "$CH" Enter; chain_wait "This preview ends here" 20
+tmux capture-pane -t "$CH" -p | grep -q "replied in" || chain_fail "no latency line after the live check"
+tmux send-keys -t "$CH" q; chain_wait "EXIT=0" 5
+tmux kill-session -t "$CH" 2>/dev/null || true
+echo "ok  chain: Connect offers the login and a live check, and a passed check reaches the end"
+
+# C: Herdr is not on PATH: its install is the one a runnable catalog command exists for. A fake `sh`
+#    that only sleeps stands in for the installer (nothing is downloaded), so the install shows as
+#    running, and quitting must end it.
+mkdir -p "$FAKES/c"
+printf '#!/bin/sh\nexec /usr/bin/sleep 61234\n' > "$FAKES/c/sh"
+chmod +x "$FAKES/c/sh"
+start_chain "$FAKES/c" ""   # nothing else on PATH: this machine's own herdr must not be found
+chain_wait "Workspace: Herdr runs your agents" 60
+tmux capture-pane -t "$CH" -p | grep -q "Install Herdr in the background" || chain_fail "no Herdr install offer"
+tmux send-keys -t "$CH" Enter; chain_wait "Installing Herdr: 00:0" 10
+pgrep -f "^/usr/bin/sleep 61234$" >/dev/null || chain_fail "the install job is not running"
+tmux send-keys -t "$CH" q; chain_wait "EXIT=0" 5
+gone=0
+for _ in $(seq 1 30); do pgrep -f "^/usr/bin/sleep 61234$" >/dev/null || { gone=1; break; }; sleep 0.1; done
+[ "$gone" = 1 ] || { pkill -f "^/usr/bin/sleep 61234$" || true; chain_fail "quitting left the install running"; }
+tmux kill-session -t "$CH" 2>/dev/null || true
+echo "ok  chain: the Herdr install runs as a job, shows its clock, and quitting ends it"
+
 # Motion: the wordmark sheen moves in a truecolor terminal and stands still with IGRIS_NO_MOTION=1.
 distinct_frames() { # extra environment, for example IGRIS_NO_MOTION=1
   local sess="igris-e2e-m$$"
