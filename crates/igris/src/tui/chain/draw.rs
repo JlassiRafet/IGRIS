@@ -1,14 +1,14 @@
 //! The chain screen: header band, history of answered questions, the active question with its
 //! hint right under the options, and a one-line footer. Pure drawing of a `ChainUi`.
 use super::model::{ChainUi, Choice, Mark, Step, Work, name};
-use crate::tui::style::{GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
+use crate::tui::style::{GLOW, GUIDE, GUIDE_GLOW, LIGHT_BLUE, Role, SHEEN, rgb};
 use crate::tui::theme::{ColorDepth, Glyphs, Theme};
 use crate::tui::widgets::{Glint, glint};
 use crate::tui::{header, layout, widgets};
 use igris_detect::Snapshot;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
@@ -149,7 +149,11 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &ChainUi, snap: &Snapshot, t: &Theme,
     if let Some(text) = blocker {
         let y = body.y + n.min(body.height.saturating_sub(box_rows));
         let r = Rect::new(body.x, y, body.width, box_rows.min(body.height));
-        let block = widgets::panel(t, "Needs a step", true);
+        let block = widgets::frame(
+            t,
+            t.style(Role::Guide),
+            guide_title("Needs a step", tick, t),
+        );
         f.render_widget(
             Paragraph::new(text).wrap(Wrap { trim: true }).block(block),
             r,
@@ -275,7 +279,24 @@ fn action_row(
 /// letter under it is the sheen, its neighbours the glow, the rest the plain blue. Without motion
 /// it is one steady span.
 fn shine(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
-    let steady = t.style(Role::Cta);
+    glint_spans(text, tick, t, t.style(Role::Cta), (LIGHT_BLUE, GLOW))
+}
+
+/// The title of the guidance box: bold periwinkle, with the same glint passing over it.
+fn guide_title(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
+    let bold = t.style(Role::Guide).add_modifier(Modifier::BOLD);
+    glint_spans(text, tick, t, bold, (GUIDE, GUIDE_GLOW))
+}
+
+/// `text` in `steady`, one span per letter while the glint moves: the sheen, then `ramp.1` on the
+/// neighbours, `ramp.0` everywhere else. Steady, one span, without motion or truecolor.
+fn glint_spans(
+    text: &str,
+    tick: usize,
+    t: &Theme,
+    steady: Style,
+    ramp: ((u8, u8, u8), (u8, u8, u8)),
+) -> Vec<Span<'static>> {
     if !t.motion || t.depth != ColorDepth::True {
         return vec![Span::styled(text.to_string(), steady)];
     }
@@ -285,8 +306,8 @@ fn shine(text: &str, tick: usize, t: &Theme) -> Vec<Span<'static>> {
         .map(|(i, ch)| {
             let colour = match glint(tick, len, i) {
                 Glint::Sheen => SHEEN,
-                Glint::Glow => GLOW,
-                Glint::Off => LIGHT_BLUE,
+                Glint::Glow => ramp.1,
+                Glint::Off => ramp.0,
             };
             Span::styled(ch.to_string(), steady.fg(rgb(colour)))
         })
@@ -918,5 +939,68 @@ mod tests {
             "{rows:#?}"
         );
         assert!(rows.iter().any(|r| r.contains('╭')), "a box: {rows:#?}");
+    }
+
+    #[test]
+    fn the_guidance_box_is_periwinkle_on_its_border_and_title_and_white_in_its_body() {
+        use crate::tui::style::GUIDE;
+        let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
+        let (b, rows) = true_colour(&at_builder(&s), &s);
+        let guide = Some(rgb(GUIDE));
+        assert_eq!(cell_style(&b, &rows, "╭").fg, guide, "border");
+        let title = cell_style(&b, &rows, "Needs a step");
+        assert_eq!(title.fg, guide, "title");
+        assert!(title.add_modifier.contains(ratatui::style::Modifier::BOLD));
+        let body = cell_style(&b, &rows, "No coding agent");
+        assert_ne!(body.fg, guide, "the body stays readable white");
+    }
+
+    #[test]
+    fn the_guidance_title_glints_from_periwinkle_through_a_light_tint_to_the_sheen() {
+        use crate::tui::style::{GUIDE, GUIDE_GLOW, SHEEN};
+        let t = truecolour_with_motion();
+        let at = |tick| guide_title("Needs a step", tick, &t);
+        let sheen = Some(rgb(SHEEN));
+        let lead = |tick| fgs(&at(tick)).iter().position(|c| *c == sheen);
+        assert_eq!(at(0).len(), 12, "one span per letter");
+        let path: Vec<_> = (2..=6).map(lead).collect();
+        assert_eq!(path, (0..=4).map(Some).collect::<Vec<_>>());
+        assert!(
+            fgs(&at(4)).contains(&Some(rgb(GUIDE_GLOW))),
+            "neighbours glow"
+        );
+        assert!(
+            fgs(&at(20)).iter().all(|c| *c == Some(rgb(GUIDE))),
+            "at rest"
+        );
+        for tick in 0..40 {
+            let spans = at(tick);
+            let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+            assert_eq!(text, "Needs a step", "tick {tick}");
+            assert!(spans.iter().all(|s| {
+                s.style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::BOLD)
+                    && s.style.bg.is_none()
+            }));
+        }
+    }
+
+    #[test]
+    fn without_motion_the_guidance_title_is_one_steady_bold_span() {
+        for depth in [ColorDepth::True, ColorDepth::Ansi16, ColorDepth::None] {
+            let t = Theme {
+                depth,
+                glyphs: Glyphs::Unicode,
+                motion: false,
+            };
+            let spans = guide_title("Needs a step", 5, &t);
+            assert_eq!(spans.len(), 1, "{depth:?}");
+            assert_eq!(
+                spans[0].style,
+                t.style(Role::Guide)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            );
+        }
     }
 }

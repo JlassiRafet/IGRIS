@@ -130,18 +130,22 @@ pub fn panel<'a>(t: &Theme, title: &str, focused: bool) -> Block<'a> {
     } else {
         Role::Border
     };
-    let title = Line::from(vec![
-        Span::raw(" "),
-        Span::styled(
-            title.to_string(),
-            t.style(Role::Text).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-    ]);
+    let title = vec![Span::styled(
+        title.to_string(),
+        t.style(Role::Text).add_modifier(Modifier::BOLD),
+    )];
+    frame(t, t.style(border_role), title)
+}
+
+/// The frame of `panel` with a border style and a title of the caller's own spans.
+pub fn frame<'a>(t: &Theme, border: Style, title: Vec<Span<'static>>) -> Block<'a> {
+    let mut spans = vec![Span::raw(" ")];
+    spans.extend(title);
+    spans.push(Span::raw(" "));
     let block = Block::bordered()
-        .border_style(t.style(border_role))
+        .border_style(border)
         .padding(Padding::horizontal(1))
-        .title(title);
+        .title(Line::from(spans));
     match t.glyphs {
         Glyphs::Unicode => block.border_type(BorderType::Rounded),
         Glyphs::Ascii => block.border_set(ASCII_BORDER),
