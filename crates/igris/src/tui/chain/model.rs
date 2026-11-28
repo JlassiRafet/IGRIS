@@ -284,6 +284,8 @@ impl ChainUi {
                 }
                 for (i, r) in methods_for(t, snap).iter().enumerate() {
                     let cta = match r.act {
+                        // "Check again" is already the first row after a failed check.
+                        Act::Check if matches!(w, Some(Work::CheckFailed { .. })) => continue,
                         Act::Check => format!("Check {}", t.name),
                         Act::Attach(_) => r.label.to_string(),
                         Act::Env(_) => "Show how".to_string(),
@@ -496,6 +498,12 @@ impl ChainUi {
     /// What stops the chain on this step, in words, with the tool's documented install command.
     pub fn blocker(&self, snap: &Snapshot) -> Option<String> {
         match self.step {
+            // A command that can run is on the option row, so no box repeats it.
+            Step::Workspace
+                if tool("herdr").is_some_and(|t| matches!(install_offer(t), Offer::Run(_))) =>
+            {
+                None
+            }
             Step::Workspace => Some(format!(
                 "Herdr is not installed. Install it, then press r to re-scan. {}",
                 install_line("herdr")
@@ -565,7 +573,7 @@ fn another() -> Choice {
     pick(
         "another",
         "Choose another agent".to_string(),
-        "back to the list".to_string(),
+        String::new(),
         Some("Choose another agent".to_string()),
     )
 }
@@ -781,7 +789,10 @@ mod tests {
         let mut u = ChainUi::new();
         u.settle(&s);
         assert_eq!(u.step, Step::Workspace);
-        assert!(u.blocker(&s).unwrap().contains("Herdr"));
+        assert!(
+            u.choices(&s)[0].label.contains("Herdr"),
+            "the question offers Herdr's install"
+        );
         s.herdr.found = true;
         s.herdr.version = Some("0.9.1".into());
         u.settle(&s);
@@ -1215,6 +1226,48 @@ mod tests {
         row_of(&mut u, &s, "API key");
         u.enter(&s);
         assert!(u.blocker(&s).unwrap().contains("ANTHROPIC_API_KEY"));
+    }
+
+    #[test]
+    fn herdr_needs_no_box_because_its_install_row_already_shows_the_command() {
+        let mut s = snap(&[("claude", true, LoggedIn)]);
+        s.herdr.found = false;
+        let mut u = started(&s);
+        assert_eq!(u.blocker(&s), None, "the command is on the row");
+        u.work.insert("herdr".into(), Work::Installing { secs: 1 });
+        assert_eq!(
+            u.blocker(&s),
+            None,
+            "and a box must not contradict a running install"
+        );
+    }
+
+    #[test]
+    fn a_failed_check_offers_check_again_once_not_check_now_as_well() {
+        let (s, mut u) = connecting("claude");
+        u.work.insert(
+            "claude".into(),
+            Work::CheckFailed {
+                reason: "not logged in".into(),
+                fix: None,
+            },
+        );
+        u.settle(&s);
+        let l = labels(&u, &s);
+        assert!(
+            l.contains(&"Check again".to_string()) && !l.contains(&"Check now".to_string()),
+            "{l:?}"
+        );
+    }
+
+    #[test]
+    fn choose_another_agent_has_no_note_to_crowd_its_label() {
+        let (s, u) = connecting("claude");
+        let c = u.choices(&s).pop().unwrap();
+        assert_eq!(
+            (c.label.as_str(), c.note.as_str()),
+            ("Choose another agent", "")
+        );
     }
 
     #[test]

@@ -893,18 +893,30 @@ mod tests {
     }
 
     #[test]
-    fn a_blocker_shows_its_exact_command_in_a_box() {
+    fn the_herdr_command_is_on_its_install_row_once_with_no_box_repeating_it() {
         let mut s = snap(&[("claude", true, LoggedIn)]);
         s.herdr.found = false;
         let mut u = ChainUi::new();
         u.settle(&s);
         let rows = render(&u, &s, Glyphs::Unicode, 160, 36);
         let cmd = crate::tui::install::quote_cmd(tool("herdr").unwrap().install.unwrap());
-        assert!(
-            rows.iter().any(|r| r.contains("Herdr is not installed")),
+        assert_eq!(
+            rows.iter().filter(|r| r.contains(&cmd)).count(),
+            1,
             "{rows:#?}"
         );
-        assert!(rows.iter().any(|r| r.contains(&cmd)), "{rows:#?}");
+        assert!(!rows.iter().any(|r| r.contains('╭')), "no box: {rows:#?}");
+    }
+
+    #[test]
+    fn a_box_names_the_agent_install_when_no_coding_agent_is_installed() {
+        let s = snap(&[("claude", false, LoggedIn), ("codex", false, LoggedIn)]);
+        let rows = render(&at_builder(&s), &s, Glyphs::Unicode, 160, 36);
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("No coding agent is installed")),
+            "{rows:#?}"
+        );
         assert!(rows.iter().any(|r| r.contains('╭')), "a box: {rows:#?}");
     }
 }
